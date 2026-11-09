@@ -184,7 +184,7 @@ func (d *Driver) EnsureForwards(_ context.Context, forwards []driver.Forward) er
 	slices.SortFunc(root, func(a, b rootForward) int {
 		return cmp.Or(cmp.Compare(a.proto, b.proto), cmp.Compare(a.port, b.port))
 	})
-	conn, err := nftables.New()
+	conn, err := newConn()
 	if err != nil {
 		return err
 	}
@@ -245,7 +245,7 @@ func ensureNSForwards(uid string, nsTransit netip.Addr, fs []driver.Forward) err
 		return err
 	}
 	defer func() { _ = ns.Close() }()
-	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+	conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return err
 	}
@@ -304,7 +304,7 @@ func dropStaleFlows(cfg *netlink.Config, keep func(k forwardKey, dst, target net
 func (d *Driver) Forwards(context.Context) ([]driver.Forward, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	conn, err := nftables.New()
+	conn, err := newConn()
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +337,7 @@ func (d *Driver) Forwards(context.Context) ([]driver.Forward, error) {
 				return nil, err
 			}
 			defer func() { _ = ns.Close() }()
-			conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+			conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 			if err != nil {
 				return nil, err
 			}

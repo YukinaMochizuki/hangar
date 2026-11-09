@@ -184,7 +184,7 @@ func (d *Driver) startWatch(ns *netns.NsHandle) (*watch, error) {
 		}
 	}
 	if err == nil {
-		conn, err = nftables.New(opts...)
+		conn, err = newConn(opts...)
 	}
 	var tables chan *nftables.MonitorEvent
 	if err == nil {

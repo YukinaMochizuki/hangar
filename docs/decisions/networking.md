@@ -503,7 +503,14 @@ address.
     whole table is replaced in one transaction when a policy changes,
     which keeps the connections already admitted. A network's firewall is
     bounded to 20,000 rules (each rule is written once per peer and port
-    range); policies past it, or a firewall that cannot be written, close
+    range). One transaction is one netlink message, refused with EMSGSIZE
+    past the socket's send buffer, and the host's default
+    (`net.core.wmem_default`, about 200 KiB) takes about 550 rules, so the
+    driver forces its nftables sockets' send buffer to 64 MiB: a firewall
+    at the bound is at most about 19 MiB (file share client rules are the
+    longest, about 940 bytes each), and a network's binding table grows
+    about 13 KiB a tap. Policies past the bound, or a firewall that cannot
+    be written, close
     the network's interfaces on that node to all but its services rather
     than leave older rules in force, and the resolver, DHCP and metadata
     service keep following the network's machines.

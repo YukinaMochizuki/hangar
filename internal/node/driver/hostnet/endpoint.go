@@ -234,7 +234,7 @@ func (d *Driver) EnsureEndpoints(_ context.Context, endpoints []driver.Endpoint)
 // ensureRootEndpoints makes the root namespace's endpoint table hold rs, or
 // removes it for none, and ends the flows it no longer lets across.
 func ensureRootEndpoints(nets map[string]hostNetwork, rs []rootEndpoint) error {
-	conn, err := nftables.New()
+	conn, err := newConn()
 	if err != nil {
 		return err
 	}
@@ -310,7 +310,7 @@ func ensureNSEndpoints(uid string, nsTransit netip.Addr, e nsEndpoints) error {
 		return err
 	}
 	defer h.Close()
-	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+	conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return err
 	}
@@ -436,7 +436,7 @@ func (d *Driver) Endpoints(context.Context) ([]driver.Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := nftables.New()
+	conn, err := newConn()
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +459,7 @@ func (d *Driver) Endpoints(context.Context) ([]driver.Endpoint, error) {
 				return nil, err
 			}
 			defer func() { _ = ns.Close() }()
-			conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+			conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 			if err != nil {
 				return nil, err
 			}

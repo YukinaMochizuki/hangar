@@ -326,6 +326,10 @@ func TestATapReceivesOnlyItsOwnUnicast(t *testing.T) {
 			t.Logf("with flooding on, a3 received %d frames of unicast for others: %q", len(got), got)
 		}
 		whole(t)
+		// What was flooded to a3 before whole turned flooding off, such as the
+		// namespace's late probe of a2, queues ahead of this marker: the
+		// control's, not a leak.
+		s.take(t)
 		if !a2.reaches(gateway) {
 			t.Error("after ensuring again, a2 does not reach the gateway")
 		}
