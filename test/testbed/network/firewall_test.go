@@ -192,3 +192,45 @@ for i in range(40):
 		t.Error("UDP routed through the gateway reached sandbox, which lets nothing in")
 	}
 }
+
+// TestLargeTablesApply: a network's binding and firewall tables are written
+// whole however large they grow, up to driver.MaxFirewallRules, though each
+// is far more than one netlink message takes at the host's default socket
+// buffer (hangar#221, hangar#246).
+func TestLargeTablesApply(t *testing.T) {
+	const taps = 40
+	// With an IPv6 address, each tap's binding is about twenty rules.
+	d := newDriver(t, hostnet.Config{Uplink: upstreamLink, PublicIPv4: netip.MustParseAddr(hostAddr), IPv6Prefix: prefix6, PublicIPv6: netip.MustParseAddr(hostAddr6)})
+	var want []driver.Interface
+	for i := range taps {
+		want = append(want, nic6(fmt.Sprintf("m%02d", i), netA, i+2))
+	}
+	nics := ensure(t, d, []driver.NetworkSpec{netA}, want...)
+	// Each tap lets in TCP 8080 from every other, as a default group's
+	// members do, and from as many more peers as the bound allows.
+	var peers []netip.Prefix
+	for _, n := range nics {
+		peers = append(peers, netip.PrefixFrom(n.Address.Addr(), 32))
+	}
+	for i := 0; len(peers) < driver.MaxFirewallRules/taps; i++ {
+		peers = append(peers, netip.PrefixFrom(netip.AddrFrom4([4]byte{172, 16, byte(i >> 8), byte(i)}), 32))
+	}
+	var policies []driver.InterfacePolicy
+	for _, n := range nics {
+		policies = append(policies, driver.InterfacePolicy{MachineUID: n.MachineUID, Name: n.Name, Policy: secgroup.Policy{
+			Ingress:   []secgroup.Rule{{Protocol: secgroup.TCP, Ports: []secgroup.PortRange{{From: 8080, To: 8080}}, Peers: peers}},
+			EgressAll: true,
+		}})
+	}
+	if err := d.EnsureFirewall(t.Context(), netA.UID, policies); err != nil {
+		t.Fatal(err)
+	}
+	a, b := newGuest(t, nics[0]), newGuest(t, nics[taps-1])
+	echoServer(t, a, 8080, 9090)
+	if !connects(b, a.nic.Address.Addr().String(), 8080) {
+		t.Error("the last tap did not reach the first on 8080, which the first lets in from it")
+	}
+	if connects(b, a.nic.Address.Addr().String(), 9090) {
+		t.Error("the last tap reached the first on 9090, which the first does not let in")
+	}
+}

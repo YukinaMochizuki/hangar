@@ -275,7 +275,7 @@ func ensureBinding(ns netns.NsHandle, h *netlink.Handle, prefix netip.Prefix) er
 		}
 		bound = append(bound, t)
 	}
-	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+	conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return err
 	}

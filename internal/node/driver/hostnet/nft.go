@@ -13,6 +13,7 @@ import (
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
 	"github.com/google/nftables/userdata"
+	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -348,6 +349,36 @@ func commentOf(r *nftables.Rule) string {
 	return c
 }
 
+// nftSendBuffer is what the driver's nftables sockets ask for as their
+// send buffer: a table is one batch, sent in one sendmsg, which the kernel
+// refuses past the buffer (docs/decisions/networking.md, "SecurityGroup").
+const nftSendBuffer = 64 << 20
+
+// newConn is nftables.New with a send buffer of nftSendBuffer, forced past
+// net.core.wmem_max where the process has CAP_NET_ADMIN in the initial user
+// namespace, and as large as wmem_max allows where it does not.
+func newConn(opts ...nftables.ConnOption) (*nftables.Conn, error) {
+	return nftables.New(append(opts, nftables.WithSockOptions(func(c *netlink.Conn) error {
+		raw, err := c.SyscallConn()
+		if err != nil {
+			return err
+		}
+		var serr error
+		if err := raw.Control(func(fd uintptr) {
+			serr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_SNDBUFFORCE, nftSendBuffer)
+			if errors.Is(serr, unix.EPERM) {
+				serr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_SNDBUF, nftSendBuffer)
+			}
+		}); err != nil {
+			return err
+		}
+		if serr != nil {
+			return fmt.Errorf("setting the nftables socket's send buffer: %w", serr)
+		}
+		return nil
+	}))...)
+}
+
 // ensureTable makes the driver's table on conn hold exactly want, replacing
 // it in one transaction if it differs, and touching nothing if it does not.
 func ensureTable(conn *nftables.Conn, family nftables.TableFamily, want []chainSpec) error {
@@ -397,6 +428,15 @@ func ensureNamedTable(conn *nftables.Conn, family nftables.TableFamily, name str
 				return nil
 			}
 			err = errors.Join(err, verr)
+		}
+		// EMSGSIZE is the batch's being larger than the socket's send
+		// buffer: nothing was sent, and the same table never will be.
+		if errors.Is(err, unix.EMSGSIZE) {
+			rules := 0
+			for _, c := range want {
+				rules += len(c.rules)
+			}
+			return fmt.Errorf("writing nft table %s: its %d rules are more than one netlink message takes: %w", name, rules, err)
 		}
 		return fmt.Errorf("writing nft table %s: %w", name, err)
 	}

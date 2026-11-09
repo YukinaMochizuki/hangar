@@ -213,7 +213,7 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 	if err := d.ensureNetworkIPv6(ns, h, host, inner, br); err != nil {
 		return fmt.Errorf("network %s: IPv6: %w", n.UID, err)
 	}
-	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+	conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return err
 	}
@@ -239,7 +239,7 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 // ensureRoot makes the root namespace's table, and removes veths the driver
 // did not finish making.
 func (d *Driver) ensureRoot() error {
-	conn, err := nftables.New()
+	conn, err := newConn()
 	if err != nil {
 		return err
 	}
@@ -555,7 +555,7 @@ func (d *Driver) DeleteNetwork(_ context.Context, networkUID string) error {
 						}
 					}
 				}
-				conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+				conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 				if err != nil {
 					return err
 				}
@@ -609,7 +609,7 @@ func (d *Driver) deleteRootIfUnused() error {
 			return nil
 		}
 	}
-	conn, err := nftables.New()
+	conn, err := newConn()
 	if err != nil {
 		return err
 	}

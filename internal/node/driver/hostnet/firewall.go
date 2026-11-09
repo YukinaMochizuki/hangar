@@ -122,7 +122,7 @@ func (d *Driver) ShareRules(_ context.Context, networkUID string) (map[string]dr
 			ifaces[l.Attrs().Name] = m.Machine + "/" + m.Name
 		}
 	}
-	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+	conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +231,7 @@ func ruleFields(exprs []expr.Any) (oif string, saddr, daddr netip.Addr) {
 // written before servers had chains of their own, which would give it what
 // every tap has, is an error until the agent writes it again.
 func ensureFirewallTable(ns netns.NsHandle, gateway netip.Addr, server bool) error {
-	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+	conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func ensureFirewallTable(ns netns.NsHandle, gateway netip.Addr, server bool) err
 }
 
 func writeFirewall(ns netns.NsHandle, chains []chainSpec) error {
-	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+	conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return err
 	}

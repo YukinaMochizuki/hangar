@@ -91,7 +91,7 @@ func ensureAddr6(h *netlink.Handle, l netlink.Link, want netip.Prefix) error {
 // prefix: its links, their addresses and default route, and its ip6 table;
 // without one, IPv6 stays off in it, as it was made.
 func (d *Driver) ensureNetworkIPv6(ns netns.NsHandle, h *netlink.Handle, host, inner, br netlink.Link) error {
-	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+	conn, err := newConn(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return err
 	}
