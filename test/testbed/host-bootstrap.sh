@@ -776,6 +776,8 @@ EOF
 	fw=$(nft list table inet hangar-host)
 	grep -qF 192.0.2.20 <<<"$fw" && fail "the firewall still names the shared address"
 	"$host_dir/verify.sh" --env "$work/noshared.env" >"$work/noshared-verify.log" || fail "verify without a shared address: $(grep FAIL "$work/noshared-verify.log")"
+	grep -q '^SKIP shared IPv4 on tb-uplink (no HANGAR_SHARED_IPV4: no port forward opens' "$work/noshared-verify.log" ||
+		fail "verify does not say that no port forward opens without a shared address"
 	"$host_dir/bootstrap.sh" --only network >"$work/shared-back.log" 2>&1 || fail "the network step did not put the shared address back: $(cat "$work/shared-back.log")"
 	fw=$(nft list table inet hangar-host)
 	grep -qF 'ip daddr 192.0.2.20 drop' <<<"$fw" || fail "the shared address is back without the firewall dropping input to it: $fw"
