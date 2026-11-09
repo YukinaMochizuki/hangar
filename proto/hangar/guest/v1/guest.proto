@@ -210,6 +210,9 @@ message VolumeUsageResponse {
   // The filesystem's size and what is used of it, in bytes.
   uint64 size = 1;
   uint64 used = 2;
+  // The filesystem's inodes and how many are used, as RootUsageResponse's.
+  uint64 files = 3;
+  uint64 files_used = 4;
 }
 
 message GrowVolumeRequest {
@@ -229,6 +232,11 @@ message RootUsageResponse {
   // reserve, used plus available is size.
   uint64 size = 1;
   uint64 used = 2;
+  // The filesystem's inodes and how many are used: a filesystem can run
+  // out of them with bytes to spare. A guest that does not say them says
+  // 0 of 0.
+  uint64 files = 3;
+  uint64 files_used = 4;
 }
 
 message GrowRootRequest {}

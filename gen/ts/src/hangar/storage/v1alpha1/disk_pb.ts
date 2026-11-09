@@ -112,8 +112,8 @@ export type DiskGrow = Message<"hangar.storage.v1alpha1.DiskGrow"> & {
   max: string;
 
   /**
-   * How full the disk's filesystem is when it grows, a percentage from 50%
-   * to 95%; empty is 80%.
+   * How full the disk's filesystem is when it grows, of its bytes or of its
+   * inodes, whichever is fuller, a percentage from 50% to 95%; empty is 80%.
    *
    * @generated from field: string threshold = 2;
    */

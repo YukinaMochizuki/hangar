@@ -872,8 +872,11 @@ func (x *VolumeUsageRequest) GetDevice() string {
 type VolumeUsageResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The filesystem's size and what is used of it, in bytes.
-	Size          uint64 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
-	Used          uint64 `protobuf:"varint,2,opt,name=used,proto3" json:"used,omitempty"`
+	Size uint64 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
+	Used uint64 `protobuf:"varint,2,opt,name=used,proto3" json:"used,omitempty"`
+	// The filesystem's inodes and how many are used, as RootUsageResponse's.
+	Files         uint64 `protobuf:"varint,3,opt,name=files,proto3" json:"files,omitempty"`
+	FilesUsed     uint64 `protobuf:"varint,4,opt,name=files_used,json=filesUsed,proto3" json:"files_used,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -918,6 +921,20 @@ func (x *VolumeUsageResponse) GetSize() uint64 {
 func (x *VolumeUsageResponse) GetUsed() uint64 {
 	if x != nil {
 		return x.Used
+	}
+	return 0
+}
+
+func (x *VolumeUsageResponse) GetFiles() uint64 {
+	if x != nil {
+		return x.Files
+	}
+	return 0
+}
+
+func (x *VolumeUsageResponse) GetFilesUsed() uint64 {
+	if x != nil {
+		return x.FilesUsed
 	}
 	return 0
 }
@@ -1052,8 +1069,13 @@ type RootUsageResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The filesystem's size and what is used of it, in bytes. With no root
 	// reserve, used plus available is size.
-	Size          uint64 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
-	Used          uint64 `protobuf:"varint,2,opt,name=used,proto3" json:"used,omitempty"`
+	Size uint64 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
+	Used uint64 `protobuf:"varint,2,opt,name=used,proto3" json:"used,omitempty"`
+	// The filesystem's inodes and how many are used: a filesystem can run
+	// out of them with bytes to spare. A guest that does not say them says
+	// 0 of 0.
+	Files         uint64 `protobuf:"varint,3,opt,name=files,proto3" json:"files,omitempty"`
+	FilesUsed     uint64 `protobuf:"varint,4,opt,name=files_used,json=filesUsed,proto3" json:"files_used,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1098,6 +1120,20 @@ func (x *RootUsageResponse) GetSize() uint64 {
 func (x *RootUsageResponse) GetUsed() uint64 {
 	if x != nil {
 		return x.Used
+	}
+	return 0
+}
+
+func (x *RootUsageResponse) GetFiles() uint64 {
+	if x != nil {
+		return x.Files
+	}
+	return 0
+}
+
+func (x *RootUsageResponse) GetFilesUsed() uint64 {
+	if x != nil {
+		return x.FilesUsed
 	}
 	return 0
 }
@@ -1931,18 +1967,24 @@ const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\bauth_key\x18\x01 \x01(\tR\aauthKey\"\x15\n" +
 	"\x13JoinTailnetResponse\",\n" +
 	"\x12VolumeUsageRequest\x12\x16\n" +
-	"\x06device\x18\x01 \x01(\tR\x06device\"=\n" +
+	"\x06device\x18\x01 \x01(\tR\x06device\"r\n" +
 	"\x13VolumeUsageResponse\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x04R\x04size\x12\x12\n" +
-	"\x04used\x18\x02 \x01(\x04R\x04used\"+\n" +
+	"\x04used\x18\x02 \x01(\x04R\x04used\x12\x14\n" +
+	"\x05files\x18\x03 \x01(\x04R\x05files\x12\x1d\n" +
+	"\n" +
+	"files_used\x18\x04 \x01(\x04R\tfilesUsed\"+\n" +
 	"\x11GrowVolumeRequest\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\"(\n" +
 	"\x12GrowVolumeResponse\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x04R\x04size\"\x12\n" +
-	"\x10RootUsageRequest\";\n" +
+	"\x10RootUsageRequest\"p\n" +
 	"\x11RootUsageResponse\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x04R\x04size\x12\x12\n" +
-	"\x04used\x18\x02 \x01(\x04R\x04used\"\x11\n" +
+	"\x04used\x18\x02 \x01(\x04R\x04used\x12\x14\n" +
+	"\x05files\x18\x03 \x01(\x04R\x05files\x12\x1d\n" +
+	"\n" +
+	"files_used\x18\x04 \x01(\x04R\tfilesUsed\"\x11\n" +
 	"\x0fGrowRootRequest\"&\n" +
 	"\x10GrowRootResponse\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x04R\x04size\"L\n" +

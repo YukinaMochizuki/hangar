@@ -46,18 +46,17 @@ type Mounted map[string]int
 var ErrNotVolume = errors.New("no volume the boot disk lists is mounted read-write from it")
 
 // Stat says how large the filesystem of the volume on device is and how
-// much of it is used, in bytes, as StatRoot does.
-func (m Mounted) Stat(device string) (size, used uint64, err error) {
+// much of it is used, as StatRoot does.
+func (m Mounted) Stat(device string) (Usage, error) {
 	fd, ok := m[device]
 	if !ok {
-		return 0, 0, fmt.Errorf("%s: %w", device, ErrNotVolume)
+		return Usage{}, fmt.Errorf("%s: %w", device, ErrNotVolume)
 	}
 	var st unix.Statfs_t
 	if err := unix.Fstatfs(fd, &st); err != nil {
-		return 0, 0, fmt.Errorf("statfs of the volume on %s: %w", device, err)
+		return Usage{}, fmt.Errorf("statfs of the volume on %s: %w", device, err)
 	}
-	bs := uint64(st.Bsize)
-	return st.Blocks * bs, (st.Blocks - st.Bfree) * bs, nil
+	return usage(&st), nil
 }
 
 // Grow grows the filesystem of the volume on device to the device, which
@@ -75,8 +74,8 @@ func (m Mounted) Grow(device string) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	size, _, err := m.Stat(device)
-	return size, err
+	u, err := m.Stat(device)
+	return u.Size, err
 }
 
 // Volumes mounts the container's volumes in root, the root disk before it

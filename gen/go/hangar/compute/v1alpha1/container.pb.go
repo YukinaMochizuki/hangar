@@ -851,8 +851,8 @@ type DiskGrow struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The largest the disk grows to, a quantity at least resources.disk.
 	Max string `protobuf:"bytes,1,opt,name=max,proto3" json:"max,omitempty"`
-	// How full the disk is when it grows, a percentage from 50% to 95%;
-	// empty is 80%.
+	// How full the disk is when it grows, of its bytes or of its inodes,
+	// whichever is fuller, a percentage from 50% to 95%; empty is 80%.
 	Threshold string `protobuf:"bytes,2,opt,name=threshold,proto3" json:"threshold,omitempty"`
 	// How much it grows by: a factor such as "2x", over 1x and at most 16x, or
 	// a quantity such as "3Gi", at least 1Gi. Empty is 2x.

@@ -21,16 +21,32 @@ const (
 	superblockSize = 1024
 )
 
+// Usage is how large a filesystem is and how much of it is used: in bytes,
+// and in inodes, which ext4 fixes per byte when it is made and can run out
+// with bytes to spare.
+type Usage struct {
+	Size, Used       uint64
+	Files, FilesUsed uint64
+}
+
+// usage is the Usage statfs says. A root or volume disk has no root
+// reserve, so what is not free is used.
+func usage(st *unix.Statfs_t) Usage {
+	bs := uint64(st.Bsize)
+	return Usage{
+		Size: st.Blocks * bs, Used: (st.Blocks - st.Bfree) * bs,
+		Files: st.Files, FilesUsed: st.Files - st.Ffree,
+	}
+}
+
 // StatRoot says how large the running container's root filesystem is and how
-// much of it is used, in bytes. A root disk has no root reserve, so what is
-// not free is used.
-func StatRoot() (size, used uint64, err error) {
+// much of it is used.
+func StatRoot() (Usage, error) {
 	var st unix.Statfs_t
 	if err := unix.Statfs("/", &st); err != nil {
-		return 0, 0, fmt.Errorf("statfs /: %w", err)
+		return Usage{}, fmt.Errorf("statfs /: %w", err)
 	}
-	bs := uint64(st.Bsize)
-	return st.Blocks * bs, (st.Blocks - st.Bfree) * bs, nil
+	return usage(&st), nil
 }
 
 // ResizeRoot grows the running container's root filesystem, mounted at /
@@ -40,8 +56,8 @@ func ResizeRoot() (uint64, error) {
 	if _, _, err := GrowRoot("/", RootDevice); err != nil {
 		return 0, err
 	}
-	size, _, err := StatRoot()
-	return size, err
+	u, err := StatRoot()
+	return u.Size, err
 }
 
 // GrowRoot grows the ext4 filesystem on dev, mounted at dir, to fill dev,

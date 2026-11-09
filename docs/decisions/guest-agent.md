@@ -67,7 +67,8 @@ to boot again.
   from a `USER nobody` container that nothing in the guest reaches the
   agent (`docs/runbook/testbed.md`); the agent's check has a unit test.
 - **The node reads and grows the root filesystem through the agent.**
-  `RootUsage` answers its size and use, as statfs gives them; `GrowRoot`
+  `RootUsage` answers its size and use, in bytes and in inodes, as statfs
+  gives them; `GrowRoot`
   grows the mounted ext4 to its device once the host has grown the device
   while the guest runs, as hangar-init does at every boot
   (`disk-autogrow.md`). A guest asserts its own usage: one that lies grows

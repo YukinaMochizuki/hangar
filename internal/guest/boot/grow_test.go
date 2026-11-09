@@ -4,7 +4,21 @@ import (
 	"bytes"
 	"encoding/binary"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
+
+// TestUsageSaysInodes: a filesystem's usage is its bytes and its inodes,
+// as statfs gives them: one out of inodes with bytes to spare says so
+// (hangar#245).
+func TestUsageSaysInodes(t *testing.T) {
+	// The 2Gi ext4 zfsstore makes, full of small files.
+	st := unix.Statfs_t{Bsize: 4096, Blocks: 524288, Bfree: 366430, Files: 131072, Ffree: 0}
+	want := Usage{Size: 2 << 30, Used: (524288 - 366430) * 4096, Files: 131072, FilesUsed: 131072}
+	if got := usage(&st); got != want {
+		t.Errorf("usage: %+v, want %+v", got, want)
+	}
+}
 
 // superblock is an ext4 superblock with the fields growth reads.
 func superblock(lo, hi, logSize, incompat uint32) []byte {

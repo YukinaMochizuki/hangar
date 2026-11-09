@@ -198,23 +198,27 @@ type Host struct {
 	// by machine uid; oldGuests cannot be told.
 	guestIPv6 map[string][]driver.GuestIPv6
 	oldGuests map[string]bool
-	// rootUsed is what each container's guest uses of its root filesystem,
-	// and rootClaims what a guest that lies says of it instead, by machine
+	// rootUsed and rootFilesUsed are the bytes and inodes each container's
+	// guest uses of its root filesystem, and rootClaims what a guest that
+	// lies says of it instead, by machine
 	// uid; oldRootGuests can say nothing of it, nor grow it, and
 	// noLiveResize VMs cannot be told their root disk's size while they
 	// run. rootCalls lists the calls about each machine's root (RootCalls),
 	// and rootHolds the GrowRoots held (HoldRootGrowth).
 	rootUsed      map[string]uint64
+	rootFilesUsed map[string]uint64
 	rootClaims    map[string]driver.FSUsage
 	oldRootGuests map[string]bool
 	noLiveResize  map[string]bool
 	rootCalls     map[string][]string
 	rootHolds     map[string]chan struct{}
-	// volumeUsed is what the guests use of each Disk's filesystem, and
-	// volumeClaims what a guest that lies says of it instead, by disk uid;
+	// volumeUsed and volumeFilesUsed are the bytes and inodes the guests use
+	// of each Disk's filesystem, and volumeClaims what a guest that lies
+	// says of it instead, by disk uid;
 	// oldVolumeGuests, by machine uid, can say nothing of their volumes, nor
 	// grow them.
 	volumeUsed      map[string]uint64
+	volumeFilesUsed map[string]uint64
 	volumeClaims    map[string]driver.FSUsage
 	oldVolumeGuests map[string]bool
 	// ipv6Refused counts interfaces refused for an IPv6 address another
@@ -275,8 +279,8 @@ func New() *Host {
 		vms: map[string]*vm{}, consoles: map[string]*fakeConsole{}, logs: map[string]*consoleLog{}, tpmKeys: map[string][]byte{}, tpms: map[string]*tpmState{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string][]time.Time{}, readyCalls: map[string]int{},
 		guestIPv6: map[string][]driver.GuestIPv6{}, oldGuests: map[string]bool{},
-		rootUsed: map[string]uint64{}, rootClaims: map[string]driver.FSUsage{}, oldRootGuests: map[string]bool{}, noLiveResize: map[string]bool{}, rootCalls: map[string][]string{}, rootHolds: map[string]chan struct{}{},
-		volumeUsed: map[string]uint64{}, volumeClaims: map[string]driver.FSUsage{}, oldVolumeGuests: map[string]bool{},
+		rootUsed: map[string]uint64{}, rootFilesUsed: map[string]uint64{}, rootClaims: map[string]driver.FSUsage{}, oldRootGuests: map[string]bool{}, noLiveResize: map[string]bool{}, rootCalls: map[string][]string{}, rootHolds: map[string]chan struct{}{},
+		volumeUsed: map[string]uint64{}, volumeFilesUsed: map[string]uint64{}, volumeClaims: map[string]driver.FSUsage{}, oldVolumeGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
 	}
 }

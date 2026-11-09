@@ -20,6 +20,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1/guestv1connect"
 	"github.com/YukinaMochizuki/hangar/internal/guest/agent"
 	"github.com/YukinaMochizuki/hangar/internal/guest/supervise"
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chguest"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
@@ -124,6 +125,23 @@ func TestReadyPingsTheAgent(t *testing.T) {
 	}
 	if err := guestOn(answering(t, "ERR no such port\n")).Ready(ctx, "m1"); err == nil || !strings.Contains(err.Error(), "ERR no such port") {
 		t.Errorf("a socket that answers something other than OK: %v", err)
+	}
+}
+
+// TestUsageSaysBytesAndInodes: what the guest's agent says of its root and
+// its volumes reaches the node whole, inodes as bytes.
+func TestUsageSaysBytesAndInodes(t *testing.T) {
+	root := agent.Usage{Size: 4 << 30, Used: 1 << 30, Files: 1 << 18, FilesUsed: 1 << 17}
+	vol := agent.Usage{Size: 2 << 30, Used: 1 << 29, Files: 1 << 17, FilesUsed: 1 << 16}
+	g := guestOn(serveCH(t, agent.Port, &agent.Server{
+		StatRoot:   func() (agent.Usage, error) { return root, nil },
+		StatVolume: func(string) (agent.Usage, error) { return vol, nil },
+	}, func() {}))
+	if u, err := g.RootUsage(t.Context(), "m1"); err != nil || u != driver.FSUsage(root) {
+		t.Errorf("RootUsage: %+v %v, want %+v", u, err, root)
+	}
+	if u, err := g.VolumeUsage(t.Context(), "m1", "/dev/vdc"); err != nil || u != driver.FSUsage(vol) {
+		t.Errorf("VolumeUsage: %+v %v, want %+v", u, err, vol)
 	}
 }
 

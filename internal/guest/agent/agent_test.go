@@ -53,16 +53,17 @@ func TestVolumeUsageAndGrowth(t *testing.T) {
 
 	var asked []string
 	s := &Server{
-		StatVolume: func(device string) (uint64, uint64, error) {
+		StatVolume: func(device string) (Usage, error) {
 			asked = append(asked, device)
-			return 4 << 30, 3 << 30, nil
+			return Usage{Size: 4 << 30, Used: 3 << 30, Files: 1 << 18, FilesUsed: 1 << 17}, nil
 		},
 		ResizeVolume: func(device string) (uint64, error) {
 			asked = append(asked, device)
 			return 8 << 30, nil
 		},
 	}
-	if res, err := s.VolumeUsage(t.Context(), usage); err != nil || res.Msg.GetSize() != 4<<30 || res.Msg.GetUsed() != 3<<30 {
+	if res, err := s.VolumeUsage(t.Context(), usage); err != nil || res.Msg.GetSize() != 4<<30 || res.Msg.GetUsed() != 3<<30 ||
+		res.Msg.GetFiles() != 1<<18 || res.Msg.GetFilesUsed() != 1<<17 {
 		t.Errorf("VolumeUsage: %v %v", res, err)
 	}
 	if res, err := s.GrowVolume(t.Context(), grow); err != nil || res.Msg.GetSize() != 8<<30 {
@@ -80,7 +81,7 @@ func TestVolumeUsageAndGrowth(t *testing.T) {
 		"its own error": {errors.New("statfs: EIO"), connect.CodeInternal},
 	} {
 		s := &Server{
-			StatVolume:   func(string) (uint64, uint64, error) { return 0, 0, tt.err },
+			StatVolume:   func(string) (Usage, error) { return Usage{}, tt.err },
 			ResizeVolume: func(string) (uint64, error) { return 0, tt.err },
 		}
 		if _, err := s.VolumeUsage(t.Context(), usage); connect.CodeOf(err) != tt.code {

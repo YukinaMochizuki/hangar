@@ -29,6 +29,13 @@ const Port = 1024
 // smaller pieces.
 const MaxMessage = 1 << 20
 
+// Usage is how large a filesystem is and how much of it is used, in bytes
+// and in inodes, as RootUsage and VolumeUsage say it.
+type Usage struct {
+	Size, Used       uint64
+	Files, FilesUsed uint64
+}
+
 // Server serves GuestAgentService.
 type Server struct {
 	// Reaper starts what Exec runs; without one, as in a FileShare's server,
@@ -52,8 +59,8 @@ type Server struct {
 	// asks.
 	ApplyIPv6 func(ifaces []*guestv1.Interface) error
 	// StatRoot, if set, says how large the root filesystem is and how much
-	// of it is used, in bytes.
-	StatRoot func() (size, used uint64, err error)
+	// of it is used.
+	StatRoot func() (Usage, error)
 	// ResizeRoot, if set, grows the mounted root filesystem to its device
 	// and says its size in bytes after.
 	ResizeRoot func() (size uint64, err error)
@@ -61,7 +68,7 @@ type Server struct {
 	// volume on device what StatRoot and ResizeRoot do for the root. A
 	// device no volume the boot disk lists is mounted read-write from is an
 	// error wrapping ErrNoVolume.
-	StatVolume   func(device string) (size, used uint64, err error)
+	StatVolume   func(device string) (Usage, error)
 	ResizeVolume func(device string) (size uint64, err error)
 	// ExecEnv, if set, makes the environment of each process Exec runs.
 	ExecEnv func(env []string) []string
@@ -126,11 +133,11 @@ func (s *Server) RootUsage(context.Context, *connect.Request[guestv1.RootUsageRe
 	if s.StatRoot == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest has no root filesystem of its own"))
 	}
-	size, used, err := s.StatRoot()
+	u, err := s.StatRoot()
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&guestv1.RootUsageResponse{Size: size, Used: used}), nil
+	return connect.NewResponse(&guestv1.RootUsageResponse{Size: u.Size, Used: u.Used, Files: u.Files, FilesUsed: u.FilesUsed}), nil
 }
 
 // GrowRoot grows the root filesystem to its device, which the host has
@@ -151,11 +158,11 @@ func (s *Server) VolumeUsage(_ context.Context, req *connect.Request[guestv1.Vol
 	if s.StatVolume == nil {
 		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest mounts no volumes of its own"))
 	}
-	size, used, err := s.StatVolume(req.Msg.GetDevice())
+	u, err := s.StatVolume(req.Msg.GetDevice())
 	if err != nil {
 		return nil, volumeError(err)
 	}
-	return connect.NewResponse(&guestv1.VolumeUsageResponse{Size: size, Used: used}), nil
+	return connect.NewResponse(&guestv1.VolumeUsageResponse{Size: u.Size, Used: u.Used, Files: u.Files, FilesUsed: u.FilesUsed}), nil
 }
 
 // GrowVolume grows a volume's filesystem to its device, which the host has

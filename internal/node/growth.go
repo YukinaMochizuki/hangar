@@ -505,20 +505,22 @@ func sameDisksWanted(a, b []*computev1alpha1.MachineDiskWanted) bool {
 
 // wantedSize is what a disk growing by g, of size bytes as its owner has
 // it and have on the host, asks to grow to, its guest saying u of its
-// filesystem: the next size while it is full enough and below its max,
-// else none. ok is false where u says nothing: the guest's claim makes no
-// sense, or the disk is still taking its last size, settled false. The
+// filesystem: the next size while it is full enough, of bytes or of
+// inodes, and below its max, else none. ok is false where u says nothing:
+// the guest's claim makes no sense, or the disk is still taking its last
+// size, settled false. The
 // guest is not trusted; a lie grows its own disk, which its tenant pays
 // for, no further than its max. field is g's path, for errors.
 func wantedSize[G computeapi.DiskGrowSpec](g G, size uint64, have int64, settled bool, u driver.FSUsage, field string) (string, bool) {
-	if !settled || u.Size == 0 || u.Used > u.Size || have <= 0 || u.Size > uint64(have) {
+	if !settled || u.Size == 0 || u.Used > u.Size || u.FilesUsed > u.Files || have <= 0 || u.Size > uint64(have) {
 		return "", false
 	}
 	dg, ok, err := computeapi.ParseDiskGrow(g, size, field)
 	if err != nil || !ok {
 		return "", false
 	}
-	if !dg.Due(u.Used, u.Size) || size >= dg.Max {
+	due := dg.Due(u.Used, u.Size) || dg.Due(u.FilesUsed, u.Files)
+	if !due || size >= dg.Max {
 		return "", true
 	}
 	return quantity.FormatDisk(dg.Next(size)), true
