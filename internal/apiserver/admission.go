@@ -164,9 +164,10 @@ type kindHooks struct {
 	readableByAll bool
 	// readableBy, if set, reports whether p holds permission, the kind's
 	// get, list or watch, somewhere that lets it read obj besides obj's own
-	// target. It widens those reads alone (backend.mayRead); every other
-	// verb is decided at the target.
-	readableBy func(s *Server, p auth.Principal, permission string, obj proto.Message) bool
+	// target, by the grants as they stood at rev; ok is false when those
+	// are no longer known (authz.AllowedAt). It widens those reads alone
+	// (backend.mayRead); every other verb is decided at the target.
+	readableBy func(s *Server, p auth.Principal, permission string, obj proto.Message, rev int64) (allowed, ok bool)
 	// anyNodeReports lets every node agent write the status of any object
 	// of the kind, for what is the same on every node.
 	anyNodeReports bool

@@ -283,6 +283,11 @@ func New(cfg Config) *Server {
 		Reconciler: controller.ReconcilerFunc(s.reconcileBoots),
 		Watches:    []controller.Watch{{Kind: registry.Machine.Kind, Map: controller.Self}},
 	}
+	// Each event a watch sends is judged by the grants at its revision,
+	// which the view keeps for as many revisions as a watch can resume
+	// from. A watch that reaches an event before that history, past the
+	// window or from before a restart, ends as compacted.
+	s.authz.RetainHistory(cfg.EventRetention)
 	if cfg.Credentials != nil {
 		s.sessions = s.newSessions(cfg.Credentials)
 	}
