@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"net/netip"
 	"slices"
+	"strings"
 	"sync"
 
 	"connectrpc.com/connect"
@@ -38,11 +39,13 @@ const (
 	ReasonServing        = "Serving"
 	ReasonServicePending = "ServicePending"
 	// Reasons for a NetworkEndpoint's Ready, besides ReasonServicePending,
-	// ReasonNetworkNotReady and ReasonNoAddressLeft.
+	// ReasonNetworkNotReady and ReasonNoAddressLeft. ReasonOtherNode: the
+	// network has machines, none of them on the service's node.
 	ReasonConnected       = "Connected"
 	ReasonServiceNotFound = "ServiceNotFound"
 	ReasonNotAllowed      = "NotAllowed"
 	ReasonSameNetwork     = "SameNetwork"
+	ReasonOtherNode       = "OtherNode"
 )
 
 func decodeEndpointService(o store.Object) (*networkv1alpha1.EndpointService, bool) {
@@ -431,8 +434,49 @@ func (s *Server) endpointOf(ctx context.Context, ne *networkv1alpha1.NetworkEndp
 	if !conditions.IsTrue(svc.GetStatus().GetConditions(), EndpointReady) {
 		return ReasonServicePending, fmt.Sprintf("endpoint service %s leads nowhere yet", svc.GetMetadata().GetName()), nil
 	}
-	return ReasonConnected, fmt.Sprintf("%s:%d on network %s leads to endpoint service %s",
-		status.GetIpv4(), status.GetPort(), network, svc.GetMetadata().GetName()), nil
+	// The endpoint is carried on its service's node alone, and only into a
+	// network that node holds, which it does while one of the network's
+	// machines is placed there (docs/decisions/endpoint-services.md).
+	nodes, err := s.nodesOfNetwork(ctx, project, network)
+	if err != nil {
+		return "", "", err
+	}
+	svcNode := svc.GetStatus().GetNode()
+	if len(nodes) > 0 && !slices.Contains(nodes, svcNode) {
+		return ReasonOtherNode, fmt.Sprintf("network %s's machines are on %s, endpoint service %s is on %s; endpoints across nodes are not built",
+			network, strings.Join(nodes, ", "), svc.GetMetadata().GetName(), svcNode), nil
+	}
+	msg = fmt.Sprintf("%s:%d on network %s leads to endpoint service %s",
+		status.GetIpv4(), status.GetPort(), network, svc.GetMetadata().GetName())
+	if others := slices.DeleteFunc(nodes, func(n string) bool { return n == svcNode }); len(others) > 0 {
+		msg += fmt.Sprintf(" from its machines on %s; those on %s do not reach it", svcNode, strings.Join(others, ", "))
+	}
+	return ReasonConnected, msg, nil
+}
+
+// nodesOfNetwork are the nodes, sorted, a project's network has a machine
+// placed on, which are the nodes that hold the network.
+func (s *Server) nodesOfNetwork(ctx context.Context, project, network string) ([]string, error) {
+	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Machine.Kind, Project: project})
+	if err != nil {
+		return nil, err
+	}
+	var nodes []string
+	for _, o := range objs {
+		m, ok := decodeMachine(o)
+		if !ok {
+			return nil, fmt.Errorf("decode machine %s/%s", o.Project, o.Name)
+		}
+		node := m.GetSpec().GetNode()
+		if node == "" || slices.Contains(nodes, node) {
+			continue
+		}
+		if slices.ContainsFunc(m.GetSpec().GetInterfaces(), func(nic *computev1alpha1.MachineInterface) bool { return nic.GetNetwork() == network }) {
+			nodes = append(nodes, node)
+		}
+	}
+	slices.Sort(nodes)
+	return nodes, nil
 }
 
 // selects says whether a service's network selector matches a network's

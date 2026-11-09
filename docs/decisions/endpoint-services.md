@@ -102,7 +102,9 @@ ranges may overlap (GitHub issue #219).
   being deleted once it no longer carries it; until then the apiserver
   keeps it, its transit port and its address. With one node, as now, the
   endpoint's network and the service's are on the same host; endpoints
-  across nodes are not built.
+  across nodes are not built. A network endpoint whose network has
+  machines, none of them on its service's node, is not `Ready` (reason
+  `OtherNode`), as nothing carries it.
 - Plans limit network endpoints (`limits.network_endpoints`, 20 by
   default), each holding an address and a rule set on the host; services
   hold nothing of their own on the host and are not counted.
