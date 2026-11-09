@@ -292,6 +292,10 @@ func (g *launcherGuest) RootUsage(context.Context, string) (driver.FSUsage, erro
 	return driver.FSUsage{}, errors.New("the launcher never asks a guest's root")
 }
 
+func (g *launcherGuest) MemoryUsage(context.Context, string) (driver.GuestMemory, error) {
+	return driver.GuestMemory{}, errors.New("the launcher never asks a guest's memory")
+}
+
 func (g *launcherGuest) GrowRoot(context.Context, string) error {
 	return errors.New("the launcher never grows a guest's root")
 }

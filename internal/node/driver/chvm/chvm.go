@@ -125,6 +125,9 @@ type Config struct {
 	disownTPM func(path string) error
 	// procSys, if set, replaces /proc/sys, where nr_open is.
 	procSys string
+	// cgroupRoot, if set, replaces /sys/fs/cgroup, where the VMs' units'
+	// cgroups are.
+	cgroupRoot string
 }
 
 // Hypervisor is the driver. It is safe for concurrent use.
@@ -178,6 +181,9 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	}
 	if cfg.etc == "" {
 		cfg.etc = "/etc"
+	}
+	if cfg.cgroupRoot == "" {
+		cfg.cgroupRoot = "/sys/fs/cgroup"
 	}
 	if err := cfg.VMUsers.checkFree(cfg.etc); err != nil {
 		return nil, err
@@ -360,7 +366,10 @@ func (h *Hypervisor) vm(uid string, unit *unitState) (driver.VM, bool, error) {
 	if err != nil {
 		return driver.VM{}, false, err
 	}
-	vm := driver.VM{MachineUID: uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces, RootSize: ln.Spec.Root.Size}
+	vm := driver.VM{
+		MachineUID: uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces, RootSize: ln.Spec.Root.Size,
+		VCPUs: ln.Spec.VCPUs, Firmware: ln.Spec.Firmware, FileShareServer: ln.Spec.FileShareServer != nil,
+	}
 	for _, v := range ln.Spec.Disks {
 		vm.DiskSizes = append(vm.DiskSizes, v.Size)
 	}

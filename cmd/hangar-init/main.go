@@ -224,6 +224,7 @@ func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.St
 			}
 			return size, err
 		},
+		StatMemory: func() (agent.Memory, error) { return agent.ReadMeminfo("/proc/meminfo") },
 		StatVolume: func(device string) (agent.Usage, error) {
 			u, err := mounted.Stat(device)
 			return agent.Usage(u), asAgentVolumeError(err)

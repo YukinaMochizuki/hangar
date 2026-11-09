@@ -145,6 +145,23 @@ func TestUsageSaysBytesAndInodes(t *testing.T) {
 	}
 }
 
+// TestMemoryUsageReachesTheNode: what the guest's agent says of its
+// memory reaches the node whole; a guest that cannot say it is one that
+// cannot, as RootUsage's.
+func TestMemoryUsageReachesTheNode(t *testing.T) {
+	mem := agent.Memory{Total: 1 << 30, Available: 3 << 28}
+	g := guestOn(serveCH(t, agent.Port, &agent.Server{
+		StatMemory: func() (agent.Memory, error) { return mem, nil },
+	}, func() {}))
+	if m, err := g.MemoryUsage(t.Context(), "m1"); err != nil || m != driver.GuestMemory(mem) {
+		t.Errorf("MemoryUsage: %+v %v, want %+v", m, err, mem)
+	}
+	old := guestOn(serveCH(t, agent.Port, &agent.Server{}, func() {}))
+	if _, err := old.MemoryUsage(t.Context(), "m1"); !errors.Is(err, driver.ErrGuestCannot) {
+		t.Errorf("a guest without StatMemory: %v, want ErrGuestCannot", err)
+	}
+}
+
 // TestASignalIsNotHeldUpByStdin: Ctrl-C reaches a process that is not
 // reading what was pasted into it.
 func TestASignalIsNotHeldUpByStdin(t *testing.T) {

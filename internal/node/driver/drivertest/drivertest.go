@@ -186,6 +186,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("restart policies", restarts, vms)
 	part("root growth", rootGrowth, vms)
 	part("volume growth", volumeGrowth, vms)
+	part("usage", usage, vms)
 	part("logs", logs, vms)
 	part("exec", exec, func(h Host) bool { return vms(h) && h.Exec != nil })
 	part("firmware", firmware, func(h Host) bool { return vms(h) && h.Firmware })
