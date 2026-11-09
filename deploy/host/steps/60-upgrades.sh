@@ -12,10 +12,19 @@ UPGRADES_TZ=${HANGAR_UPGRADES_TZ:-UTC}
 # Each entry is TIMER:TIME: the lists are fetched first, then upgrades run.
 UPGRADES_TIMERS="apt-daily:03:30 apt-daily-upgrade:04:00"
 
+# Ubuntu's default origins (Allowed-Origins) take security updates only and
+# stay. Debian's (Origins-Pattern) also take the stable release's point
+# updates, so the pattern list is cleared and given its security archives
+# alone; on Ubuntu, whose pattern list is empty, they match nothing.
 upgrades_conf() {
 	cat <<'EOF'
-// Written by deploy/host/steps/60-upgrades.sh. The origins stay Ubuntu's
-// defaults, which take security updates only.
+// Written by deploy/host/steps/60-upgrades.sh. Security updates only: on
+// Ubuntu its default Allowed-Origins, on Debian these patterns.
+#clear Unattended-Upgrade::Origins-Pattern;
+Unattended-Upgrade::Origins-Pattern {
+	"origin=Debian,codename=${distro_codename},label=Debian-Security";
+	"origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+};
 Unattended-Upgrade::Automatic-Reboot "false";
 Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
 EOF
@@ -81,14 +90,19 @@ upgrades_timers_ok() {
 	done
 }
 
-# upgrades_apt_ok checks what apt itself makes of the configuration.
+# upgrades_apt_ok checks what apt itself makes of the configuration: a
+# security origin (Ubuntu's -security pocket, or Debian's security label),
+# no updates, proposed or backports pocket, and no pattern but Debian's
+# security ones.
 upgrades_apt_ok() {
-	local dump
+	local dump origins
 	dump=$(apt-config dump)
+	origins=$(grep -E '^Unattended-Upgrade::(Allowed-Origins|Origins-Pattern):: ' <<<"$dump" || true)
 	grep -qx 'APT::Periodic::Unattended-Upgrade "1";' <<<"$dump" &&
 		grep -qx 'Unattended-Upgrade::Automatic-Reboot "false";' <<<"$dump" &&
-		grep -q '^Unattended-Upgrade::Allowed-Origins:: ".*-security";' <<<"$dump" &&
-		! grep -qE '^Unattended-Upgrade::(Allowed-Origins|Origins-Pattern):: ".*-(updates|proposed|backports)' <<<"$dump"
+		grep -qE '^Unattended-Upgrade::(Allowed-Origins:: ".*-security"|Origins-Pattern:: ".*label=Debian-Security");' <<<"$origins" &&
+		! grep -qE -- '-(updates|proposed|backports)' <<<"$origins" &&
+		! grep '^Unattended-Upgrade::Origins-Pattern:: ' <<<"$origins" | grep -qv 'label=Debian-Security";$'
 }
 
 upgrades_apply() {
