@@ -332,6 +332,52 @@ func TestTheSelectorDecides(t *testing.T) {
 	waitNetEndpoint(t, s, system, "git", "not allowed once the label is gone", endpointIs(ReasonNotAllowed))
 }
 
+// sizedOn is container name of memMiB of memory with one interface, on
+// network.
+func sizedOn(name, network string, memMiB int64) *computev1alpha1.Container {
+	c := sized(name, memMiB)
+	c.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: network}}
+	return c
+}
+
+// TestAnEndpointToAnotherNodeIsNotConnected: an endpoint whose network's
+// machines are all on another node than its service's carries nothing, as
+// endpoints across nodes are not built, and says so; it connects once one
+// of them is on the service's node, and names the nodes it still misses.
+func TestAnEndpointToAnotherNodeIsNotConnected(t *testing.T) {
+	t.Parallel()
+	s, system, user := controlled(t, "n1", "n2")
+	nodeWithRoom(t, s, system, "n1", 1024)
+	nodeWithRoom(t, s, system, "n2", 1024)
+	applyNet(t, s, user, network("svc", "10.1.0.0/24"))
+	applyNet(t, s, user, network("ws", "10.2.0.0/24"))
+	// Each node has room for one machine, so the two are on different ones.
+	applyCtr(t, s, user, sizedOn("git", "svc", 1024))
+	here := waitMachine(t, s, system, "ct-git", "placed", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() != "" }).GetSpec().GetNode()
+	applyCtr(t, s, user, sizedOn("a", "ws", 1024))
+	there := waitMachine(t, s, system, "ct-a", "placed", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() != "" }).GetSpec().GetNode()
+	if here == there {
+		t.Fatalf("both machines are on %s", here)
+	}
+	applyService(t, s, user, service("git", "git", tcp, 22, ""))
+	applyEndpoint(t, s, user, netEndpoint("git", "ws", "git"))
+	ne := waitNetEndpoint(t, s, system, "git", "on another node", endpointIs(ReasonOtherNode))
+	ready := conditions.Find(ne.GetStatus().GetConditions(), EndpointReady)
+	if ready.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_FALSE ||
+		!strings.Contains(ready.GetMessage(), there) || !strings.Contains(ready.GetMessage(), here) {
+		t.Errorf("on another node, Ready is %v", ready)
+	}
+
+	// A machine of the network on the service's node connects it.
+	nodeWithRoom(t, s, system, here, 2048)
+	applyCtr(t, s, user, sizedOn("b", "ws", 1024))
+	waitMachine(t, s, system, "ct-b", "placed beside the service", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() == here })
+	ne = waitNetEndpoint(t, s, system, "git", "connected", endpointIs(ReasonConnected))
+	if msg := conditions.Find(ne.GetStatus().GetConditions(), EndpointReady).GetMessage(); !strings.Contains(msg, "those on "+there+" do not reach it") {
+		t.Errorf("connected across two nodes, Ready says %q", msg)
+	}
+}
+
 // TestAMachineKeepsItsName: an endpoint named as a machine of its network
 // has no hostname; the machine keeps the name.
 func TestAMachineKeepsItsName(t *testing.T) {
