@@ -2,14 +2,16 @@
 
 // useTerminal's lifecycle: one exec at a time, ended by leaving, by closing,
 // by connecting again and by the page going into the back/forward cache;
-// nothing drawn where WebGL is missing; mouse bytes sent as stdin. xterm and
-// the browser's WebSocket are stand-ins that record what is done to them.
+// handed, still going, from a view leaving to the next view of the same
+// target; nothing drawn where WebGL is missing; mouse bytes sent as stdin.
+// xterm and the browser's WebSocket are stand-ins that record what is done
+// to them.
 
 import { fromBinary } from "@bufbuild/protobuf";
 import { MachineExecRequestSchema } from "@hangar/api/hangar/compute/v1alpha1/machine_capability_pb";
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, render, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useTerminal } from "@/components/terminal";
+import { useTerminal, type TerminalTarget } from "@/components/terminal";
 
 // Hoisted with vi.mock, so the terminal's dynamic import gets these whenever it runs.
 const { terms, FakeTerm } = vi.hoisted(() => {
@@ -20,13 +22,16 @@ const { terms, FakeTerm } = vi.hoisted(() => {
     options: Record<string, unknown> = {};
     disposed = false;
     opened = false;
+    /** The element xterm opened in. */
+    parent?: HTMLElement;
     binary?: (d: string) => void;
     constructor() {
       terms.push(this);
     }
     loadAddon() {}
-    open() {
+    open(parent: HTMLElement) {
       this.opened = true;
+      this.parent = parent;
     }
     write() {}
     focus() {}
@@ -127,9 +132,54 @@ describe("useTerminal", () => {
   it("ends the exec and lets the terminal go when the page leaves", async () => {
     const hook = mounted();
     const s = await connected(hook);
-    hook.unmount();
+    await act(async () => hook.unmount());
     expect(s.closed).toBe(1000);
     expect(terms[0]!.disposed).toBe(true);
+  });
+
+  it("hands the terminal, its exec still going, to the next view of the target, which shows xterm's element", async () => {
+    // As a route change does: one view unmounts and the next mounts in the same render.
+    function View({ t }: { t: TerminalTarget }) {
+      const { attach, state, connect } = useTerminal(t);
+      return (
+        <>
+          <button onClick={() => void connect()}>connect</button>
+          <span data-testid="state">{state.kind}</span>
+          <div data-testid="term" ref={attach} />
+        </>
+      );
+    }
+    const views = (which: "card" | "page") => <View key={which} t={target} />;
+    const r = render(views("card"));
+    await act(async () => r.getByText("connect").click());
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    const s = sockets[0]!;
+    act(() => s.accept());
+    const host = terms[0]!.parent!;
+    expect(r.getByTestId("term").contains(host)).toBe(true);
+
+    await act(async () => r.rerender(views("page")));
+    expect(sockets).toHaveLength(1);
+    expect(s.closed).toBeUndefined();
+    expect(terms).toHaveLength(1);
+    expect(terms[0]!.disposed).toBe(false);
+    expect(r.getByTestId("term").contains(host)).toBe(true);
+    expect(r.getByTestId("state").textContent).toBe("open");
+
+    // The last view leaving ends it.
+    await act(async () => r.unmount());
+    expect(s.closed).toBe(1000);
+    expect(terms[0]!.disposed).toBe(true);
+  });
+
+  it("hands nothing to a view of another target", async () => {
+    const hook = mounted();
+    const s = await connected(hook);
+    await act(async () => {
+      hook.unmount();
+      renderHook(() => useTerminal({ ...target, name: "api" }));
+    });
+    expect(s.closed).toBe(1000);
   });
 
   it("ends the previous exec when it connects again", async () => {

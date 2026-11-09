@@ -1,8 +1,11 @@
 // A machine's terminal: a page of its own, and a card on the machine's page
 // that stays folded to its header until Connect. Nothing connects on its own
-// but the page, which is opened to connect. A container's is `hangar exec -it`
-// in the browser; a VM's is a login over SSH that the apiserver makes, behind
-// the same exec WebSocket (docs/decisions/vm-ssh.md). Both draw through
+// but the page, which is opened to connect, unless the card hands it a
+// terminal already connected: the machine's page and its terminal page each
+// hold the machine's one terminal from their first render, so it outlives
+// the move between them. A container's is `hangar exec -it` in the browser;
+// a VM's is a login over SSH that the apiserver makes, behind the same exec
+// WebSocket (docs/decisions/vm-ssh.md). Both draw through
 // web/src/components/terminal.tsx.
 
 import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
@@ -52,9 +55,9 @@ const kinds: Record<
 };
 
 /** Which kinds of machine the caller may open a terminal on in the project, asked in one call; none while unknown or failed. */
-export function useMayTerminal(project: string): Record<MachineKind, boolean> {
-  const { can } = useCan({ level: "project", name: project }, [execPermission, sshPermission]);
-  return { Container: can(execPermission), VirtualMachine: can(sshPermission) };
+export function useMayTerminal(project: string): Record<MachineKind, boolean> & { settled: boolean } {
+  const { can, settled } = useCan({ level: "project", name: project }, [execPermission, sshPermission]);
+  return { Container: can(execPermission), VirtualMachine: can(sshPermission), settled };
 }
 
 /** Why a machine's terminal cannot connect now, or undefined when it can. */
@@ -63,6 +66,26 @@ export function terminalBlock(m: MachineView): string | undefined {
   if (m.phase !== MachinePhase.RUNNING) return `${m.name} is not running.`;
   return undefined;
 }
+
+/**
+ * The machine's terminal in this tab, which its page and its card both show.
+ * unshown says the page has settled on showing no terminal, which ends one
+ * it was handed: the page holds it whatever it draws.
+ */
+export function useMachineTerminal(project: string, kind: MachineKind, name: string, unshown: boolean) {
+  const k = kinds[kind];
+  const terminal = useTerminal({ project, plural: k.plural, name, command: k.command });
+  const { close } = terminal;
+  useEffect(() => {
+    if (unshown) close();
+  }, [unshown, close]);
+  return terminal;
+}
+
+export type MachineTerminal = ReturnType<typeof useMachineTerminal>;
+
+/** Whether a terminal has a session going, which a view showing it adopts rather than starting another. */
+const going = (s: TerminalState) => s.kind === "open" || s.kind === "connecting";
 
 const terminalPath = (k: MachineKind) => (k === "Container" ? "/projects/$project/containers/$name/terminal" : "/projects/$project/vms/$name/terminal");
 
@@ -153,14 +176,18 @@ function Actions({ state, onConnect, onDisconnect, extra }: { state: TerminalSta
   );
 }
 
-/** A Terminal card on a machine's page: its header alone until Connect, then the terminal under it. */
-export function TerminalCard({ m }: { m: MachineView }) {
+/**
+ * A Terminal card on a machine's page: its header alone until Connect, then
+ * the terminal under it, or at once when the terminal comes back from its
+ * page still drawn.
+ */
+export function TerminalCard({ m, terminal }: { m: MachineView; terminal: MachineTerminal }) {
   const k = kinds[m.kind];
-  const { attach, state, connect, disconnect, close: end } = useTerminal({ project: m.project, plural: k.plural, name: m.name, command: k.command });
-  const [shown, setShown] = useState(false);
+  const { attach, state, connect, disconnect, close: end } = terminal;
+  const [shown, setShown] = useState(() => state.kind !== "idle");
   const block = terminalBlock(m);
   useEffect(() => {
-    if (shown) void connect();
+    if (shown && state.kind === "idle") void connect();
     // Connect once the terminal's element is drawn and sized.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown]);
@@ -214,13 +241,13 @@ export function TerminalCard({ m }: { m: MachineView }) {
   );
 }
 
-function TerminalBody({ m }: { m: MachineView }) {
+function TerminalBody({ m, terminal }: { m: MachineView; terminal: MachineTerminal }) {
   const k = kinds[m.kind];
-  const { attach, state, connect, disconnect } = useTerminal({ project: m.project, plural: k.plural, name: m.name, command: k.command });
+  const { attach, state, connect, disconnect } = terminal;
   const block = terminalBlock(m);
   useEffect(() => {
-    if (!block) void connect();
-    // The page connects once, on opening; Reconnect starts again.
+    if (!block && !going(state)) void connect();
+    // The page connects once, on opening, unless the card handed it one going; Reconnect starts again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const cli = k.cli(m);
@@ -258,8 +285,9 @@ export function TerminalPage({ kind, name }: { kind: MachineKind; name: string }
   const k = kinds[kind];
   const { held, loading, error, refetch } = useMachines(project, kind);
   const perm = useCan({ level: "project", name: project }, [k.permission]);
-  // Asking again failing keeps the terminal on the last answer: unmounting it would end the process.
+  // Asking again failing keeps the page, and the terminal drawn on it, on the last answer.
   const m = held.find((x) => x.name === name);
+  const terminal = useMachineTerminal(project, kind, name, !loading && (!m || (perm.settled && !perm.can(k.permission))));
   const crumbs = [
     k.list,
     <Link key="name" to={machinePath(kind)} params={{ project, name }} className="flex items-center gap-2 hover:text-foreground">
@@ -283,7 +311,7 @@ export function TerminalPage({ kind, name }: { kind: MachineKind; name: string }
           This project has no {k.noun} named <span className="font-mono">{name}</span>.
         </EmptyState>
       ) : perm.can(k.permission) ? (
-        <TerminalBody key={m.uid} m={m} />
+        <TerminalBody key={m.uid} m={m} terminal={terminal} />
       ) : perm.known ? (
         <EmptyState title="No terminal">
           This account's roles do not include opening a terminal in this project's {k.noun}s.

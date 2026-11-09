@@ -5,13 +5,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TerminalState } from "@/components/terminal";
 import type { MachineView } from "@/lib/machines";
-import { execPermission, sshPermission, TerminalCard, TerminalPage } from "@/pages/machine-terminal";
+import { execPermission, sshPermission, TerminalCard, TerminalPage, useMachineTerminal } from "@/pages/machine-terminal";
 import { never, withApi } from "@/test/harness";
 import { paletteApi } from "@/test/palette-api";
 
 // xterm draws on a canvas jsdom does not have; the tests check what the
 // pages decide, so the terminal is a stand-in that records its connects.
-const terminal = { connects: 0, state: { kind: "idle" } as TerminalState, target: undefined as unknown };
+const terminal = { connects: 0, closes: 0, state: { kind: "idle" } as TerminalState, target: undefined as unknown };
 vi.mock("@/components/terminal", () => ({
   useTerminal: (target: unknown) => ({
     attach: () => {},
@@ -22,6 +22,9 @@ vi.mock("@/components/terminal", () => ({
       terminal.target = target;
     },
     disconnect: () => {},
+    close: () => {
+      terminal.closes++;
+    },
   }),
 }));
 
@@ -32,6 +35,7 @@ vi.mock("@tanstack/react-router", async (orig) => ({
 
 beforeEach(() => {
   terminal.connects = 0;
+  terminal.closes = 0;
   terminal.state = { kind: "idle" };
   terminal.target = undefined;
 });
@@ -40,9 +44,14 @@ afterEach(cleanup);
 const machine = (over: Partial<MachineView> = {}) =>
   ({ kind: "Container", name: "web", project: "demo", phase: MachinePhase.RUNNING, deleting: false, uid: "u1", ...over }) as MachineView;
 
+/** The card as the machine's page shows it, on the machine's terminal. */
+function Card({ m }: { m: MachineView }) {
+  return <TerminalCard m={m} terminal={useMachineTerminal(m.project, m.kind, m.name, false)} />;
+}
+
 describe("the Terminal card", () => {
   it("is its header alone until Connect, and connects only then", () => {
-    render(<TerminalCard m={machine()} />, { wrapper: withApi(paletteApi()) });
+    render(<Card m={machine()} />, { wrapper: withApi(paletteApi()) });
     expect(screen.getByText("Terminal")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Disconnect/ })).toBeNull();
     expect(terminal.connects).toBe(0);
@@ -52,14 +61,22 @@ describe("the Terminal card", () => {
   });
 
   it("says why it cannot connect to a container that is not running, with Connect off", () => {
-    render(<TerminalCard m={machine({ phase: MachinePhase.STOPPED })} />, { wrapper: withApi(paletteApi()) });
+    render(<Card m={machine({ phase: MachinePhase.STOPPED })} />, { wrapper: withApi(paletteApi()) });
     expect(screen.getByText("web is not running.")).toBeTruthy();
     expect((screen.getByRole("button", { name: /Connect/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("says a container being deleted takes no terminal", () => {
-    render(<TerminalCard m={machine({ deleting: true })} />, { wrapper: withApi(paletteApi()) });
+    render(<Card m={machine({ deleting: true })} />, { wrapper: withApi(paletteApi()) });
     expect(screen.getByText("web is being deleted.")).toBeTruthy();
+  });
+
+  it("shows a terminal that comes back from its page still going, and connects no other", () => {
+    terminal.state = { kind: "open", cols: 80, rows: 24 };
+    render(<Card m={machine()} />, { wrapper: withApi(paletteApi()) });
+    expect(screen.getByRole("button", { name: /Disconnect/ })).toBeTruthy();
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(terminal.connects).toBe(0);
   });
 });
 
@@ -68,6 +85,19 @@ describe("the terminal page", () => {
     render(<TerminalPage kind="Container" name="web" />, { wrapper: withApi(paletteApi()) });
     await waitFor(() => expect(terminal.connects).toBe(1));
     expect(screen.getByText(/hangar exec -it container web -p demo -- sh/)).toBeTruthy();
+  });
+
+  it("takes the terminal the card hands it still going, and connects no other", async () => {
+    terminal.state = { kind: "open", cols: 80, rows: 24 };
+    render(<TerminalPage kind="Container" name="web" />, { wrapper: withApi(paletteApi()) });
+    await screen.findByText("Connected");
+    expect(terminal.connects).toBe(0);
+  });
+
+  it("connects again over a terminal the card hands it ended", async () => {
+    terminal.state = { kind: "ended", end: { kind: "closed" } };
+    render(<TerminalPage kind="Container" name="web" />, { wrapper: withApi(paletteApi()) });
+    await waitFor(() => expect(terminal.connects).toBe(1));
   });
 
   it("does not connect to a stopped container, and says it is not running", async () => {
@@ -81,6 +111,21 @@ describe("the terminal page", () => {
     render(<TerminalPage kind="Container" name="web" />, { wrapper: withApi(paletteApi({ perms: () => [] })) });
     await screen.findByText(/do not include opening a terminal/);
     expect(terminal.connects).toBe(0);
+  });
+
+  it("ends a terminal it was handed once it settles on showing none", async () => {
+    terminal.state = { kind: "open", cols: 80, rows: 24 };
+    render(<TerminalPage kind="Container" name="web" />, { wrapper: withApi(paletteApi({ perms: () => [] })) });
+    await screen.findByText(/do not include opening a terminal/);
+    expect(terminal.closes).toBe(1);
+  });
+
+  it("keeps a terminal it was handed while the permission is not known", async () => {
+    terminal.state = { kind: "open", cols: 80, rows: 24 };
+    const api = paletteApi({ perms: () => never() });
+    render(<TerminalPage kind="Container" name="web" />, { wrapper: withApi(api) });
+    await waitFor(() => expect(api.calls).toContain("ListMachines"));
+    expect(terminal.closes).toBe(0);
   });
 
   it("shows nothing and connects nowhere while the permission is not known", async () => {
@@ -130,7 +175,7 @@ describe("a virtual machine's terminal", () => {
   });
 
   it("links the card's Full page to the VM's terminal page", () => {
-    render(<TerminalCard m={machine({ kind: "VirtualMachine", name: "postgres" })} />, { wrapper: withApi(paletteApi()) });
+    render(<Card m={machine({ kind: "VirtualMachine", name: "postgres" })} />, { wrapper: withApi(paletteApi()) });
     fireEvent.click(screen.getByRole("button", { name: /Connect/ }));
     expect(screen.getByRole("link", { name: /Full page/ }).getAttribute("href")).toBe("/projects/demo/vms/postgres/terminal");
   });

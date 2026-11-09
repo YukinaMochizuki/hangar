@@ -10,7 +10,7 @@
 // scrollbar (xtermjs/xterm.js#4445), whose rules styles.css holds instead.
 
 import type { ITheme, Terminal as XTerm } from "@xterm/xterm";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { openExec, type ExecEnd } from "@/lib/exec";
 
 /** Where a terminal's exec stands. */
@@ -106,7 +106,11 @@ export type Opener = (term: XTerm, events: SessionEvents) => Session;
  */
 export type Sizing = "fit" | "session";
 
-/** useTerminal runs a terminal on an exec of the target's: see useXterm. */
+/**
+ * useTerminal runs a terminal on an exec of the target's: see useXterm. It
+ * is the target's one terminal in this tab, so a view that unmounts hands
+ * it to the next one using it.
+ */
 export function useTerminal(target: TerminalTarget) {
   const { project, plural, name } = target;
   const command = target.command.join("\u0000");
@@ -119,43 +123,94 @@ export function useTerminal(target: TerminalTarget) {
       ),
     [project, plural, name, command],
   );
-  return useXterm(open, "fit");
+  return useXterm(open, "fit", [project, plural, name, command].join("\u0001"));
 }
 
-/**
- * useXterm runs a terminal in the element given to attach, on the session
- * open starts. Nothing connects until connect is called; connect again
- * starts a new session, and leaving the page ends it. fits gives the size
- * that fills an element at the terminal's cell size, once it is drawn.
- */
-export function useXterm(open: Opener, sizing: Sizing) {
-  const element = useRef<HTMLDivElement | null>(null);
-  const attach = useCallback((el: HTMLDivElement | null) => {
-    element.current = el;
-  }, []);
-  const [state, setState] = useState<TerminalState>({ kind: "idle" });
-  const live = useRef<{ term: XTerm; session?: Session; observer?: ResizeObserver } | null>(null);
-  // Counts connects and teardowns, so a connect overtaken while it waited (for the font, or for xterm to load) does nothing.
-  const generation = useRef(0);
+type Live = { term: XTerm; host: HTMLDivElement; session?: Session; observer?: ResizeObserver; fit?: () => void };
 
-  const teardown = useCallback(() => {
-    generation.current++;
-    const l = live.current;
-    live.current = null;
+/**
+ * A terminal and its session, apart from the views showing it: the element
+ * xterm opened in is moved into whichever view shows it, as xterm cannot
+ * open twice. What uses it holds it, and once nothing does after a flush
+ * of effects, its session ends; a page that holds it but settles on showing
+ * none closes it itself.
+ */
+class Held {
+  private state: TerminalState = { kind: "idle" };
+  private live: Live | null = null;
+  /** The element of the view showing the terminal. */
+  private element: HTMLDivElement | null = null;
+  // Counts connects and teardowns, so a connect overtaken while it waited (for the font, or for xterm to load) does nothing.
+  private generation = 0;
+  private holders = 0;
+  private listeners = new Set<() => void>();
+
+  /** key is what views share it by, or undefined for a terminal of one view alone. */
+  constructor(private readonly key?: string) {}
+
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => void this.listeners.delete(listener);
+  };
+
+  getState = () => this.state;
+
+  private setState(next: TerminalState | ((s: TerminalState) => TerminalState)) {
+    const s = typeof next === "function" ? next(this.state) : next;
+    if (s === this.state) return;
+    this.state = s;
+    for (const l of this.listeners) l();
+  }
+
+  hold() {
+    this.holders++;
+    if (this.key !== undefined && !shared.has(this.key)) shared.set(this.key, this);
+  }
+
+  // A view handing the terminal to the next releases it before the next holds
+  // it, in the same flush of effects, so the end waits for that flush.
+  release() {
+    this.holders--;
+    queueMicrotask(() => {
+      if (this.holders > 0) return;
+      this.close();
+      if (this.key !== undefined && shared.get(this.key) === this) shared.delete(this.key);
+    });
+  }
+
+  show(el: HTMLDivElement) {
+    this.element = el;
+    const l = this.live;
+    if (l && l.host.parentElement !== el) {
+      el.appendChild(l.host);
+      l.fit?.();
+      l.term.focus();
+    }
+  }
+
+  hide(el: HTMLDivElement) {
+    if (this.element === el) this.element = null;
+  }
+
+  private teardown() {
+    this.generation++;
+    const l = this.live;
+    this.live = null;
     if (!l) return;
     l.observer?.disconnect();
     l.session?.close();
     l.term.dispose();
-  }, []);
+    l.host.remove();
+  }
 
-  const connect = useCallback(async () => {
-    teardown();
-    const g = generation.current;
+  connect = async (open: Opener, sizing: Sizing) => {
+    this.teardown();
+    const g = this.generation;
     if (!webglAvailable()) {
-      setState({ kind: "unsupported" });
+      this.setState({ kind: "unsupported" });
       return;
     }
-    setState({ kind: "connecting" });
+    this.setState({ kind: "connecting" });
     let x: typeof import("@/components/xterm");
     try {
       [x] = await Promise.all([
@@ -165,18 +220,18 @@ export function useXterm(open: Opener, sizing: Sizing) {
       ]);
     } catch {
       // The terminal's own code did not load, as when a release replaced it.
-      if (g === generation.current) setState({ kind: "ended", end: { kind: "unreachable" } });
+      if (g === this.generation) this.setState({ kind: "ended", end: { kind: "unreachable" } });
       return;
     }
-    const el = element.current;
-    if (g !== generation.current) return;
+    const el = this.element;
+    if (g !== this.generation) return;
     if (!el) {
-      setState({ kind: "idle" });
+      this.setState({ kind: "idle" });
       return;
     }
     const term = new x.Terminal({ fontFamily, fontSize: 13, lineHeight: 1.15, cursorBlink: true, theme, scrollback: 5000 });
-    const fit = new x.FitAddon();
-    term.loadAddon(fit);
+    const fitAddon = new x.FitAddon();
+    term.loadAddon(fitAddon);
     // A context the GPU took back is asked for again; when none comes, the exec ends rather than draw with the DOM renderer.
     const draw = () => {
       const webgl = new x.WebglAddon();
@@ -185,32 +240,39 @@ export function useXterm(open: Opener, sizing: Sizing) {
         try {
           draw();
         } catch {
-          teardown();
-          setState({ kind: "unsupported" });
+          this.teardown();
+          this.setState({ kind: "unsupported" });
         }
       });
       term.loadAddon(webgl);
     };
     draw();
-    term.open(el);
-    const l: { term: XTerm; session?: Session; observer?: ResizeObserver } = { term };
+    const host = document.createElement("div");
+    host.className = "h-full w-full";
+    el.appendChild(host);
+    term.open(host);
+    const l: Live = { term, host };
     if (sizing === "fit") {
-      fit.fit();
-      l.observer = new ResizeObserver(() => fit.fit());
-      l.observer.observe(el);
+      // Between views the element is in none, and has no size to fit.
+      l.fit = () => {
+        if (host.isConnected) fitAddon.fit();
+      };
+      l.fit();
+      l.observer = new ResizeObserver(l.fit);
+      l.observer.observe(host);
     }
-    live.current = l;
+    this.live = l;
     const session = open(term, {
       onOpen: () => {
-        setState({ kind: "open", cols: term.cols, rows: term.rows });
+        this.setState({ kind: "open", cols: term.cols, rows: term.rows });
         term.focus();
       },
       onOutput: (d) => term.write(d),
       onEnd: (end) => {
-        if (live.current !== l) return;
+        if (this.live !== l) return;
         term.write(`\r\n\x1b[2m${endLine(end)}\x1b[0m\r\n`);
         term.options.cursorBlink = false;
-        setState({ kind: "ended", end });
+        this.setState({ kind: "ended", end });
       },
     });
     l.session = session;
@@ -220,18 +282,19 @@ export function useXterm(open: Opener, sizing: Sizing) {
     term.onResize(({ cols, rows }) => {
       // A session that sizes the terminal is not told the size it gave.
       if (sizing === "fit") session.resize(cols, rows);
-      setState((s) => (s.kind === "open" ? { kind: "open", cols, rows } : s));
+      this.setState((s) => (s.kind === "open" ? { kind: "open", cols, rows } : s));
     });
-  }, [open, sizing, teardown]);
+  };
 
-  const disconnect = useCallback(() => live.current?.session?.close(), []);
+  disconnect = () => this.live?.session?.close();
 
-  /**
-   * fits is the size that fills area at the terminal's cell size, less inset
-   * pixels each way for what frames it, or undefined before it is drawn.
-   */
-  const fits = useCallback((area: HTMLElement, inset = 0): { cols: number; rows: number } | undefined => {
-    const l = live.current;
+  close = () => {
+    this.teardown();
+    this.setState({ kind: "idle" });
+  };
+
+  fits = (area: HTMLElement, inset = 0): { cols: number; rows: number } | undefined => {
+    const l = this.live;
     const screen = l?.term.element?.querySelector(".xterm-screen");
     if (!l || !screen) return undefined;
     const r = screen.getBoundingClientRect();
@@ -243,25 +306,63 @@ export function useXterm(open: Opener, sizing: Sizing) {
     const width = area.clientWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight) - inset;
     const height = area.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom) - inset;
     return { cols: Math.max(1, Math.floor(width / cellW)), rows: Math.max(1, Math.floor(height / cellH)) };
-  }, []);
+  };
 
-  /** resize asks the live session for a size, as a console's holder of the input does for everyone's screen. */
-  const resize = useCallback((cols: number, rows: number) => live.current?.session?.resize(cols, rows), []);
+  resize = (cols: number, rows: number) => this.live?.session?.resize(cols, rows);
+}
 
-  /** close ends the exec and lets the terminal go, as a card folded away does. */
-  const close = useCallback(() => {
-    teardown();
-    setState({ kind: "idle" });
-  }, [teardown]);
+/** The terminals of this tab that are shared by key, as useTerminal's are by target. */
+const shared = new Map<string, Held>();
 
-  useEffect(() => teardown, [teardown]);
+// A render may be thrown away, so only hold puts a terminal in shared.
+function heldFor(key: string | undefined): Held {
+  return (key !== undefined && shared.get(key)) || new Held(key);
+}
+
+/**
+ * useXterm runs a terminal in the element given to attach, on the session
+ * open starts. Nothing connects until connect is called; connect again
+ * starts a new session, and leaving the page ends it. With a key, the
+ * terminal is the one every view using that key shows: a view leaving hands
+ * it to the next, and it ends only when the last one leaves. fits gives the
+ * size that fills an element at the terminal's cell size, once it is drawn.
+ */
+export function useXterm(open: Opener, sizing: Sizing, key?: string) {
+  const held = useMemo(() => heldFor(key), [key]);
+  useEffect(() => {
+    held.hold();
+    return () => held.release();
+  }, [held]);
+  const state = useSyncExternalStore(held.subscribe, held.getState);
+
+  const shown = useRef<HTMLDivElement | null>(null);
+  const attach = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (el) held.show(el);
+      else if (shown.current) held.hide(shown.current);
+      shown.current = el;
+    },
+    [held],
+  );
+
+  const connect = useCallback(() => held.connect(open, sizing), [held, open, sizing]);
 
   // A page left for the back/forward cache keeps its WebSocket, and with it
   // the process, until it is restored; leaving ends the exec instead.
   useEffect(() => {
-    window.addEventListener("pagehide", disconnect);
-    return () => window.removeEventListener("pagehide", disconnect);
-  }, [disconnect]);
+    window.addEventListener("pagehide", held.disconnect);
+    return () => window.removeEventListener("pagehide", held.disconnect);
+  }, [held]);
 
-  return { attach, state, connect, disconnect, close, fits, resize };
+  return {
+    attach,
+    state,
+    connect,
+    disconnect: held.disconnect,
+    /** close ends the exec and lets the terminal go, as a card folded away does. */
+    close: held.close,
+    fits: held.fits,
+    /** resize asks the live session for a size, as a console's holder of the input does for everyone's screen. */
+    resize: held.resize,
+  };
 }
