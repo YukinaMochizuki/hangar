@@ -123,6 +123,66 @@ func (g Guest) GrowVolume(ctx context.Context, machineUID, device string) error 
 	return err
 }
 
+// SetTailnet has the guest agent join the tailnet as ts says, or leave it.
+func (g Guest) SetTailnet(ctx context.Context, machineUID string, ts *driver.TailscaleSpec) error {
+	c, done := g.Client(machineUID)
+	defer done()
+	req := &guestv1.SetTailnetRequest{}
+	if ts != nil {
+		req.Tailscale = &guestv1.Tailscale{Hostname: ts.Hostname, AcceptRoutes: ts.AcceptRoutes}
+	}
+	_, err := c.SetTailnet(ctx, connect.NewRequest(req))
+	if connect.CodeOf(err) == connect.CodeUnimplemented {
+		return fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+	}
+	return err
+}
+
+// TailnetStatus asks the guest agent where its tailnet join stands.
+func (g Guest) TailnetStatus(ctx context.Context, machineUID string) (driver.TailnetStatus, error) {
+	c, done := g.Client(machineUID)
+	defer done()
+	res, err := c.TailnetStatus(ctx, connect.NewRequest(&guestv1.TailnetStatusRequest{}))
+	if connect.CodeOf(err) == connect.CodeUnimplemented {
+		return driver.TailnetStatus{}, fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+	}
+	if err != nil {
+		return driver.TailnetStatus{}, err
+	}
+	st := driver.TailnetStatus{Message: res.Msg.GetMessage(), WantsKey: res.Msg.GetWantsKey()}
+	switch res.Msg.GetState() {
+	case guestv1.TailnetState_TAILNET_STATE_NEEDS_KEY:
+		st.State = driver.TailnetNeedsKey
+	case guestv1.TailnetState_TAILNET_STATE_JOINED:
+		st.State = driver.TailnetJoined
+	case guestv1.TailnetState_TAILNET_STATE_KEY_REJECTED:
+		st.State = driver.TailnetKeyRejected
+	case guestv1.TailnetState_TAILNET_STATE_FAILED:
+		st.State = driver.TailnetFailed
+	case guestv1.TailnetState_TAILNET_STATE_OFF:
+		st.State = driver.TailnetOff
+	default:
+		st.State = driver.TailnetStarting
+	}
+	return st, nil
+}
+
+// JoinTailnet gives the guest agent the auth key to join its tailnet with.
+func (g Guest) JoinTailnet(ctx context.Context, machineUID, authKey string) error {
+	c, done := g.Client(machineUID)
+	defer done()
+	_, err := c.JoinTailnet(ctx, connect.NewRequest(&guestv1.JoinTailnetRequest{AuthKey: authKey}))
+	switch connect.CodeOf(err) {
+	case connect.CodeUnimplemented:
+		return fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+	case connect.CodeFailedPrecondition:
+		return fmt.Errorf("%w: %w", driver.ErrTailnetHasState, err)
+	case connect.CodeAborted:
+		return fmt.Errorf("%w: %w", driver.ErrTailnetBusy, err)
+	}
+	return err
+}
+
 // SetExport replaces the export of a FileShare's server, which its
 // hangar-init serves beside the guest agent.
 func (g Guest) SetExport(ctx context.Context, machineUID string, export driver.ShareExport) error {

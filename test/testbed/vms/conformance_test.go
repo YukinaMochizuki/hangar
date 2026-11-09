@@ -108,6 +108,8 @@ func conformanceHost(t *testing.T, h *host) drivertest.Host {
 				}
 			}
 		},
+		Tailnet:       testbedTailnet(),
+		TailscaleDisk: testbedTailscaleDisk(),
 		BootDisk: func(t *testing.T, uid string) (driver.ShareExport, os.FileMode, int) {
 			return bootDiskOf(t, h.hv.BootDiskPath(uid))
 		},
@@ -236,4 +238,21 @@ func converterOf(hv *chvm.Hypervisor) driver.Converter {
 		return nil
 	}
 	return hv.Converter()
+}
+
+// testbedTailscaleDisk says the tailscale disk is built, which the
+// hypervisor then gives every container.
+func testbedTailscaleDisk() bool {
+	_, err := os.Stat(vmtest.Artifacts().TailscaleDisk)
+	return err == nil
+}
+
+// testbedTailnet is the tailnet HANGAR_TESTBED_TAILSCALE_KEY joins; nil,
+// skipping the part that joins one, without it.
+func testbedTailnet() *drivertest.Tailnet {
+	in := vmtest.Artifacts()
+	if in.TailscaleKey == "" {
+		return nil
+	}
+	return &drivertest.Tailnet{Key: in.TailscaleKey, Rejected: "tskey-auth-kTESTBED1CNTRL-notarealkey"}
 }

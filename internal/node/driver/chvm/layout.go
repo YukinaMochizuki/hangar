@@ -199,6 +199,10 @@ type launch struct {
 	// before has none, and its VM's volumes are resized only as it starts
 	// again.
 	VolumeIDs bool `json:",omitempty"`
+	// TailscaleDisk is the platform's tailscale disk a container VM joining
+	// a tailnet gets read-only after its volumes, the driver's
+	// Config.TailscaleDisk when it started; empty for any other VM.
+	TailscaleDisk string `json:",omitempty"`
 }
 
 // stopTimes are the grace and the slack the launch gives a guest to stop.

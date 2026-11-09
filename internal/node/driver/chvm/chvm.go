@@ -77,6 +77,12 @@ type Config struct {
 	// DefaultConverterRuntime.
 	ConverterInitramfs string
 	ConverterRuntime   time.Duration
+	// TailscaleDisk is the platform's tailscale disk (guest/tailscale), an
+	// ext4 image holding tailscaled and the CLI, which every container VM
+	// gets read-only, after its volumes, so its guest can join a tailnet at
+	// any time, and whose unit binds it read-only. Empty, or a file missing
+	// as a VM starts, starts it without: its guest says it cannot join.
+	TailscaleDisk string
 	// Swtpm is the swtpm bundle TPM VMs' TPMs run from (deploy/swtpm), at
 	// an absolute path: swtpm and its libraries, and the musl loader,
 	// static, that runs it; every TPM VM's unit binds it read-only. Empty
@@ -182,6 +188,11 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	}
 	if cfg.ConverterInitramfs != "" {
 		paths = append(paths, cfg.ConverterInitramfs)
+	}
+	// Checked at each Start, not here: a disk missing then leaves that VM
+	// without one, never unable to boot.
+	if d := cfg.TailscaleDisk; d != "" && (!filepath.IsAbs(d) || filepath.Clean(d) != d || strings.ContainsAny(d, ",=")) {
+		return nil, fmt.Errorf("the tailscale disk %q is not a clean absolute path Cloud Hypervisor takes", d)
 	}
 	if cfg.ConverterRuntime == 0 {
 		cfg.ConverterRuntime = DefaultConverterRuntime
@@ -524,7 +535,11 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 			sb.TPMKey, sb.NoFile = key, h.nrOpen
 		}
 	} else {
-		disk, err := h.bootDisk(spec)
+		if d := h.tailscaleDisk(spec); d != "" {
+			ln.TailscaleDisk = d
+			sb.Binds = append(sb.Binds, d)
+		}
+		disk, err := h.bootDisk(spec, ln.TailscaleDisk)
 		if err != nil {
 			return err
 		}
@@ -592,12 +607,66 @@ func (h *Hypervisor) SetBootExport(ctx context.Context, uid string, export drive
 	srv := *ln.Spec.FileShareServer
 	srv.Export = export
 	ln.Spec.FileShareServer = &srv
-	disk, err := h.bootDisk(ln.Spec)
+	disk, err := h.bootDisk(ln.Spec, ln.TailscaleDisk)
 	if err != nil {
 		return err
 	}
 	gid := int(ln.VMUser)
 	return writeAtomicAs(filepath.Join(dir, bootFile), disk, func(f *os.File) error { return setGroup(f, gid, readableMode(gid)) })
+}
+
+// SetBootTailscale renames a new boot.img over the old, as SetBootExport
+// does, joining ts, and records ts in the spec file, whose hash stays: the
+// running boot was told it through its guest agent.
+func (h *Hypervisor) SetBootTailscale(ctx context.Context, uid string, ts *driver.TailscaleSpec) error {
+	if err := checkUID(uid); err != nil {
+		return err
+	}
+	unlock := h.locks.Lock(uid)
+	defer unlock()
+	unit, err := h.unit(ctx, uid)
+	if err != nil {
+		return err
+	}
+	if _, listed, err := h.vm(uid, unit); err != nil {
+		return err
+	} else if !listed {
+		return fmt.Errorf("machine %s has no VM whose boot disk to rewrite", uid)
+	}
+	dir := h.dir(uid)
+	ln, err := readLaunch(dir)
+	if err != nil {
+		return err
+	}
+	if ln.Spec.Firmware || blankVDA(ln.Spec) {
+		return fmt.Errorf("machine %s's VM is no container's", uid)
+	}
+	if ts != nil && ts.Hostname == "" {
+		return fmt.Errorf("machine %s: a tailnet with no hostname", uid)
+	}
+	if was := ln.Spec.Tailscale; was == nil && ts == nil || was != nil && ts != nil && *was == *ts {
+		// The boot disk says so already, as on an agent's first sight of
+		// every VM it did not tell otherwise.
+		return nil
+	}
+	if ts != nil {
+		c := *ts
+		ts = &c
+	}
+	ln.Spec.Tailscale = ts
+	disk, err := h.bootDisk(ln.Spec, ln.TailscaleDisk)
+	if err != nil {
+		return err
+	}
+	gid := int(ln.VMUser)
+	if err := writeAtomicAs(filepath.Join(dir, bootFile), disk, func(f *os.File) error { return setGroup(f, gid, readableMode(gid)) }); err != nil {
+		return err
+	}
+	b, err := json.Marshal(ln)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(filepath.Join(dir, specFile), b)
 }
 
 // writeLaunch writes the spec file, with the VM's id, and returns the id.
@@ -669,6 +738,9 @@ func checkSpec(s driver.VMSpec) error {
 	if s.TPM && !s.Firmware {
 		return fmt.Errorf("machine %s: only a firmware VM has a TPM", s.MachineUID)
 	}
+	if ts := s.Tailscale; ts != nil && (s.Firmware || s.FileShareServer != nil || s.Converter != nil || ts.Hostname == "") {
+		return fmt.Errorf("machine %s: only a container joins a tailnet, under a hostname", s.MachineUID)
+	}
 	seen := map[string]bool{s.Root.Path: true}
 	for _, v := range s.Disks {
 		if v.DiskUID == "" || v.Path == "" || seen[v.Path] {
@@ -700,10 +772,24 @@ func checkSpec(s driver.VMSpec) error {
 	return nil
 }
 
+// tailscaleDisk is the tailscale disk a VM of spec is started with: the
+// host's, for a container, if the file is there now; else none.
+func (h *Hypervisor) tailscaleDisk(spec driver.VMSpec) string {
+	d := h.cfg.TailscaleDisk
+	if d == "" || spec.Firmware || blankVDA(spec) {
+		return ""
+	}
+	if fi, err := os.Stat(d); err != nil || !fi.Mode().IsRegular() {
+		return ""
+	}
+	return d
+}
+
 // bootDisk is the boot disk of spec: what to run, or the export a file
-// share's server starts with, the network, the hostname, the resolvers and
-// the machine's uid.
-func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
+// share's server starts with, the network, the hostname, the resolvers,
+// the machine's uid, the tailnet it joins, and the device of
+// tailscaleDisk, the tailscale disk it is attached, if any.
+func (h *Hypervisor) bootDisk(spec driver.VMSpec, tailscaleDisk string) ([]byte, error) {
 	cfg := &guestv1.BootConfig{
 		Process: &guestv1.Process{
 			Args: spec.Run.Command, Env: spec.Run.Env, WorkingDir: spec.Run.WorkingDir, User: spec.Run.User,
@@ -749,6 +835,13 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 			Device: "/dev/" + computeapi.VirtioDevice(computeapi.FirstContainerDisk+m.Disk),
 			Target: m.Target, ReadOnly: m.ReadOnly, Nocopy: m.Nocopy, Subpath: m.Subpath, Name: m.Name,
 		})
+	}
+	if ts := spec.Tailscale; ts != nil {
+		cfg.Tailscale = &guestv1.Tailscale{Hostname: ts.Hostname, AcceptRoutes: ts.AcceptRoutes}
+	}
+	if tailscaleDisk != "" {
+		// After its volumes, as chArgs attaches it.
+		cfg.TailscaleDisk = "/dev/" + computeapi.VirtioDevice(computeapi.FirstContainerDisk+len(dataDisks(spec)))
 	}
 	var buf bytes.Buffer
 	if err := bootdisk.Write(&buf, cfg); err != nil {

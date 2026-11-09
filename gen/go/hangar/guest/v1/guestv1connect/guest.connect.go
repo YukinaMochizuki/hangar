@@ -59,6 +59,15 @@ const (
 	// GuestAgentServiceGrowVolumeProcedure is the fully-qualified name of the GuestAgentService's
 	// GrowVolume RPC.
 	GuestAgentServiceGrowVolumeProcedure = "/hangar.guest.v1.GuestAgentService/GrowVolume"
+	// GuestAgentServiceSetTailnetProcedure is the fully-qualified name of the GuestAgentService's
+	// SetTailnet RPC.
+	GuestAgentServiceSetTailnetProcedure = "/hangar.guest.v1.GuestAgentService/SetTailnet"
+	// GuestAgentServiceTailnetStatusProcedure is the fully-qualified name of the GuestAgentService's
+	// TailnetStatus RPC.
+	GuestAgentServiceTailnetStatusProcedure = "/hangar.guest.v1.GuestAgentService/TailnetStatus"
+	// GuestAgentServiceJoinTailnetProcedure is the fully-qualified name of the GuestAgentService's
+	// JoinTailnet RPC.
+	GuestAgentServiceJoinTailnetProcedure = "/hangar.guest.v1.GuestAgentService/JoinTailnet"
 )
 
 // GuestAgentServiceClient is a client for the hangar.guest.v1.GuestAgentService service.
@@ -93,6 +102,21 @@ type GuestAgentServiceClient interface {
 	// to its whole device, once the host has grown the device while the guest
 	// runs. See docs/decisions/disk-autogrow.md.
 	GrowVolume(context.Context, *connect.Request[v1.GrowVolumeRequest]) (*connect.Response[v1.GrowVolumeResponse], error)
+	// SetTailnet makes the guest join the tailnet as told, or, told none,
+	// leave it, while it runs: joining starts tailscaled and the DNS split;
+	// leaving logs the node out, stops tailscaled, deletes its state, so a
+	// later join is a new node, and restores the container's resolvers; a
+	// new hostname or accept_routes is set on the running node. It answers
+	// at once; TailnetStatus says how it went.
+	SetTailnet(context.Context, *connect.Request[v1.SetTailnetRequest]) (*connect.Response[v1.SetTailnetResponse], error)
+	// TailnetStatus says where the guest's tailnet join stands.
+	TailnetStatus(context.Context, *connect.Request[v1.TailnetStatusRequest]) (*connect.Response[v1.TailnetStatusResponse], error)
+	// JoinTailnet gives a guest with no node state the auth key to join
+	// with, as its TailnetStatus NEEDS_KEY asks, or again after
+	// KEY_REJECTED or FAILED; a guest with node state refuses it with
+	// FAILED_PRECONDITION. It answers once the join has begun; TailnetStatus
+	// says how it went. The guest keeps the key in memory for the join alone.
+	JoinTailnet(context.Context, *connect.Request[v1.JoinTailnetRequest]) (*connect.Response[v1.JoinTailnetResponse], error)
 }
 
 // NewGuestAgentServiceClient constructs a client for the hangar.guest.v1.GuestAgentService service.
@@ -154,19 +178,40 @@ func NewGuestAgentServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(guestAgentServiceMethods.ByName("GrowVolume")),
 			connect.WithClientOptions(opts...),
 		),
+		setTailnet: connect.NewClient[v1.SetTailnetRequest, v1.SetTailnetResponse](
+			httpClient,
+			baseURL+GuestAgentServiceSetTailnetProcedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("SetTailnet")),
+			connect.WithClientOptions(opts...),
+		),
+		tailnetStatus: connect.NewClient[v1.TailnetStatusRequest, v1.TailnetStatusResponse](
+			httpClient,
+			baseURL+GuestAgentServiceTailnetStatusProcedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("TailnetStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		joinTailnet: connect.NewClient[v1.JoinTailnetRequest, v1.JoinTailnetResponse](
+			httpClient,
+			baseURL+GuestAgentServiceJoinTailnetProcedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("JoinTailnet")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // guestAgentServiceClient implements GuestAgentServiceClient.
 type guestAgentServiceClient struct {
-	ping        *connect.Client[v1.PingRequest, v1.PingResponse]
-	exec        *connect.Client[v1.ExecRequest, v1.ExecResponse]
-	stop        *connect.Client[v1.StopRequest, v1.StopResponse]
-	setIPv6     *connect.Client[v1.SetIPv6Request, v1.SetIPv6Response]
-	rootUsage   *connect.Client[v1.RootUsageRequest, v1.RootUsageResponse]
-	growRoot    *connect.Client[v1.GrowRootRequest, v1.GrowRootResponse]
-	volumeUsage *connect.Client[v1.VolumeUsageRequest, v1.VolumeUsageResponse]
-	growVolume  *connect.Client[v1.GrowVolumeRequest, v1.GrowVolumeResponse]
+	ping          *connect.Client[v1.PingRequest, v1.PingResponse]
+	exec          *connect.Client[v1.ExecRequest, v1.ExecResponse]
+	stop          *connect.Client[v1.StopRequest, v1.StopResponse]
+	setIPv6       *connect.Client[v1.SetIPv6Request, v1.SetIPv6Response]
+	rootUsage     *connect.Client[v1.RootUsageRequest, v1.RootUsageResponse]
+	growRoot      *connect.Client[v1.GrowRootRequest, v1.GrowRootResponse]
+	volumeUsage   *connect.Client[v1.VolumeUsageRequest, v1.VolumeUsageResponse]
+	growVolume    *connect.Client[v1.GrowVolumeRequest, v1.GrowVolumeResponse]
+	setTailnet    *connect.Client[v1.SetTailnetRequest, v1.SetTailnetResponse]
+	tailnetStatus *connect.Client[v1.TailnetStatusRequest, v1.TailnetStatusResponse]
+	joinTailnet   *connect.Client[v1.JoinTailnetRequest, v1.JoinTailnetResponse]
 }
 
 // Ping calls hangar.guest.v1.GuestAgentService.Ping.
@@ -209,6 +254,21 @@ func (c *guestAgentServiceClient) GrowVolume(ctx context.Context, req *connect.R
 	return c.growVolume.CallUnary(ctx, req)
 }
 
+// SetTailnet calls hangar.guest.v1.GuestAgentService.SetTailnet.
+func (c *guestAgentServiceClient) SetTailnet(ctx context.Context, req *connect.Request[v1.SetTailnetRequest]) (*connect.Response[v1.SetTailnetResponse], error) {
+	return c.setTailnet.CallUnary(ctx, req)
+}
+
+// TailnetStatus calls hangar.guest.v1.GuestAgentService.TailnetStatus.
+func (c *guestAgentServiceClient) TailnetStatus(ctx context.Context, req *connect.Request[v1.TailnetStatusRequest]) (*connect.Response[v1.TailnetStatusResponse], error) {
+	return c.tailnetStatus.CallUnary(ctx, req)
+}
+
+// JoinTailnet calls hangar.guest.v1.GuestAgentService.JoinTailnet.
+func (c *guestAgentServiceClient) JoinTailnet(ctx context.Context, req *connect.Request[v1.JoinTailnetRequest]) (*connect.Response[v1.JoinTailnetResponse], error) {
+	return c.joinTailnet.CallUnary(ctx, req)
+}
+
 // GuestAgentServiceHandler is an implementation of the hangar.guest.v1.GuestAgentService service.
 type GuestAgentServiceHandler interface {
 	// Ping answers once the guest is up.
@@ -241,6 +301,21 @@ type GuestAgentServiceHandler interface {
 	// to its whole device, once the host has grown the device while the guest
 	// runs. See docs/decisions/disk-autogrow.md.
 	GrowVolume(context.Context, *connect.Request[v1.GrowVolumeRequest]) (*connect.Response[v1.GrowVolumeResponse], error)
+	// SetTailnet makes the guest join the tailnet as told, or, told none,
+	// leave it, while it runs: joining starts tailscaled and the DNS split;
+	// leaving logs the node out, stops tailscaled, deletes its state, so a
+	// later join is a new node, and restores the container's resolvers; a
+	// new hostname or accept_routes is set on the running node. It answers
+	// at once; TailnetStatus says how it went.
+	SetTailnet(context.Context, *connect.Request[v1.SetTailnetRequest]) (*connect.Response[v1.SetTailnetResponse], error)
+	// TailnetStatus says where the guest's tailnet join stands.
+	TailnetStatus(context.Context, *connect.Request[v1.TailnetStatusRequest]) (*connect.Response[v1.TailnetStatusResponse], error)
+	// JoinTailnet gives a guest with no node state the auth key to join
+	// with, as its TailnetStatus NEEDS_KEY asks, or again after
+	// KEY_REJECTED or FAILED; a guest with node state refuses it with
+	// FAILED_PRECONDITION. It answers once the join has begun; TailnetStatus
+	// says how it went. The guest keeps the key in memory for the join alone.
+	JoinTailnet(context.Context, *connect.Request[v1.JoinTailnetRequest]) (*connect.Response[v1.JoinTailnetResponse], error)
 }
 
 // NewGuestAgentServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -298,6 +373,24 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 		connect.WithSchema(guestAgentServiceMethods.ByName("GrowVolume")),
 		connect.WithHandlerOptions(opts...),
 	)
+	guestAgentServiceSetTailnetHandler := connect.NewUnaryHandler(
+		GuestAgentServiceSetTailnetProcedure,
+		svc.SetTailnet,
+		connect.WithSchema(guestAgentServiceMethods.ByName("SetTailnet")),
+		connect.WithHandlerOptions(opts...),
+	)
+	guestAgentServiceTailnetStatusHandler := connect.NewUnaryHandler(
+		GuestAgentServiceTailnetStatusProcedure,
+		svc.TailnetStatus,
+		connect.WithSchema(guestAgentServiceMethods.ByName("TailnetStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	guestAgentServiceJoinTailnetHandler := connect.NewUnaryHandler(
+		GuestAgentServiceJoinTailnetProcedure,
+		svc.JoinTailnet,
+		connect.WithSchema(guestAgentServiceMethods.ByName("JoinTailnet")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.guest.v1.GuestAgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GuestAgentServicePingProcedure:
@@ -316,6 +409,12 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 			guestAgentServiceVolumeUsageHandler.ServeHTTP(w, r)
 		case GuestAgentServiceGrowVolumeProcedure:
 			guestAgentServiceGrowVolumeHandler.ServeHTTP(w, r)
+		case GuestAgentServiceSetTailnetProcedure:
+			guestAgentServiceSetTailnetHandler.ServeHTTP(w, r)
+		case GuestAgentServiceTailnetStatusProcedure:
+			guestAgentServiceTailnetStatusHandler.ServeHTTP(w, r)
+		case GuestAgentServiceJoinTailnetProcedure:
+			guestAgentServiceJoinTailnetHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -355,4 +454,16 @@ func (UnimplementedGuestAgentServiceHandler) VolumeUsage(context.Context, *conne
 
 func (UnimplementedGuestAgentServiceHandler) GrowVolume(context.Context, *connect.Request[v1.GrowVolumeRequest]) (*connect.Response[v1.GrowVolumeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.GrowVolume is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) SetTailnet(context.Context, *connect.Request[v1.SetTailnetRequest]) (*connect.Response[v1.SetTailnetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.SetTailnet is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) TailnetStatus(context.Context, *connect.Request[v1.TailnetStatusRequest]) (*connect.Response[v1.TailnetStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.TailnetStatus is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) JoinTailnet(context.Context, *connect.Request[v1.JoinTailnetRequest]) (*connect.Response[v1.JoinTailnetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.JoinTailnet is not implemented"))
 }

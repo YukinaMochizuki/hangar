@@ -100,6 +100,59 @@ func TestTheFilesSay(t *testing.T) {
 	}
 }
 
+// TestResolversChangeInPlace: SetResolvers rewrites the platform's file in
+// place, the inode the mount over the image's file shows, and the file
+// under /run that Identity wrote instead of mounting; never an image's
+// file.
+func TestResolversChangeInPlace(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		image func(etc string)
+		// written is the file, in root, that /etc/resolv.conf shows once
+		// Identity has run, other than the platform's own.
+		written string
+	}{
+		{name: "mounted over the image's", image: func(etc string) {
+			_ = os.WriteFile(filepath.Join(etc, "resolv.conf"), []byte("image's"), 0o644)
+		}},
+		{name: "a link into /run", image: func(etc string) {
+			_ = os.Symlink("/run/systemd/resolve/stub-resolv.conf", filepath.Join(etc, "resolv.conf"))
+		}, written: "run/systemd/resolve/stub-resolv.conf"},
+	} {
+		root := t.TempDir()
+		etc := filepath.Join(root, "etc")
+		for _, d := range []string{etc, filepath.Join(root, "run/hangar"), filepath.Join(root, "run/systemd/resolve")} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		c.image(etc)
+		source := filepath.Join(root, "run/hangar/resolv.conf")
+		if err := os.WriteFile(source, []byte(resolvConf([]string{"10.0.0.1"}, []string{"web.hangar.internal"})), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.Stat(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := SetResolvers(root, []string{"127.0.0.11"}, []string{"web.hangar.internal"}); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		want := "nameserver 127.0.0.11\nsearch web.hangar.internal\n"
+		after, err := os.Stat(source)
+		if b, _ := os.ReadFile(source); string(b) != want || err != nil || !os.SameFile(before, after) {
+			t.Errorf("%s: the platform's file says %q, the same inode %v; want %q in place", c.name, b, os.SameFile(before, after), want)
+		}
+		if c.written != "" {
+			if b, _ := os.ReadFile(filepath.Join(root, c.written)); string(b) != want {
+				t.Errorf("%s: %s says %q, want %q", c.name, c.written, b, want)
+			}
+		} else if b, _ := os.ReadFile(filepath.Join(etc, "resolv.conf")); string(b) != "image's" {
+			t.Errorf("%s: the image's file was written: %q", c.name, b)
+		}
+	}
+}
+
 func TestOneDefaultRouteAtMost(t *testing.T) {
 	err := Network([]*guestv1.Interface{
 		{Mac: "02:00:00:00:00:01", Address: "10.0.0.5/24", Gateway: "10.0.0.1"},

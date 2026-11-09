@@ -153,6 +153,18 @@ func (g *fakeGuest) GrowVolume(context.Context, string, string) error {
 	return errors.New("the hypervisor driver never grows a guest's volumes")
 }
 
+func (g *fakeGuest) SetTailnet(context.Context, string, *driver.TailscaleSpec) error {
+	return errors.New("the hypervisor driver never tells a guest its tailnet")
+}
+
+func (g *fakeGuest) TailnetStatus(context.Context, string) (driver.TailnetStatus, error) {
+	return driver.TailnetStatus{}, errors.New("the hypervisor driver never asks a guest's tailnet")
+}
+
+func (g *fakeGuest) JoinTailnet(context.Context, string, string) error {
+	return errors.New("the hypervisor driver never joins a guest's tailnet")
+}
+
 func (g *fakeGuest) Stop(ctx context.Context, uid string, grace time.Duration) error {
 	g.mu.Lock()
 	g.asked = append(g.asked, uid)
@@ -847,7 +859,7 @@ func TestOnlyTheFirstInterfaceRoutesByDefault(t *testing.T) {
 	second.Name, second.NetworkUID, second.MAC = "eth1", "n2", "02:00:00:00:00:02"
 	second.Address, second.Gateway = netip.MustParsePrefix("10.1.0.2/24"), netip.MustParseAddr("10.1.0.1")
 	spec.Interfaces = append(spec.Interfaces, second)
-	b, err := (&Hypervisor{}).bootDisk(spec)
+	b, err := (&Hypervisor{}).bootDisk(spec, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -870,7 +882,7 @@ func TestTheBootDiskCarriesVolumes(t *testing.T) {
 		{Disk: 1, Name: "pgdata", Target: "/var/lib/postgresql/data"},
 		{Disk: 0, Name: "logs", Target: "/var/log", ReadOnly: true, Nocopy: true, Subpath: "pg"},
 	}
-	b, err := (&Hypervisor{}).bootDisk(spec)
+	b, err := (&Hypervisor{}).bootDisk(spec, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -927,6 +939,157 @@ func TestVolumesAreWhereTheirDevicesSay(t *testing.T) {
 	}
 }
 
+// TestEveryContainerGetsTheTailscaleDisk: every container VM, joining a
+// tailnet or not, gets the host's tailscale disk, read-only, after its
+// volumes, so their devices stay where they were, at the device its boot
+// disk names; its boot disk says the tailnet it joins as it boots, if any,
+// and never a key. A file missing as a VM starts leaves that VM without
+// the disk, never unable to start; a firmware VM, a share's server or a
+// converter gets none.
+func TestEveryContainerGetsTheTailscaleDisk(t *testing.T) {
+	ctx := t.Context()
+	img := filepath.Join(t.TempDir(), "tailscale.img")
+	if err := os.WriteFile(img, []byte("ext4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := newDriverWith(t, shortDir(t), newFakeSystemd(), &fakeGuest{}, func(c *Config) { c.TailscaleDisk = img })
+	disksOf := func(uid string) []string {
+		t.Helper()
+		ln, err := readLaunch(h.dir(uid))
+		if err != nil {
+			t.Fatal(err)
+		}
+		args := chArgs(ln, h.dir(uid), 0)
+		var out []string
+		for _, a := range args[slices.Index(args, "--disk")+1:] {
+			if strings.HasPrefix(a, "--") {
+				break
+			}
+			out = append(out, a)
+		}
+		return out
+	}
+	bootOf := func(uid string) *guestv1.BootConfig {
+		t.Helper()
+		f, err := os.Open(filepath.Join(h.dir(uid), bootFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = f.Close() }()
+		cfg, err := bootdisk.Read(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+
+	joining := testSpec("m1", driver.RestartAlways)
+	joining.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/a"}}
+	joining.Tailscale = &driver.TailscaleSpec{Hostname: "box", AcceptRoutes: true}
+	plain := testSpec("m2", driver.RestartAlways)
+	for _, s := range []driver.VMSpec{joining, plain} {
+		if err := h.Start(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if d := disksOf("m1"); len(d) != 4 || d[3] != "path="+img+",image_type=raw,readonly=on" || !strings.HasPrefix(d[2], "path="+filepath.Join(h.dir("m1"), volumeNode(0))+",") {
+		t.Errorf("a joining container's disks: %q; want its volume at vdc, the tailscale disk read-only at vdd", d)
+	}
+	if cfg := bootOf("m1"); cfg.GetTailscaleDisk() != "/dev/vdd" || !proto.Equal(cfg.GetTailscale(), &guestv1.Tailscale{Hostname: "box", AcceptRoutes: true}) {
+		t.Errorf("a joining container's boot disk: disk %q, tailnet %v", cfg.GetTailscaleDisk(), cfg.GetTailscale())
+	}
+	if d := disksOf("m2"); len(d) != 3 || d[2] != "path="+img+",image_type=raw,readonly=on" {
+		t.Errorf("a container joining none: disks %q; want the tailscale disk at vdc", d)
+	}
+	if cfg := bootOf("m2"); cfg.GetTailscaleDisk() != "/dev/vdc" || cfg.GetTailscale() != nil {
+		t.Errorf("a container joining none: disk %q, tailnet %v", cfg.GetTailscaleDisk(), cfg.GetTailscale())
+	}
+
+	if err := h.Start(ctx, serverSpec("m3")); err != nil {
+		t.Fatal(err)
+	}
+	if ln, _ := readLaunch(h.dir("m3")); ln.TailscaleDisk != "" {
+		t.Error("a share's server got the tailscale disk")
+	}
+
+	if err := os.Remove(img); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Start(ctx, testSpec("m4", driver.RestartAlways)); err != nil {
+		t.Fatalf("a container started as the disk is missing: %v", err)
+	}
+	if d := disksOf("m4"); len(d) != 2 || bootOf("m4").GetTailscaleDisk() != "" {
+		t.Errorf("the disk missing: disks %q, boot disk names %q; want neither", d, bootOf("m4").GetTailscaleDisk())
+	}
+
+	bad := testSpec("m5", driver.RestartAlways)
+	bad.Tailscale = &driver.TailscaleSpec{}
+	if err := checkSpec(bad); err == nil {
+		t.Error("a tailnet with no hostname accepted")
+	}
+}
+
+// TestABootDiskFollowsItsTailnet: a container's boot disk rewritten for a
+// tailnet joined, changed or left while it runs says it, renamed over the
+// old as a server's export is, with its tailscale disk where it was; its
+// hash stays. A server's VM has no tailnet to take.
+func TestABootDiskFollowsItsTailnet(t *testing.T) {
+	ctx := t.Context()
+	img := filepath.Join(t.TempDir(), "tailscale.img")
+	if err := os.WriteFile(img, []byte("ext4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := newDriverWith(t, shortDir(t), newFakeSystemd(), &fakeGuest{}, func(c *Config) { c.TailscaleDisk = img })
+	spec := testSpec("m1", driver.RestartAlways)
+	if err := h.Start(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	setVMUser(t, h.dir("m1"), os.Getgid())
+	boot := func() *guestv1.BootConfig {
+		t.Helper()
+		f, err := os.Open(filepath.Join(h.dir("m1"), bootFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = f.Close() }()
+		cfg, err := bootdisk.Read(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg
+	}
+	for _, ts := range []*driver.TailscaleSpec{{Hostname: "box"}, {Hostname: "dev", AcceptRoutes: true}, nil} {
+		if err := h.SetBootTailscale(ctx, "m1", ts); err != nil {
+			t.Fatal(err)
+		}
+		var want *guestv1.Tailscale
+		if ts != nil {
+			want = &guestv1.Tailscale{Hostname: ts.Hostname, AcceptRoutes: ts.AcceptRoutes}
+		}
+		if cfg := boot(); !proto.Equal(cfg.GetTailscale(), want) || cfg.GetTailscaleDisk() != "/dev/vdc" {
+			t.Errorf("told %+v: the boot disk joins %v, its disk %q", ts, cfg.GetTailscale(), cfg.GetTailscaleDisk())
+		}
+		ln, err := readLaunch(h.dir("m1"))
+		recorded := ln.Spec.Tailscale == nil && ts == nil || ln.Spec.Tailscale != nil && ts != nil && *ln.Spec.Tailscale == *ts
+		if err != nil || !recorded {
+			t.Errorf("told %+v: the spec file says %+v, %v", ts, ln.Spec.Tailscale, err)
+		}
+	}
+	vms, err := h.VMs(ctx)
+	if err != nil || len(vms) != 1 || vms[0].SpecHash != spec.Hash() {
+		t.Errorf("VMs %+v, %v; want m1 of its hash", vms, err)
+	}
+	if err := h.Start(ctx, serverSpec("m2")); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SetBootTailscale(ctx, "m2", &driver.TailscaleSpec{Hostname: "box"}); err == nil {
+		t.Error("a share's server was given a tailnet")
+	}
+	if err := h.SetBootTailscale(ctx, "m3", nil); err == nil {
+		t.Error("a VM never started was given a boot disk")
+	}
+}
+
 // TestTheBootDiskCarriesIPv6: each interface's /128 goes on the boot disk,
 // and the IPv6 default route by the first alone, through the gateway; an
 // interface without one has none.
@@ -939,7 +1102,7 @@ func TestTheBootDiskCarriesIPv6(t *testing.T) {
 	third := second
 	third.Name, third.MAC, third.IPv6 = "eth2", "02:00:00:00:00:03", netip.Addr{}
 	spec.Interfaces = append(spec.Interfaces, second, third)
-	b, err := (&Hypervisor{}).bootDisk(spec)
+	b, err := (&Hypervisor{}).bootDisk(spec, "")
 	if err != nil {
 		t.Fatal(err)
 	}

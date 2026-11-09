@@ -849,6 +849,9 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 	if err := validateImagePullSecrets(spec.GetImagePullSecrets()); err != nil {
 		return err
 	}
+	if err := validateTailscale("spec.tailscale", spec.GetTailscale(), false); err != nil {
+		return err
+	}
 	if err := validateContainerVolumes(spec.GetVolumes()); err != nil {
 		return err
 	}
@@ -1049,6 +1052,9 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	}
 	if c := spec.GetContainer(); c != nil && c.GetImage() == "" {
 		return invalid("spec.container.image is required")
+	}
+	if err := validateTailscale("spec.container.tailscale", spec.GetContainer().GetTailscale(), true); err != nil {
+		return err
 	}
 	if err := validateBootVolumes(spec); err != nil {
 		return err

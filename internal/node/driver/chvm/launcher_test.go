@@ -304,6 +304,18 @@ func (g *launcherGuest) GrowVolume(context.Context, string, string) error {
 	return errors.New("the launcher never grows a guest's volumes")
 }
 
+func (g *launcherGuest) SetTailnet(context.Context, string, *driver.TailscaleSpec) error {
+	return errors.New("the launcher never tells a guest its tailnet")
+}
+
+func (g *launcherGuest) TailnetStatus(context.Context, string) (driver.TailnetStatus, error) {
+	return driver.TailnetStatus{}, errors.New("the launcher never asks a guest's tailnet")
+}
+
+func (g *launcherGuest) JoinTailnet(context.Context, string, string) error {
+	return errors.New("the launcher never joins a guest's tailnet")
+}
+
 func (g *launcherGuest) Stop(_ context.Context, _ string, grace time.Duration) error {
 	g.mu.Lock()
 	g.graces = append(g.graces, grace)

@@ -122,6 +122,12 @@ type Host struct {
 	// there. The NAT part runs only with it, and a Network that is a
 	// driver.NATFlows.
 	Connect func(t *testing.T, nic driver.Interface, srcPort uint16) (dst, seen netip.AddrPort)
+	// TailscaleDisk says the hypervisor gives containers the tailscale
+	// disk; the tailnet disk part runs only with it.
+	TailscaleDisk bool
+	// Tailnet is a tailnet the guests reach; the tailnets part, which
+	// joins it, runs only with it and TailscaleDisk.
+	Tailnet *Tailnet
 }
 
 // Run runs the suite, each test on a host from fresh.
@@ -189,6 +195,8 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	})
 	part("file share servers", shareServers, vms)
 	part("boot exports", bootExports, func(h Host) bool { return vms(h) && h.BootDisk != nil })
+	part("tailnet disk", tailnetDisk, func(h Host) bool { return vms(h) && h.TailscaleDisk })
+	part("tailnets", tailnets, func(h Host) bool { return vms(h) && h.TailscaleDisk && h.Tailnet != nil })
 	part("guest IPv6", guestIPv6, func(h Host) bool {
 		return vms(h) && h.IPv6Prefix.IsValid() && h.GuestIPv6 != nil && h.Exit != nil
 	})

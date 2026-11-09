@@ -855,6 +855,11 @@ type Hypervisor interface {
 	// disk, which its next boot by its restart policy serves; the boot
 	// running and SpecHash stay. Any other VM is refused (file-shares.md).
 	SetBootExport(ctx context.Context, machineUID string, export ShareExport) error
+	// SetBootTailscale replaces the tailnet a listed container VM's boot
+	// disk joins, nil for none, which its next boot by its restart policy
+	// joins; the boot running and SpecHash stay. Any other VM is refused
+	// (container-tailscale.md).
+	SetBootTailscale(ctx context.Context, machineUID string, ts *TailscaleSpec) error
 	// VMs lists the VMs on the host, running or not.
 	VMs(ctx context.Context) ([]VM, error)
 	// Changes signals that a VM changed state on its own, such as exiting.
@@ -1023,6 +1028,20 @@ type VMSpec struct {
 	// vda that it never reads, the file at vdc, read-only, and the target,
 	// if any, at vdd (docs/decisions/custom-images.md).
 	Converter *ConverterSpec `json:",omitempty"`
+	// Tailscale is the tailnet a container's guest joins as it boots, nil
+	// for none (docs/decisions/container-tailscale.md). It is no part of
+	// the hash: the guest joins, leaves and changes while it runs
+	// (Guest.SetTailnet), and its boot disk follows (SetBootTailscale).
+	// Every container VM gets the platform's tailscale disk, where the host
+	// has one, whether or not it joins, so it can join later.
+	Tailscale *TailscaleSpec `json:",omitempty"`
+}
+
+// TailscaleSpec is how a container's guest joins a tailnet. The auth key
+// is not part of it: the guest asks for none once it has joined.
+type TailscaleSpec struct {
+	Hostname     string
+	AcceptRoutes bool `json:",omitempty"`
 }
 
 // ConverterSpec is what a converter VM is booted with.
@@ -1128,6 +1147,8 @@ func (s VMSpec) sizedHash() string {
 	for i := range s.Interfaces {
 		s.Interfaces[i].IPv6 = netip.Addr{}
 	}
+	// Nor is its tailnet, which changes while it runs too.
+	s.Tailscale = nil
 	return s.hash()
 }
 
@@ -1288,7 +1309,54 @@ type Guest interface {
 	// SetExport replaces the whole export of a FileShare's server. A server
 	// refusing it keeps the export it had, and the error says why.
 	SetExport(ctx context.Context, machineUID string, export ShareExport) error
+	// SetTailnet has a container's guest join the tailnet as ts says, or
+	// leave it, nil, while it runs; it returns once the guest has taken it,
+	// and TailnetStatus says how it goes. A guest that cannot, as one
+	// started before it could, fails with ErrGuestCannot.
+	SetTailnet(ctx context.Context, machineUID string, ts *TailscaleSpec) error
+	// TailnetStatus says where the tailnet join of a container's guest
+	// stands. A guest that cannot, as one started before it could, fails
+	// with ErrGuestCannot.
+	TailnetStatus(ctx context.Context, machineUID string) (TailnetStatus, error)
+	// JoinTailnet gives such a guest the auth key to join with. A guest with
+	// its node's state refuses it with ErrTailnetHasState, one that waits
+	// for no key now with ErrTailnetBusy. The key is never logged.
+	JoinTailnet(ctx context.Context, machineUID, authKey string) error
 }
+
+// TailnetStatus is where a guest's tailnet join stands, as it says.
+type TailnetStatus struct {
+	State   TailnetState
+	Message string
+	// WantsKey says the guest asks for the auth key now; it keeps the
+	// time of its last failed join itself, so a retry waits as long
+	// whatever the node does meanwhile.
+	WantsKey bool
+}
+
+// TailnetState is a guest's TailnetStatus state.
+type TailnetState int
+
+const (
+	// TailnetStarting is tailscaled starting, or a join under way.
+	TailnetStarting TailnetState = iota
+	// TailnetNeedsKey is a guest with no node state, waiting for a key.
+	TailnetNeedsKey
+	// TailnetJoined is a guest that is a node of its tailnet.
+	TailnetJoined
+	// TailnetKeyRejected is a guest whose last key the tailnet refused.
+	TailnetKeyRejected
+	// TailnetFailed is a join, or tailscaled, failed otherwise.
+	TailnetFailed
+	// TailnetOff is a guest told to join no tailnet.
+	TailnetOff
+)
+
+// Refusals of JoinTailnet.
+var (
+	ErrTailnetHasState = errors.New("the guest has its node's state, and joins without an auth key")
+	ErrTailnetBusy     = errors.New("the guest waits for no auth key now")
+)
 
 // GuestIPv6 is one guest interface's public IPv6, by its MAC: an address
 // and, on the interface holding it, the default route's gateway; zero for

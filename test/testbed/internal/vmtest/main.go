@@ -72,6 +72,14 @@ type Inputs struct {
 	// make e2e-host), or HANGAR_TESTBED_SWTPM; a package that uses it
 	// checks that it is there.
 	Swtpm string
+	// TailscaleDisk is the tailscale disk containers get (make
+	// guest-tailscale), or HANGAR_TESTBED_TAILSCALE_DISK; a package that
+	// uses it checks that it is there.
+	TailscaleDisk string
+	// TailscaleKey is a reusable auth key of a tailnet the testbed's
+	// guests reach, from HANGAR_TESTBED_TAILSCALE_KEY; empty skips what
+	// needs a tailnet.
+	TailscaleKey string
 }
 
 var in Inputs
@@ -263,6 +271,8 @@ func loadInputs() (Inputs, error) {
 		ServerProbeInitramfs: pick("HANGAR_TESTBED_SERVER_PROBE_INITRAMFS", "bin/guest-testbed/initramfs.cpio"),
 		ConverterInitramfs:   pick("HANGAR_TESTBED_CONVERTER_INITRAMFS", "bin/guest/converter.cpio"),
 		Swtpm:                pick("HANGAR_TESTBED_SWTPM", "bin/host/swtpm"),
+		TailscaleDisk:        pick("HANGAR_TESTBED_TAILSCALE_DISK", "bin/guest/tailscale.img"),
+		TailscaleKey:         os.Getenv("HANGAR_TESTBED_TAILSCALE_KEY"),
 	}
 	if i.Rootfs == "" {
 		return Inputs{}, errors.New("HANGAR_TESTBED_ROOTFS is not set (make e2e-host sets it)")

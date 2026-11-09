@@ -90,6 +90,12 @@ message ContainerBoot {
   // container's spec.volumes has them. Each names one of the machine's
   // spec.disks or spec.file_shares, at most once.
   repeated ContainerBootVolume volumes = 6;
+  // Joins the guest to a tailnet, as the container's spec.tailscale does,
+  // with hostname set: the container's name where it gives none. Only the
+  // machine's node gets the auth key, and only while the guest has not
+  // joined (TailscaleAuthKeyService). Changing it restarts nothing: the
+  // node has the running guest join, leave or change as it says.
+  ContainerTailscale tailscale = 7;
 }
 
 // ContainerBootVolume is one of the machine's disks or file shares,

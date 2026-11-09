@@ -61,6 +61,28 @@ message ContainerSpec {
   // Changing them restarts the container. See
   // docs/decisions/container-volumes.md.
   repeated ContainerVolume volumes = 11;
+  // Set, the container joins a tailnet as a node of its own, its processes
+  // seeing it as an interface, tailscale0, beside the others. The tailscale
+  // CLI is at /run/hangar/tailscale/bin/tailscale. The status condition
+  // TailnetJoined says whether it has joined. None of it restarts the
+  // container: setting it on a running container joins the tailnet as it
+  // runs; unsetting it logs the node out, stops it, and deletes its state,
+  // so setting it again joins as a new node with the key; a new hostname
+  // or accept_routes is set on the running node. See
+  // docs/decisions/container-tailscale.md.
+  ContainerTailscale tailscale = 12;
+}
+
+// ContainerTailscale joins the container to a tailnet as a node of its own.
+message ContainerTailscale {
+  // A Secret in the container's project holding, under "authkey", the auth
+  // key the container joins with the first time. Once it has joined, its
+  // node's state is on its root disk, and the key is not used again.
+  string auth_secret = 1;
+  // The node's hostname on the tailnet; empty is the container's name.
+  string hostname = 2;
+  // Accept the subnet routes the tailnet offers this node.
+  bool accept_routes = 3;
 }
 
 // ContainerVolume is a volume a container mounts, as Compose writes one.

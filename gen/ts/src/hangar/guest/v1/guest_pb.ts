@@ -8,8 +8,8 @@
 // keeps the hangar-init it booted with while the node is upgraded. See
 // docs/decisions/guest-agent.md.
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Duration } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_duration } from "@bufbuild/protobuf/wkt";
 import type { ImageConverter } from "./converter_pb";
@@ -22,7 +22,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/guest/v1/guest.proto.
  */
 export const file_hangar_guest_v1_guest: GenFile = /*@__PURE__*/
-  fileDesc("ChtoYW5nYXIvZ3Vlc3QvdjEvZ3Vlc3QucHJvdG8SD2hhbmdhci5ndWVzdC52MSLUAgoKQm9vdENvbmZpZxIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSLgoKaW50ZXJmYWNlcxgCIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2USEAoIaG9zdG5hbWUYAyABKAkSEwoLbmFtZXNlcnZlcnMYBCADKAkSDgoGc2VhcmNoGAUgAygJEigKB3ZvbHVtZXMYBiADKAsyFy5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lEhMKC21hY2hpbmVfdWlkGAcgASgJEjsKEWZpbGVfc2hhcmVfc2VydmVyGAggASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZVNlcnZlchI4Cg9pbWFnZV9jb252ZXJ0ZXIYCSABKAsyHy5oYW5nYXIuZ3Vlc3QudjEuSW1hZ2VDb252ZXJ0ZXIinwEKBlZvbHVtZRIOCgZkZXZpY2UYASABKAkSDgoGdGFyZ2V0GAIgASgJEhEKCXJlYWRfb25seRgDIAEoCBIOCgZub2NvcHkYBCABKAgSDwoHc3VicGF0aBgFIAEoCRIMCgRuYW1lGAYgASgJEjMKCmZpbGVfc2hhcmUYByABKAsyHy5oYW5nYXIuZ3Vlc3QudjEuRmlsZVNoYXJlTW91bnQiRwoHUHJvY2VzcxIMCgRhcmdzGAEgAygJEgsKA2VudhgCIAMoCRITCgt3b3JraW5nX2RpchgDIAEoCRIMCgR1c2VyGAQgASgJIl4KCUludGVyZmFjZRILCgNtYWMYASABKAkSDwoHYWRkcmVzcxgCIAEoCRIPCgdnYXRld2F5GAMgASgJEgwKBGlwdjYYBCABKAkSFAoMaXB2Nl9nYXRld2F5GAUgASgJIiQKElZvbHVtZVVzYWdlUmVxdWVzdBIOCgZkZXZpY2UYASABKAkiMQoTVm9sdW1lVXNhZ2VSZXNwb25zZRIMCgRzaXplGAEgASgEEgwKBHVzZWQYAiABKAQiIwoRR3Jvd1ZvbHVtZVJlcXVlc3QSDgoGZGV2aWNlGAEgASgJIiIKEkdyb3dWb2x1bWVSZXNwb25zZRIMCgRzaXplGAEgASgEIhIKEFJvb3RVc2FnZVJlcXVlc3QiLwoRUm9vdFVzYWdlUmVzcG9uc2USDAoEc2l6ZRgBIAEoBBIMCgR1c2VkGAIgASgEIhEKD0dyb3dSb290UmVxdWVzdCIgChBHcm93Um9vdFJlc3BvbnNlEgwKBHNpemUYASABKAQiQAoOU2V0SVB2NlJlcXVlc3QSLgoKaW50ZXJmYWNlcxgBIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2UiEQoPU2V0SVB2NlJlc3BvbnNlIjcKC1N0b3BSZXF1ZXN0EigKBWdyYWNlGAEgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIg4KDFN0b3BSZXNwb25zZSINCgtQaW5nUmVxdWVzdCJKCgxQaW5nUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIpCgZ1cHRpbWUYAiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24iywEKC0V4ZWNSZXF1ZXN0EisKBXN0YXJ0GAEgASgLMhouaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNTdGFydEgAEg8KBXN0ZGluGAIgASgMSAASMgoLc3RkaW5fY2xvc2UYAyABKAsyGy5oYW5nYXIuZ3Vlc3QudjEuU3RkaW5DbG9zZUgAEi0KBnJlc2l6ZRgEIAEoCzIbLmhhbmdhci5ndWVzdC52MS5XaW5kb3dTaXplSAASEAoGc2lnbmFsGAUgASgFSABCCQoHbWVzc2FnZSJuCglFeGVjU3RhcnQSKQoHcHJvY2VzcxgBIAEoCzIYLmhhbmdhci5ndWVzdC52MS5Qcm9jZXNzEgsKA3R0eRgCIAEoCBIpCgRzaXplGAMgASgLMhsuaGFuZ2FyLmd1ZXN0LnYxLldpbmRvd1NpemUiDAoKU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJoCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKQoEZXhpdBgDIAEoCzIZLmhhbmdhci5ndWVzdC52MS5FeGVjRXhpdEgAQgkKB21lc3NhZ2UiKAoIRXhlY0V4aXQSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUyigUKEUd1ZXN0QWdlbnRTZXJ2aWNlEkMKBFBpbmcSHC5oYW5nYXIuZ3Vlc3QudjEuUGluZ1JlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuUGluZ1Jlc3BvbnNlEkcKBEV4ZWMSHC5oYW5nYXIuZ3Vlc3QudjEuRXhlY1JlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuRXhlY1Jlc3BvbnNlKAEwARJDCgRTdG9wEhwuaGFuZ2FyLmd1ZXN0LnYxLlN0b3BSZXF1ZXN0Gh0uaGFuZ2FyLmd1ZXN0LnYxLlN0b3BSZXNwb25zZRJMCgdTZXRJUHY2Eh8uaGFuZ2FyLmd1ZXN0LnYxLlNldElQdjZSZXF1ZXN0GiAuaGFuZ2FyLmd1ZXN0LnYxLlNldElQdjZSZXNwb25zZRJSCglSb290VXNhZ2USIS5oYW5nYXIuZ3Vlc3QudjEuUm9vdFVzYWdlUmVxdWVzdBoiLmhhbmdhci5ndWVzdC52MS5Sb290VXNhZ2VSZXNwb25zZRJPCghHcm93Um9vdBIgLmhhbmdhci5ndWVzdC52MS5Hcm93Um9vdFJlcXVlc3QaIS5oYW5nYXIuZ3Vlc3QudjEuR3Jvd1Jvb3RSZXNwb25zZRJYCgtWb2x1bWVVc2FnZRIjLmhhbmdhci5ndWVzdC52MS5Wb2x1bWVVc2FnZVJlcXVlc3QaJC5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lVXNhZ2VSZXNwb25zZRJVCgpHcm93Vm9sdW1lEiIuaGFuZ2FyLmd1ZXN0LnYxLkdyb3dWb2x1bWVSZXF1ZXN0GiMuaGFuZ2FyLmd1ZXN0LnYxLkdyb3dWb2x1bWVSZXNwb25zZULBAQoTY29tLmhhbmdhci5ndWVzdC52MUIKR3Vlc3RQcm90b1ABWkBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9ndWVzdC92MTtndWVzdHYxogIDSEdYqgIPSGFuZ2FyLkd1ZXN0LlYxygIPSGFuZ2FyXEd1ZXN0XFYx4gIbSGFuZ2FyXEd1ZXN0XFYxXEdQQk1ldGFkYXRh6gIRSGFuZ2FyOjpHdWVzdDo6VjFiBnByb3RvMw", [file_google_protobuf_duration, file_hangar_guest_v1_converter, file_hangar_guest_v1_file_share]);
+  fileDesc("ChtoYW5nYXIvZ3Vlc3QvdjEvZ3Vlc3QucHJvdG8SD2hhbmdhci5ndWVzdC52MSKbAwoKQm9vdENvbmZpZxIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSLgoKaW50ZXJmYWNlcxgCIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2USEAoIaG9zdG5hbWUYAyABKAkSEwoLbmFtZXNlcnZlcnMYBCADKAkSDgoGc2VhcmNoGAUgAygJEigKB3ZvbHVtZXMYBiADKAsyFy5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lEhMKC21hY2hpbmVfdWlkGAcgASgJEjsKEWZpbGVfc2hhcmVfc2VydmVyGAggASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZVNlcnZlchI4Cg9pbWFnZV9jb252ZXJ0ZXIYCSABKAsyHy5oYW5nYXIuZ3Vlc3QudjEuSW1hZ2VDb252ZXJ0ZXISLQoJdGFpbHNjYWxlGAogASgLMhouaGFuZ2FyLmd1ZXN0LnYxLlRhaWxzY2FsZRIWCg50YWlsc2NhbGVfZGlzaxgLIAEoCSI0CglUYWlsc2NhbGUSEAoIaG9zdG5hbWUYASABKAkSFQoNYWNjZXB0X3JvdXRlcxgCIAEoCCKfAQoGVm9sdW1lEg4KBmRldmljZRgBIAEoCRIOCgZ0YXJnZXQYAiABKAkSEQoJcmVhZF9vbmx5GAMgASgIEg4KBm5vY29weRgEIAEoCBIPCgdzdWJwYXRoGAUgASgJEgwKBG5hbWUYBiABKAkSMwoKZmlsZV9zaGFyZRgHIAEoCzIfLmhhbmdhci5ndWVzdC52MS5GaWxlU2hhcmVNb3VudCJHCgdQcm9jZXNzEgwKBGFyZ3MYASADKAkSCwoDZW52GAIgAygJEhMKC3dvcmtpbmdfZGlyGAMgASgJEgwKBHVzZXIYBCABKAkiXgoJSW50ZXJmYWNlEgsKA21hYxgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEg8KB2dhdGV3YXkYAyABKAkSDAoEaXB2NhgEIAEoCRIUCgxpcHY2X2dhdGV3YXkYBSABKAkiFgoUVGFpbG5ldFN0YXR1c1JlcXVlc3QiaQoVVGFpbG5ldFN0YXR1c1Jlc3BvbnNlEiwKBXN0YXRlGAEgASgOMh0uaGFuZ2FyLmd1ZXN0LnYxLlRhaWxuZXRTdGF0ZRIPCgdtZXNzYWdlGAIgASgJEhEKCXdhbnRzX2tleRgDIAEoCCJCChFTZXRUYWlsbmV0UmVxdWVzdBItCgl0YWlsc2NhbGUYASABKAsyGi5oYW5nYXIuZ3Vlc3QudjEuVGFpbHNjYWxlIhQKElNldFRhaWxuZXRSZXNwb25zZSImChJKb2luVGFpbG5ldFJlcXVlc3QSEAoIYXV0aF9rZXkYASABKAkiFQoTSm9pblRhaWxuZXRSZXNwb25zZSIkChJWb2x1bWVVc2FnZVJlcXVlc3QSDgoGZGV2aWNlGAEgASgJIjEKE1ZvbHVtZVVzYWdlUmVzcG9uc2USDAoEc2l6ZRgBIAEoBBIMCgR1c2VkGAIgASgEIiMKEUdyb3dWb2x1bWVSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCSIiChJHcm93Vm9sdW1lUmVzcG9uc2USDAoEc2l6ZRgBIAEoBCISChBSb290VXNhZ2VSZXF1ZXN0Ii8KEVJvb3RVc2FnZVJlc3BvbnNlEgwKBHNpemUYASABKAQSDAoEdXNlZBgCIAEoBCIRCg9Hcm93Um9vdFJlcXVlc3QiIAoQR3Jvd1Jvb3RSZXNwb25zZRIMCgRzaXplGAEgASgEIkAKDlNldElQdjZSZXF1ZXN0Ei4KCmludGVyZmFjZXMYASADKAsyGi5oYW5nYXIuZ3Vlc3QudjEuSW50ZXJmYWNlIhEKD1NldElQdjZSZXNwb25zZSI3CgtTdG9wUmVxdWVzdBIoCgVncmFjZRgBIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiIOCgxTdG9wUmVzcG9uc2UiDQoLUGluZ1JlcXVlc3QiSgoMUGluZ1Jlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSKQoGdXB0aW1lGAIgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIssBCgtFeGVjUmVxdWVzdBIrCgVzdGFydBgBIAEoCzIaLmhhbmdhci5ndWVzdC52MS5FeGVjU3RhcnRIABIPCgVzdGRpbhgCIAEoDEgAEjIKC3N0ZGluX2Nsb3NlGAMgASgLMhsuaGFuZ2FyLmd1ZXN0LnYxLlN0ZGluQ2xvc2VIABItCgZyZXNpemUYBCABKAsyGy5oYW5nYXIuZ3Vlc3QudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UibgoJRXhlY1N0YXJ0EikKB3Byb2Nlc3MYASABKAsyGC5oYW5nYXIuZ3Vlc3QudjEuUHJvY2VzcxILCgN0dHkYAiABKAgSKQoEc2l6ZRgDIAEoCzIbLmhhbmdhci5ndWVzdC52MS5XaW5kb3dTaXplIgwKClN0ZGluQ2xvc2UiKAoKV2luZG93U2l6ZRIMCgRyb3dzGAEgASgNEgwKBGNvbHMYAiABKA0iaAoMRXhlY1Jlc3BvbnNlEhAKBnN0ZG91dBgBIAEoDEgAEhAKBnN0ZGVychgCIAEoDEgAEikKBGV4aXQYAyABKAsyGS5oYW5nYXIuZ3Vlc3QudjEuRXhlY0V4aXRIAEIJCgdtZXNzYWdlIigKCEV4ZWNFeGl0EgwKBGNvZGUYASABKAUSDgoGc2lnbmFsGAIgASgFKtEBCgxUYWlsbmV0U3RhdGUSHQoZVEFJTE5FVF9TVEFURV9VTlNQRUNJRklFRBAAEhoKFlRBSUxORVRfU1RBVEVfU1RBUlRJTkcQARIbChdUQUlMTkVUX1NUQVRFX05FRURTX0tFWRACEhgKFFRBSUxORVRfU1RBVEVfSk9JTkVEEAMSHgoaVEFJTE5FVF9TVEFURV9LRVlfUkVKRUNURUQQBBIYChRUQUlMTkVUX1NUQVRFX0ZBSUxFRBAFEhUKEVRBSUxORVRfU1RBVEVfT0ZGEAYymwcKEUd1ZXN0QWdlbnRTZXJ2aWNlEkMKBFBpbmcSHC5oYW5nYXIuZ3Vlc3QudjEuUGluZ1JlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuUGluZ1Jlc3BvbnNlEkcKBEV4ZWMSHC5oYW5nYXIuZ3Vlc3QudjEuRXhlY1JlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuRXhlY1Jlc3BvbnNlKAEwARJDCgRTdG9wEhwuaGFuZ2FyLmd1ZXN0LnYxLlN0b3BSZXF1ZXN0Gh0uaGFuZ2FyLmd1ZXN0LnYxLlN0b3BSZXNwb25zZRJMCgdTZXRJUHY2Eh8uaGFuZ2FyLmd1ZXN0LnYxLlNldElQdjZSZXF1ZXN0GiAuaGFuZ2FyLmd1ZXN0LnYxLlNldElQdjZSZXNwb25zZRJSCglSb290VXNhZ2USIS5oYW5nYXIuZ3Vlc3QudjEuUm9vdFVzYWdlUmVxdWVzdBoiLmhhbmdhci5ndWVzdC52MS5Sb290VXNhZ2VSZXNwb25zZRJPCghHcm93Um9vdBIgLmhhbmdhci5ndWVzdC52MS5Hcm93Um9vdFJlcXVlc3QaIS5oYW5nYXIuZ3Vlc3QudjEuR3Jvd1Jvb3RSZXNwb25zZRJYCgtWb2x1bWVVc2FnZRIjLmhhbmdhci5ndWVzdC52MS5Wb2x1bWVVc2FnZVJlcXVlc3QaJC5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lVXNhZ2VSZXNwb25zZRJVCgpHcm93Vm9sdW1lEiIuaGFuZ2FyLmd1ZXN0LnYxLkdyb3dWb2x1bWVSZXF1ZXN0GiMuaGFuZ2FyLmd1ZXN0LnYxLkdyb3dWb2x1bWVSZXNwb25zZRJVCgpTZXRUYWlsbmV0EiIuaGFuZ2FyLmd1ZXN0LnYxLlNldFRhaWxuZXRSZXF1ZXN0GiMuaGFuZ2FyLmd1ZXN0LnYxLlNldFRhaWxuZXRSZXNwb25zZRJeCg1UYWlsbmV0U3RhdHVzEiUuaGFuZ2FyLmd1ZXN0LnYxLlRhaWxuZXRTdGF0dXNSZXF1ZXN0GiYuaGFuZ2FyLmd1ZXN0LnYxLlRhaWxuZXRTdGF0dXNSZXNwb25zZRJYCgtKb2luVGFpbG5ldBIjLmhhbmdhci5ndWVzdC52MS5Kb2luVGFpbG5ldFJlcXVlc3QaJC5oYW5nYXIuZ3Vlc3QudjEuSm9pblRhaWxuZXRSZXNwb25zZULBAQoTY29tLmhhbmdhci5ndWVzdC52MUIKR3Vlc3RQcm90b1ABWkBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9ndWVzdC92MTtndWVzdHYxogIDSEdYqgIPSGFuZ2FyLkd1ZXN0LlYxygIPSGFuZ2FyXEd1ZXN0XFYx4gIbSGFuZ2FyXEd1ZXN0XFYxXEdQQk1ldGFkYXRh6gIRSGFuZ2FyOjpHdWVzdDo6VjFiBnByb3RvMw", [file_google_protobuf_duration, file_hangar_guest_v1_converter, file_hangar_guest_v1_file_share]);
 
 /**
  * BootConfig is all a guest needs from the node to boot, and to boot again:
@@ -96,6 +96,27 @@ export type BootConfig = Message<"hangar.guest.v1.BootConfig"> & {
    * @generated from field: hangar.guest.v1.ImageConverter image_converter = 9;
    */
   imageConverter?: ImageConverter | undefined;
+
+  /**
+   * Set, the container joins a tailnet as it boots: hangar-init runs
+   * tailscaled beside its process. SetTailnet changes it while the guest
+   * runs, and the node rewrites the boot disk to match, so a boot of the
+   * restart policy comes up as last told. See
+   * docs/decisions/container-tailscale.md.
+   *
+   * @generated from field: hangar.guest.v1.Tailscale tailscale = 10;
+   */
+  tailscale?: Tailscale | undefined;
+
+  /**
+   * The read-only disk holding tailscaled and the tailscale CLI, such as
+   * /dev/vde, given to every container whether or not it joins a tailnet,
+   * so it can join later: hangar-init mounts it at /run/hangar/tailscale as
+   * the container first joins. Empty when the host has none.
+   *
+   * @generated from field: string tailscale_disk = 11;
+   */
+  tailscaleDisk: string;
 };
 
 /**
@@ -104,6 +125,36 @@ export type BootConfig = Message<"hangar.guest.v1.BootConfig"> & {
  */
 export const BootConfigSchema: GenMessage<BootConfig> = /*@__PURE__*/
   messageDesc(file_hangar_guest_v1_guest, 0);
+
+/**
+ * Tailscale is how a container joins a tailnet. The auth key is not here:
+ * it comes from the node through JoinTailnet, and only while the guest has
+ * no node state of its own.
+ *
+ * @generated from message hangar.guest.v1.Tailscale
+ */
+export type Tailscale = Message<"hangar.guest.v1.Tailscale"> & {
+  /**
+   * The node's hostname on the tailnet.
+   *
+   * @generated from field: string hostname = 1;
+   */
+  hostname: string;
+
+  /**
+   * Accept the subnet routes the tailnet offers.
+   *
+   * @generated from field: bool accept_routes = 2;
+   */
+  acceptRoutes: boolean;
+};
+
+/**
+ * Describes the message hangar.guest.v1.Tailscale.
+ * Use `create(TailscaleSchema)` to create a new message.
+ */
+export const TailscaleSchema: GenMessage<Tailscale> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 1);
 
 /**
  * Volume is a disk the guest mounts, formatted when blank and filled from
@@ -166,7 +217,7 @@ export type Volume = Message<"hangar.guest.v1.Volume"> & {
  * Use `create(VolumeSchema)` to create a new message.
  */
 export const VolumeSchema: GenMessage<Volume> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 1);
+  messageDesc(file_hangar_guest_v1_guest, 2);
 
 /**
  * Process is a process to run in the guest.
@@ -209,7 +260,7 @@ export type Process = Message<"hangar.guest.v1.Process"> & {
  * Use `create(ProcessSchema)` to create a new message.
  */
 export const ProcessSchema: GenMessage<Process> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 2);
+  messageDesc(file_hangar_guest_v1_guest, 3);
 
 /**
  * Interface is one network interface, found in the guest by its MAC.
@@ -260,7 +311,117 @@ export type Interface = Message<"hangar.guest.v1.Interface"> & {
  * Use `create(InterfaceSchema)` to create a new message.
  */
 export const InterfaceSchema: GenMessage<Interface> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 3);
+  messageDesc(file_hangar_guest_v1_guest, 4);
+
+/**
+ * @generated from message hangar.guest.v1.TailnetStatusRequest
+ */
+export type TailnetStatusRequest = Message<"hangar.guest.v1.TailnetStatusRequest"> & {
+};
+
+/**
+ * Describes the message hangar.guest.v1.TailnetStatusRequest.
+ * Use `create(TailnetStatusRequestSchema)` to create a new message.
+ */
+export const TailnetStatusRequestSchema: GenMessage<TailnetStatusRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 5);
+
+/**
+ * @generated from message hangar.guest.v1.TailnetStatusResponse
+ */
+export type TailnetStatusResponse = Message<"hangar.guest.v1.TailnetStatusResponse"> & {
+  /**
+   * @generated from field: hangar.guest.v1.TailnetState state = 1;
+   */
+  state: TailnetState;
+
+  /**
+   * What the state is about, such as the node's name on the tailnet, or why
+   * it failed.
+   *
+   * @generated from field: string message = 2;
+   */
+  message: string;
+
+  /**
+   * The guest asks for the auth key now: it has no node state, and was
+   * given no key since it last joined, or the last it was given failed
+   * long enough ago to be tried again. The guest keeps that time, so the
+   * node's own restarts do not hurry it.
+   *
+   * @generated from field: bool wants_key = 3;
+   */
+  wantsKey: boolean;
+};
+
+/**
+ * Describes the message hangar.guest.v1.TailnetStatusResponse.
+ * Use `create(TailnetStatusResponseSchema)` to create a new message.
+ */
+export const TailnetStatusResponseSchema: GenMessage<TailnetStatusResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 6);
+
+/**
+ * @generated from message hangar.guest.v1.SetTailnetRequest
+ */
+export type SetTailnetRequest = Message<"hangar.guest.v1.SetTailnetRequest"> & {
+  /**
+   * Unset leaves the tailnet.
+   *
+   * @generated from field: hangar.guest.v1.Tailscale tailscale = 1;
+   */
+  tailscale?: Tailscale | undefined;
+};
+
+/**
+ * Describes the message hangar.guest.v1.SetTailnetRequest.
+ * Use `create(SetTailnetRequestSchema)` to create a new message.
+ */
+export const SetTailnetRequestSchema: GenMessage<SetTailnetRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 7);
+
+/**
+ * @generated from message hangar.guest.v1.SetTailnetResponse
+ */
+export type SetTailnetResponse = Message<"hangar.guest.v1.SetTailnetResponse"> & {
+};
+
+/**
+ * Describes the message hangar.guest.v1.SetTailnetResponse.
+ * Use `create(SetTailnetResponseSchema)` to create a new message.
+ */
+export const SetTailnetResponseSchema: GenMessage<SetTailnetResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 8);
+
+/**
+ * @generated from message hangar.guest.v1.JoinTailnetRequest
+ */
+export type JoinTailnetRequest = Message<"hangar.guest.v1.JoinTailnetRequest"> & {
+  /**
+   * @generated from field: string auth_key = 1;
+   */
+  authKey: string;
+};
+
+/**
+ * Describes the message hangar.guest.v1.JoinTailnetRequest.
+ * Use `create(JoinTailnetRequestSchema)` to create a new message.
+ */
+export const JoinTailnetRequestSchema: GenMessage<JoinTailnetRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 9);
+
+/**
+ * @generated from message hangar.guest.v1.JoinTailnetResponse
+ */
+export type JoinTailnetResponse = Message<"hangar.guest.v1.JoinTailnetResponse"> & {
+};
+
+/**
+ * Describes the message hangar.guest.v1.JoinTailnetResponse.
+ * Use `create(JoinTailnetResponseSchema)` to create a new message.
+ */
+export const JoinTailnetResponseSchema: GenMessage<JoinTailnetResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 10);
 
 /**
  * @generated from message hangar.guest.v1.VolumeUsageRequest
@@ -279,7 +440,7 @@ export type VolumeUsageRequest = Message<"hangar.guest.v1.VolumeUsageRequest"> &
  * Use `create(VolumeUsageRequestSchema)` to create a new message.
  */
 export const VolumeUsageRequestSchema: GenMessage<VolumeUsageRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 4);
+  messageDesc(file_hangar_guest_v1_guest, 11);
 
 /**
  * @generated from message hangar.guest.v1.VolumeUsageResponse
@@ -303,7 +464,7 @@ export type VolumeUsageResponse = Message<"hangar.guest.v1.VolumeUsageResponse">
  * Use `create(VolumeUsageResponseSchema)` to create a new message.
  */
 export const VolumeUsageResponseSchema: GenMessage<VolumeUsageResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 5);
+  messageDesc(file_hangar_guest_v1_guest, 12);
 
 /**
  * @generated from message hangar.guest.v1.GrowVolumeRequest
@@ -322,7 +483,7 @@ export type GrowVolumeRequest = Message<"hangar.guest.v1.GrowVolumeRequest"> & {
  * Use `create(GrowVolumeRequestSchema)` to create a new message.
  */
 export const GrowVolumeRequestSchema: GenMessage<GrowVolumeRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 6);
+  messageDesc(file_hangar_guest_v1_guest, 13);
 
 /**
  * @generated from message hangar.guest.v1.GrowVolumeResponse
@@ -341,7 +502,7 @@ export type GrowVolumeResponse = Message<"hangar.guest.v1.GrowVolumeResponse"> &
  * Use `create(GrowVolumeResponseSchema)` to create a new message.
  */
 export const GrowVolumeResponseSchema: GenMessage<GrowVolumeResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 7);
+  messageDesc(file_hangar_guest_v1_guest, 14);
 
 /**
  * @generated from message hangar.guest.v1.RootUsageRequest
@@ -354,7 +515,7 @@ export type RootUsageRequest = Message<"hangar.guest.v1.RootUsageRequest"> & {
  * Use `create(RootUsageRequestSchema)` to create a new message.
  */
 export const RootUsageRequestSchema: GenMessage<RootUsageRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 8);
+  messageDesc(file_hangar_guest_v1_guest, 15);
 
 /**
  * @generated from message hangar.guest.v1.RootUsageResponse
@@ -379,7 +540,7 @@ export type RootUsageResponse = Message<"hangar.guest.v1.RootUsageResponse"> & {
  * Use `create(RootUsageResponseSchema)` to create a new message.
  */
 export const RootUsageResponseSchema: GenMessage<RootUsageResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 9);
+  messageDesc(file_hangar_guest_v1_guest, 16);
 
 /**
  * @generated from message hangar.guest.v1.GrowRootRequest
@@ -392,7 +553,7 @@ export type GrowRootRequest = Message<"hangar.guest.v1.GrowRootRequest"> & {
  * Use `create(GrowRootRequestSchema)` to create a new message.
  */
 export const GrowRootRequestSchema: GenMessage<GrowRootRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 10);
+  messageDesc(file_hangar_guest_v1_guest, 17);
 
 /**
  * @generated from message hangar.guest.v1.GrowRootResponse
@@ -411,7 +572,7 @@ export type GrowRootResponse = Message<"hangar.guest.v1.GrowRootResponse"> & {
  * Use `create(GrowRootResponseSchema)` to create a new message.
  */
 export const GrowRootResponseSchema: GenMessage<GrowRootResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 11);
+  messageDesc(file_hangar_guest_v1_guest, 18);
 
 /**
  * @generated from message hangar.guest.v1.SetIPv6Request
@@ -431,7 +592,7 @@ export type SetIPv6Request = Message<"hangar.guest.v1.SetIPv6Request"> & {
  * Use `create(SetIPv6RequestSchema)` to create a new message.
  */
 export const SetIPv6RequestSchema: GenMessage<SetIPv6Request> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 12);
+  messageDesc(file_hangar_guest_v1_guest, 19);
 
 /**
  * @generated from message hangar.guest.v1.SetIPv6Response
@@ -444,7 +605,7 @@ export type SetIPv6Response = Message<"hangar.guest.v1.SetIPv6Response"> & {
  * Use `create(SetIPv6ResponseSchema)` to create a new message.
  */
 export const SetIPv6ResponseSchema: GenMessage<SetIPv6Response> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 13);
+  messageDesc(file_hangar_guest_v1_guest, 20);
 
 /**
  * @generated from message hangar.guest.v1.StopRequest
@@ -463,7 +624,7 @@ export type StopRequest = Message<"hangar.guest.v1.StopRequest"> & {
  * Use `create(StopRequestSchema)` to create a new message.
  */
 export const StopRequestSchema: GenMessage<StopRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 14);
+  messageDesc(file_hangar_guest_v1_guest, 21);
 
 /**
  * @generated from message hangar.guest.v1.StopResponse
@@ -476,7 +637,7 @@ export type StopResponse = Message<"hangar.guest.v1.StopResponse"> & {
  * Use `create(StopResponseSchema)` to create a new message.
  */
 export const StopResponseSchema: GenMessage<StopResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 15);
+  messageDesc(file_hangar_guest_v1_guest, 22);
 
 /**
  * @generated from message hangar.guest.v1.PingRequest
@@ -489,7 +650,7 @@ export type PingRequest = Message<"hangar.guest.v1.PingRequest"> & {
  * Use `create(PingRequestSchema)` to create a new message.
  */
 export const PingRequestSchema: GenMessage<PingRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 16);
+  messageDesc(file_hangar_guest_v1_guest, 23);
 
 /**
  * @generated from message hangar.guest.v1.PingResponse
@@ -515,7 +676,7 @@ export type PingResponse = Message<"hangar.guest.v1.PingResponse"> & {
  * Use `create(PingResponseSchema)` to create a new message.
  */
 export const PingResponseSchema: GenMessage<PingResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 17);
+  messageDesc(file_hangar_guest_v1_guest, 24);
 
 /**
  * @generated from message hangar.guest.v1.ExecRequest
@@ -566,7 +727,7 @@ export type ExecRequest = Message<"hangar.guest.v1.ExecRequest"> & {
  * Use `create(ExecRequestSchema)` to create a new message.
  */
 export const ExecRequestSchema: GenMessage<ExecRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 18);
+  messageDesc(file_hangar_guest_v1_guest, 25);
 
 /**
  * ExecStart starts the process.
@@ -599,7 +760,7 @@ export type ExecStart = Message<"hangar.guest.v1.ExecStart"> & {
  * Use `create(ExecStartSchema)` to create a new message.
  */
 export const ExecStartSchema: GenMessage<ExecStart> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 19);
+  messageDesc(file_hangar_guest_v1_guest, 26);
 
 /**
  * @generated from message hangar.guest.v1.StdinClose
@@ -612,7 +773,7 @@ export type StdinClose = Message<"hangar.guest.v1.StdinClose"> & {
  * Use `create(StdinCloseSchema)` to create a new message.
  */
 export const StdinCloseSchema: GenMessage<StdinClose> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 20);
+  messageDesc(file_hangar_guest_v1_guest, 27);
 
 /**
  * @generated from message hangar.guest.v1.WindowSize
@@ -634,7 +795,7 @@ export type WindowSize = Message<"hangar.guest.v1.WindowSize"> & {
  * Use `create(WindowSizeSchema)` to create a new message.
  */
 export const WindowSizeSchema: GenMessage<WindowSize> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 21);
+  messageDesc(file_hangar_guest_v1_guest, 28);
 
 /**
  * @generated from message hangar.guest.v1.ExecResponse
@@ -671,7 +832,7 @@ export type ExecResponse = Message<"hangar.guest.v1.ExecResponse"> & {
  * Use `create(ExecResponseSchema)` to create a new message.
  */
 export const ExecResponseSchema: GenMessage<ExecResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 22);
+  messageDesc(file_hangar_guest_v1_guest, 29);
 
 /**
  * ExecExit says how the process ended.
@@ -699,7 +860,67 @@ export type ExecExit = Message<"hangar.guest.v1.ExecExit"> & {
  * Use `create(ExecExitSchema)` to create a new message.
  */
 export const ExecExitSchema: GenMessage<ExecExit> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 23);
+  messageDesc(file_hangar_guest_v1_guest, 30);
+
+/**
+ * TailnetState is where a guest's tailnet join stands.
+ *
+ * @generated from enum hangar.guest.v1.TailnetState
+ */
+export enum TailnetState {
+  /**
+   * @generated from enum value: TAILNET_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * tailscaled is starting, or a join is under way.
+   *
+   * @generated from enum value: TAILNET_STATE_STARTING = 1;
+   */
+  STARTING = 1,
+
+  /**
+   * The guest has no node state, and waits for an auth key.
+   *
+   * @generated from enum value: TAILNET_STATE_NEEDS_KEY = 2;
+   */
+  NEEDS_KEY = 2,
+
+  /**
+   * The guest is a node of the tailnet, and connected.
+   *
+   * @generated from enum value: TAILNET_STATE_JOINED = 3;
+   */
+  JOINED = 3,
+
+  /**
+   * The tailnet refused the auth key last given.
+   *
+   * @generated from enum value: TAILNET_STATE_KEY_REJECTED = 4;
+   */
+  KEY_REJECTED = 4,
+
+  /**
+   * The join, or tailscaled, failed otherwise.
+   *
+   * @generated from enum value: TAILNET_STATE_FAILED = 5;
+   */
+  FAILED = 5,
+
+  /**
+   * The guest is told to join no tailnet, and runs no tailscaled.
+   *
+   * @generated from enum value: TAILNET_STATE_OFF = 6;
+   */
+  OFF = 6,
+}
+
+/**
+ * Describes the enum hangar.guest.v1.TailnetState.
+ */
+export const TailnetStateSchema: GenEnum<TailnetState> = /*@__PURE__*/
+  enumDesc(file_hangar_guest_v1_guest, 0);
 
 /**
  * GuestAgentService is served by hangar-init over vsock.
@@ -800,6 +1021,45 @@ export const GuestAgentService: GenService<{
     methodKind: "unary";
     input: typeof GrowVolumeRequestSchema;
     output: typeof GrowVolumeResponseSchema;
+  },
+  /**
+   * SetTailnet makes the guest join the tailnet as told, or, told none,
+   * leave it, while it runs: joining starts tailscaled and the DNS split;
+   * leaving logs the node out, stops tailscaled, deletes its state, so a
+   * later join is a new node, and restores the container's resolvers; a
+   * new hostname or accept_routes is set on the running node. It answers
+   * at once; TailnetStatus says how it went.
+   *
+   * @generated from rpc hangar.guest.v1.GuestAgentService.SetTailnet
+   */
+  setTailnet: {
+    methodKind: "unary";
+    input: typeof SetTailnetRequestSchema;
+    output: typeof SetTailnetResponseSchema;
+  },
+  /**
+   * TailnetStatus says where the guest's tailnet join stands.
+   *
+   * @generated from rpc hangar.guest.v1.GuestAgentService.TailnetStatus
+   */
+  tailnetStatus: {
+    methodKind: "unary";
+    input: typeof TailnetStatusRequestSchema;
+    output: typeof TailnetStatusResponseSchema;
+  },
+  /**
+   * JoinTailnet gives a guest with no node state the auth key to join
+   * with, as its TailnetStatus NEEDS_KEY asks, or again after
+   * KEY_REJECTED or FAILED; a guest with node state refuses it with
+   * FAILED_PRECONDITION. It answers once the join has begun; TailnetStatus
+   * says how it went. The guest keeps the key in memory for the join alone.
+   *
+   * @generated from rpc hangar.guest.v1.GuestAgentService.JoinTailnet
+   */
+  joinTailnet: {
+    methodKind: "unary";
+    input: typeof JoinTailnetRequestSchema;
+    output: typeof JoinTailnetResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_guest_v1_guest, 0);

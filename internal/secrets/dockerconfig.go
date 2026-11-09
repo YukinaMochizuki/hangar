@@ -55,8 +55,10 @@ func Validate(t secretsv1alpha1.SecretType, data map[string][]byte) error {
 		}
 		_, err := parseDockerConfig(data[DockerConfigKey])
 		return err
+	case secretsv1alpha1.SecretType_SECRET_TYPE_TAILSCALE_AUTH:
+		return validateTailscaleAuth(data)
 	case secretsv1alpha1.SecretType_SECRET_TYPE_UNSPECIFIED:
-		return errors.New("type is required: registry-auth")
+		return errors.New("type is required: registry-auth or tailscale-auth")
 	}
 	return errors.New("unknown type")
 }

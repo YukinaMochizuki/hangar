@@ -37,6 +37,27 @@ message BootConfig {
   // root disk, process or network, and ignores volumes. Only the converter
   // initramfs holds what it runs.
   ImageConverter image_converter = 9;
+  // Set, the container joins a tailnet as it boots: hangar-init runs
+  // tailscaled beside its process. SetTailnet changes it while the guest
+  // runs, and the node rewrites the boot disk to match, so a boot of the
+  // restart policy comes up as last told. See
+  // docs/decisions/container-tailscale.md.
+  Tailscale tailscale = 10;
+  // The read-only disk holding tailscaled and the tailscale CLI, such as
+  // /dev/vde, given to every container whether or not it joins a tailnet,
+  // so it can join later: hangar-init mounts it at /run/hangar/tailscale as
+  // the container first joins. Empty when the host has none.
+  string tailscale_disk = 11;
+}
+
+// Tailscale is how a container joins a tailnet. The auth key is not here:
+// it comes from the node through JoinTailnet, and only while the guest has
+// no node state of its own.
+message Tailscale {
+  // The node's hostname on the tailnet.
+  string hostname = 1;
+  // Accept the subnet routes the tailnet offers.
+  bool accept_routes = 2;
 }
 
 // Volume is a disk the guest mounts, formatted when blank and filled from
@@ -119,7 +140,66 @@ service GuestAgentService {
   // to its whole device, once the host has grown the device while the guest
   // runs. See docs/decisions/disk-autogrow.md.
   rpc GrowVolume(GrowVolumeRequest) returns (GrowVolumeResponse);
+  // SetTailnet makes the guest join the tailnet as told, or, told none,
+  // leave it, while it runs: joining starts tailscaled and the DNS split;
+  // leaving logs the node out, stops tailscaled, deletes its state, so a
+  // later join is a new node, and restores the container's resolvers; a
+  // new hostname or accept_routes is set on the running node. It answers
+  // at once; TailnetStatus says how it went.
+  rpc SetTailnet(SetTailnetRequest) returns (SetTailnetResponse);
+  // TailnetStatus says where the guest's tailnet join stands.
+  rpc TailnetStatus(TailnetStatusRequest) returns (TailnetStatusResponse);
+  // JoinTailnet gives a guest with no node state the auth key to join
+  // with, as its TailnetStatus NEEDS_KEY asks, or again after
+  // KEY_REJECTED or FAILED; a guest with node state refuses it with
+  // FAILED_PRECONDITION. It answers once the join has begun; TailnetStatus
+  // says how it went. The guest keeps the key in memory for the join alone.
+  rpc JoinTailnet(JoinTailnetRequest) returns (JoinTailnetResponse);
 }
+
+message TailnetStatusRequest {}
+
+message TailnetStatusResponse {
+  TailnetState state = 1;
+  // What the state is about, such as the node's name on the tailnet, or why
+  // it failed.
+  string message = 2;
+  // The guest asks for the auth key now: it has no node state, and was
+  // given no key since it last joined, or the last it was given failed
+  // long enough ago to be tried again. The guest keeps that time, so the
+  // node's own restarts do not hurry it.
+  bool wants_key = 3;
+}
+
+// TailnetState is where a guest's tailnet join stands.
+enum TailnetState {
+  TAILNET_STATE_UNSPECIFIED = 0;
+  // tailscaled is starting, or a join is under way.
+  TAILNET_STATE_STARTING = 1;
+  // The guest has no node state, and waits for an auth key.
+  TAILNET_STATE_NEEDS_KEY = 2;
+  // The guest is a node of the tailnet, and connected.
+  TAILNET_STATE_JOINED = 3;
+  // The tailnet refused the auth key last given.
+  TAILNET_STATE_KEY_REJECTED = 4;
+  // The join, or tailscaled, failed otherwise.
+  TAILNET_STATE_FAILED = 5;
+  // The guest is told to join no tailnet, and runs no tailscaled.
+  TAILNET_STATE_OFF = 6;
+}
+
+message SetTailnetRequest {
+  // Unset leaves the tailnet.
+  Tailscale tailscale = 1;
+}
+
+message SetTailnetResponse {}
+
+message JoinTailnetRequest {
+  string auth_key = 1;
+}
+
+message JoinTailnetResponse {}
 
 message VolumeUsageRequest {
   // The volume's device, as the boot disk lists it, such as /dev/vdc.

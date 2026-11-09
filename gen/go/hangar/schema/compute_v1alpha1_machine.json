@@ -35,6 +35,10 @@
           },
           "type": "array"
         },
+        "tailscale": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerTailscale",
+          "description": "Joins the guest to a tailnet, as the container's spec.tailscale does, with hostname set: the container's name where it gives none. Only the machine's node gets the auth key, and only while the guest has not joined (TailscaleAuthKeyService). Changing it restarts nothing: the node has the running guest join, leave or change as it says."
+        },
         "volumes": {
           "description": "The machine's disks and file shares the guest mounts, as the container's spec.volumes has them. Each names one of the machine's spec.disks or spec.file_shares, at most once.",
           "items": {
@@ -68,6 +72,25 @@
           "type": "string"
         },
         "target": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.ContainerTailscale": {
+      "additionalProperties": false,
+      "description": "ContainerTailscale joins the container to a tailnet as a node of its own.",
+      "properties": {
+        "acceptRoutes": {
+          "description": "Accept the subnet routes the tailnet offers this node.",
+          "type": "boolean"
+        },
+        "authSecret": {
+          "description": "A Secret in the container's project holding, under \"authkey\", the auth key the container joins with the first time. Once it has joined, its node's state is on its root disk, and the key is not used again.",
+          "type": "string"
+        },
+        "hostname": {
+          "description": "The node's hostname on the tailnet; empty is the container's name.",
           "type": "string"
         }
       },
