@@ -41,6 +41,23 @@ import { runsOnState } from "@/lib/runs-on";
 import { bare } from "@/pages/machine-list";
 import { VmFileSharesCard } from "@/components/file-shares";
 import { MachinePortForwards } from "@/components/port-forwards";
+import { UsageCard, UsageNote, UsagePlaceholder } from "@/components/machine-usage";
+import { isNotRunning, useMachineUsage } from "@/lib/usage";
+
+/**
+ * The machine's CPU and memory over the last hour, asked of its node while
+ * it runs; one line saying it does not run otherwise.
+ */
+function Usage({ m }: { m: MachineView }) {
+  const running = !m.stopped && m.phase === MachinePhase.RUNNING;
+  const { data, loading, error } = useMachineUsage(m.project, m.kind, m.name, running);
+  const memoryKind = m.kind === "Container" ? "guest" : "host";
+  if (!running || isNotRunning(error)) return <UsageNote>{m.name} is not running.</UsageNote>;
+  // A failed ask hides the last answer, which would read as the value now.
+  if (error) return <UsagePlaceholder memoryKind={memoryKind}>Usage did not load.</UsagePlaceholder>;
+  if (data) return <UsageCard usage={data} />;
+  return <UsagePlaceholder memoryKind={memoryKind}>{loading ? "Loading…" : ""}</UsagePlaceholder>;
+}
 
 const restartPolicies: Record<number, string> = {
   [RestartPolicy.UNSPECIFIED]: "Always (default)",
@@ -862,6 +879,7 @@ function Loaded({
         </div>
         <div className="space-y-5">
           <RunsOn m={m} />
+          <Usage m={m} />
           <Equivalent m={m} />
         </div>
       </div>

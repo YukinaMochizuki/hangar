@@ -5,7 +5,8 @@
 import { create } from "@bufbuild/protobuf";
 import { ContainerService } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { MachinePhase, MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
-import { MachineCapabilityService } from "@hangar/api/hangar/compute/v1alpha1/machine_capability_pb";
+import type { MessageInitShape } from "@bufbuild/protobuf";
+import { MachineCapabilityService, type UsageRequest, type UsageResponseSchema } from "@hangar/api/hangar/compute/v1alpha1/machine_capability_pb";
 import { VirtualMachineService } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { AccountService, WhoAmIResponseSchema } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import { MemberService } from "@hangar/api/hangar/iam/v1alpha1/member_pb";
@@ -108,6 +109,8 @@ export type PaletteFake = {
 } & {
   /** What TestPermissions answers the caller holds; unset, every permission asked. */
   perms?: (scope: string) => string[] | Promise<string[]>;
+  /** What a machine's Usage answers; unset, no samples yet. */
+  usage?: (req: UsageRequest) => MessageInitShape<typeof UsageResponseSchema> | Promise<MessageInitShape<typeof UsageResponseSchema>>;
 };
 
 /** paletteApi is the in-memory API, with what f replaces. */
@@ -131,6 +134,7 @@ export function paletteApi(f: PaletteFake = {}) {
       async *logs() {
         yield { records: [{ boot: 1n, content: { case: "data" as const, value: new TextEncoder().encode("listening on :8080\n") } }] };
       },
+      usage: (req) => (f.usage ? f.usage(req) : {}),
     });
     // Creates answer as the API does, with the object made.
     r.service(DiskService, { listDisks: () => l("listDisks")(), applyDisk: (req) => ({ disk: req.disk, created: true }) });

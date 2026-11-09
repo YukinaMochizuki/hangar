@@ -22,7 +22,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/guest/v1/guest.proto.
  */
 export const file_hangar_guest_v1_guest: GenFile = /*@__PURE__*/
-  fileDesc("ChtoYW5nYXIvZ3Vlc3QvdjEvZ3Vlc3QucHJvdG8SD2hhbmdhci5ndWVzdC52MSKbAwoKQm9vdENvbmZpZxIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSLgoKaW50ZXJmYWNlcxgCIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2USEAoIaG9zdG5hbWUYAyABKAkSEwoLbmFtZXNlcnZlcnMYBCADKAkSDgoGc2VhcmNoGAUgAygJEigKB3ZvbHVtZXMYBiADKAsyFy5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lEhMKC21hY2hpbmVfdWlkGAcgASgJEjsKEWZpbGVfc2hhcmVfc2VydmVyGAggASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZVNlcnZlchI4Cg9pbWFnZV9jb252ZXJ0ZXIYCSABKAsyHy5oYW5nYXIuZ3Vlc3QudjEuSW1hZ2VDb252ZXJ0ZXISLQoJdGFpbHNjYWxlGAogASgLMhouaGFuZ2FyLmd1ZXN0LnYxLlRhaWxzY2FsZRIWCg50YWlsc2NhbGVfZGlzaxgLIAEoCSI0CglUYWlsc2NhbGUSEAoIaG9zdG5hbWUYASABKAkSFQoNYWNjZXB0X3JvdXRlcxgCIAEoCCKfAQoGVm9sdW1lEg4KBmRldmljZRgBIAEoCRIOCgZ0YXJnZXQYAiABKAkSEQoJcmVhZF9vbmx5GAMgASgIEg4KBm5vY29weRgEIAEoCBIPCgdzdWJwYXRoGAUgASgJEgwKBG5hbWUYBiABKAkSMwoKZmlsZV9zaGFyZRgHIAEoCzIfLmhhbmdhci5ndWVzdC52MS5GaWxlU2hhcmVNb3VudCJHCgdQcm9jZXNzEgwKBGFyZ3MYASADKAkSCwoDZW52GAIgAygJEhMKC3dvcmtpbmdfZGlyGAMgASgJEgwKBHVzZXIYBCABKAkiXgoJSW50ZXJmYWNlEgsKA21hYxgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEg8KB2dhdGV3YXkYAyABKAkSDAoEaXB2NhgEIAEoCRIUCgxpcHY2X2dhdGV3YXkYBSABKAkiFgoUVGFpbG5ldFN0YXR1c1JlcXVlc3QiaQoVVGFpbG5ldFN0YXR1c1Jlc3BvbnNlEiwKBXN0YXRlGAEgASgOMh0uaGFuZ2FyLmd1ZXN0LnYxLlRhaWxuZXRTdGF0ZRIPCgdtZXNzYWdlGAIgASgJEhEKCXdhbnRzX2tleRgDIAEoCCJCChFTZXRUYWlsbmV0UmVxdWVzdBItCgl0YWlsc2NhbGUYASABKAsyGi5oYW5nYXIuZ3Vlc3QudjEuVGFpbHNjYWxlIhQKElNldFRhaWxuZXRSZXNwb25zZSImChJKb2luVGFpbG5ldFJlcXVlc3QSEAoIYXV0aF9rZXkYASABKAkiFQoTSm9pblRhaWxuZXRSZXNwb25zZSIkChJWb2x1bWVVc2FnZVJlcXVlc3QSDgoGZGV2aWNlGAEgASgJIlQKE1ZvbHVtZVVzYWdlUmVzcG9uc2USDAoEc2l6ZRgBIAEoBBIMCgR1c2VkGAIgASgEEg0KBWZpbGVzGAMgASgEEhIKCmZpbGVzX3VzZWQYBCABKAQiIwoRR3Jvd1ZvbHVtZVJlcXVlc3QSDgoGZGV2aWNlGAEgASgJIiIKEkdyb3dWb2x1bWVSZXNwb25zZRIMCgRzaXplGAEgASgEIhIKEFJvb3RVc2FnZVJlcXVlc3QiUgoRUm9vdFVzYWdlUmVzcG9uc2USDAoEc2l6ZRgBIAEoBBIMCgR1c2VkGAIgASgEEg0KBWZpbGVzGAMgASgEEhIKCmZpbGVzX3VzZWQYBCABKAQiEQoPR3Jvd1Jvb3RSZXF1ZXN0IiAKEEdyb3dSb290UmVzcG9uc2USDAoEc2l6ZRgBIAEoBCJACg5TZXRJUHY2UmVxdWVzdBIuCgppbnRlcmZhY2VzGAEgAygLMhouaGFuZ2FyLmd1ZXN0LnYxLkludGVyZmFjZSIRCg9TZXRJUHY2UmVzcG9uc2UiNwoLU3RvcFJlcXVlc3QSKAoFZ3JhY2UYASABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24iDgoMU3RvcFJlc3BvbnNlIg0KC1BpbmdSZXF1ZXN0IkoKDFBpbmdSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEikKBnVwdGltZRgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiLLAQoLRXhlY1JlcXVlc3QSKwoFc3RhcnQYASABKAsyGi5oYW5nYXIuZ3Vlc3QudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABIyCgtzdGRpbl9jbG9zZRgDIAEoCzIbLmhhbmdhci5ndWVzdC52MS5TdGRpbkNsb3NlSAASLQoGcmVzaXplGAQgASgLMhsuaGFuZ2FyLmd1ZXN0LnYxLldpbmRvd1NpemVIABIQCgZzaWduYWwYBSABKAVIAEIJCgdtZXNzYWdlIm4KCUV4ZWNTdGFydBIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSCwoDdHR5GAIgASgIEikKBHNpemUYAyABKAsyGy5oYW5nYXIuZ3Vlc3QudjEuV2luZG93U2l6ZSIMCgpTdGRpbkNsb3NlIigKCldpbmRvd1NpemUSDAoEcm93cxgBIAEoDRIMCgRjb2xzGAIgASgNImgKDEV4ZWNSZXNwb25zZRIQCgZzdGRvdXQYASABKAxIABIQCgZzdGRlcnIYAiABKAxIABIpCgRleGl0GAMgASgLMhkuaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNFeGl0SABCCQoHbWVzc2FnZSIoCghFeGVjRXhpdBIMCgRjb2RlGAEgASgFEg4KBnNpZ25hbBgCIAEoBSrRAQoMVGFpbG5ldFN0YXRlEh0KGVRBSUxORVRfU1RBVEVfVU5TUEVDSUZJRUQQABIaChZUQUlMTkVUX1NUQVRFX1NUQVJUSU5HEAESGwoXVEFJTE5FVF9TVEFURV9ORUVEU19LRVkQAhIYChRUQUlMTkVUX1NUQVRFX0pPSU5FRBADEh4KGlRBSUxORVRfU1RBVEVfS0VZX1JFSkVDVEVEEAQSGAoUVEFJTE5FVF9TVEFURV9GQUlMRUQQBRIVChFUQUlMTkVUX1NUQVRFX09GRhAGMpsHChFHdWVzdEFnZW50U2VydmljZRJDCgRQaW5nEhwuaGFuZ2FyLmd1ZXN0LnYxLlBpbmdSZXF1ZXN0Gh0uaGFuZ2FyLmd1ZXN0LnYxLlBpbmdSZXNwb25zZRJHCgRFeGVjEhwuaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNSZXF1ZXN0Gh0uaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNSZXNwb25zZSgBMAESQwoEU3RvcBIcLmhhbmdhci5ndWVzdC52MS5TdG9wUmVxdWVzdBodLmhhbmdhci5ndWVzdC52MS5TdG9wUmVzcG9uc2USTAoHU2V0SVB2NhIfLmhhbmdhci5ndWVzdC52MS5TZXRJUHY2UmVxdWVzdBogLmhhbmdhci5ndWVzdC52MS5TZXRJUHY2UmVzcG9uc2USUgoJUm9vdFVzYWdlEiEuaGFuZ2FyLmd1ZXN0LnYxLlJvb3RVc2FnZVJlcXVlc3QaIi5oYW5nYXIuZ3Vlc3QudjEuUm9vdFVzYWdlUmVzcG9uc2USTwoIR3Jvd1Jvb3QSIC5oYW5nYXIuZ3Vlc3QudjEuR3Jvd1Jvb3RSZXF1ZXN0GiEuaGFuZ2FyLmd1ZXN0LnYxLkdyb3dSb290UmVzcG9uc2USWAoLVm9sdW1lVXNhZ2USIy5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lVXNhZ2VSZXF1ZXN0GiQuaGFuZ2FyLmd1ZXN0LnYxLlZvbHVtZVVzYWdlUmVzcG9uc2USVQoKR3Jvd1ZvbHVtZRIiLmhhbmdhci5ndWVzdC52MS5Hcm93Vm9sdW1lUmVxdWVzdBojLmhhbmdhci5ndWVzdC52MS5Hcm93Vm9sdW1lUmVzcG9uc2USVQoKU2V0VGFpbG5ldBIiLmhhbmdhci5ndWVzdC52MS5TZXRUYWlsbmV0UmVxdWVzdBojLmhhbmdhci5ndWVzdC52MS5TZXRUYWlsbmV0UmVzcG9uc2USXgoNVGFpbG5ldFN0YXR1cxIlLmhhbmdhci5ndWVzdC52MS5UYWlsbmV0U3RhdHVzUmVxdWVzdBomLmhhbmdhci5ndWVzdC52MS5UYWlsbmV0U3RhdHVzUmVzcG9uc2USWAoLSm9pblRhaWxuZXQSIy5oYW5nYXIuZ3Vlc3QudjEuSm9pblRhaWxuZXRSZXF1ZXN0GiQuaGFuZ2FyLmd1ZXN0LnYxLkpvaW5UYWlsbmV0UmVzcG9uc2VCwQEKE2NvbS5oYW5nYXIuZ3Vlc3QudjFCCkd1ZXN0UHJvdG9QAVpAZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvZ3Vlc3QvdjE7Z3Vlc3R2MaICA0hHWKoCD0hhbmdhci5HdWVzdC5WMcoCD0hhbmdhclxHdWVzdFxWMeICG0hhbmdhclxHdWVzdFxWMVxHUEJNZXRhZGF0YeoCEUhhbmdhcjo6R3Vlc3Q6OlYxYgZwcm90bzM", [file_google_protobuf_duration, file_hangar_guest_v1_converter, file_hangar_guest_v1_file_share]);
+  fileDesc("ChtoYW5nYXIvZ3Vlc3QvdjEvZ3Vlc3QucHJvdG8SD2hhbmdhci5ndWVzdC52MSKbAwoKQm9vdENvbmZpZxIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSLgoKaW50ZXJmYWNlcxgCIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2USEAoIaG9zdG5hbWUYAyABKAkSEwoLbmFtZXNlcnZlcnMYBCADKAkSDgoGc2VhcmNoGAUgAygJEigKB3ZvbHVtZXMYBiADKAsyFy5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lEhMKC21hY2hpbmVfdWlkGAcgASgJEjsKEWZpbGVfc2hhcmVfc2VydmVyGAggASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZVNlcnZlchI4Cg9pbWFnZV9jb252ZXJ0ZXIYCSABKAsyHy5oYW5nYXIuZ3Vlc3QudjEuSW1hZ2VDb252ZXJ0ZXISLQoJdGFpbHNjYWxlGAogASgLMhouaGFuZ2FyLmd1ZXN0LnYxLlRhaWxzY2FsZRIWCg50YWlsc2NhbGVfZGlzaxgLIAEoCSI0CglUYWlsc2NhbGUSEAoIaG9zdG5hbWUYASABKAkSFQoNYWNjZXB0X3JvdXRlcxgCIAEoCCKfAQoGVm9sdW1lEg4KBmRldmljZRgBIAEoCRIOCgZ0YXJnZXQYAiABKAkSEQoJcmVhZF9vbmx5GAMgASgIEg4KBm5vY29weRgEIAEoCBIPCgdzdWJwYXRoGAUgASgJEgwKBG5hbWUYBiABKAkSMwoKZmlsZV9zaGFyZRgHIAEoCzIfLmhhbmdhci5ndWVzdC52MS5GaWxlU2hhcmVNb3VudCJHCgdQcm9jZXNzEgwKBGFyZ3MYASADKAkSCwoDZW52GAIgAygJEhMKC3dvcmtpbmdfZGlyGAMgASgJEgwKBHVzZXIYBCABKAkiXgoJSW50ZXJmYWNlEgsKA21hYxgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEg8KB2dhdGV3YXkYAyABKAkSDAoEaXB2NhgEIAEoCRIUCgxpcHY2X2dhdGV3YXkYBSABKAkiFAoSTWVtb3J5VXNhZ2VSZXF1ZXN0IjcKE01lbW9yeVVzYWdlUmVzcG9uc2USDQoFdG90YWwYASABKAQSEQoJYXZhaWxhYmxlGAIgASgEIhYKFFRhaWxuZXRTdGF0dXNSZXF1ZXN0ImkKFVRhaWxuZXRTdGF0dXNSZXNwb25zZRIsCgVzdGF0ZRgBIAEoDjIdLmhhbmdhci5ndWVzdC52MS5UYWlsbmV0U3RhdGUSDwoHbWVzc2FnZRgCIAEoCRIRCgl3YW50c19rZXkYAyABKAgiQgoRU2V0VGFpbG5ldFJlcXVlc3QSLQoJdGFpbHNjYWxlGAEgASgLMhouaGFuZ2FyLmd1ZXN0LnYxLlRhaWxzY2FsZSIUChJTZXRUYWlsbmV0UmVzcG9uc2UiJgoSSm9pblRhaWxuZXRSZXF1ZXN0EhAKCGF1dGhfa2V5GAEgASgJIhUKE0pvaW5UYWlsbmV0UmVzcG9uc2UiJAoSVm9sdW1lVXNhZ2VSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCSJUChNWb2x1bWVVc2FnZVJlc3BvbnNlEgwKBHNpemUYASABKAQSDAoEdXNlZBgCIAEoBBINCgVmaWxlcxgDIAEoBBISCgpmaWxlc191c2VkGAQgASgEIiMKEUdyb3dWb2x1bWVSZXF1ZXN0Eg4KBmRldmljZRgBIAEoCSIiChJHcm93Vm9sdW1lUmVzcG9uc2USDAoEc2l6ZRgBIAEoBCISChBSb290VXNhZ2VSZXF1ZXN0IlIKEVJvb3RVc2FnZVJlc3BvbnNlEgwKBHNpemUYASABKAQSDAoEdXNlZBgCIAEoBBINCgVmaWxlcxgDIAEoBBISCgpmaWxlc191c2VkGAQgASgEIhEKD0dyb3dSb290UmVxdWVzdCIgChBHcm93Um9vdFJlc3BvbnNlEgwKBHNpemUYASABKAQiQAoOU2V0SVB2NlJlcXVlc3QSLgoKaW50ZXJmYWNlcxgBIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2UiEQoPU2V0SVB2NlJlc3BvbnNlIjcKC1N0b3BSZXF1ZXN0EigKBWdyYWNlGAEgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIg4KDFN0b3BSZXNwb25zZSINCgtQaW5nUmVxdWVzdCJKCgxQaW5nUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIpCgZ1cHRpbWUYAiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24iywEKC0V4ZWNSZXF1ZXN0EisKBXN0YXJ0GAEgASgLMhouaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNTdGFydEgAEg8KBXN0ZGluGAIgASgMSAASMgoLc3RkaW5fY2xvc2UYAyABKAsyGy5oYW5nYXIuZ3Vlc3QudjEuU3RkaW5DbG9zZUgAEi0KBnJlc2l6ZRgEIAEoCzIbLmhhbmdhci5ndWVzdC52MS5XaW5kb3dTaXplSAASEAoGc2lnbmFsGAUgASgFSABCCQoHbWVzc2FnZSJuCglFeGVjU3RhcnQSKQoHcHJvY2VzcxgBIAEoCzIYLmhhbmdhci5ndWVzdC52MS5Qcm9jZXNzEgsKA3R0eRgCIAEoCBIpCgRzaXplGAMgASgLMhsuaGFuZ2FyLmd1ZXN0LnYxLldpbmRvd1NpemUiDAoKU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJoCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKQoEZXhpdBgDIAEoCzIZLmhhbmdhci5ndWVzdC52MS5FeGVjRXhpdEgAQgkKB21lc3NhZ2UiKAoIRXhlY0V4aXQSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUq0QEKDFRhaWxuZXRTdGF0ZRIdChlUQUlMTkVUX1NUQVRFX1VOU1BFQ0lGSUVEEAASGgoWVEFJTE5FVF9TVEFURV9TVEFSVElORxABEhsKF1RBSUxORVRfU1RBVEVfTkVFRFNfS0VZEAISGAoUVEFJTE5FVF9TVEFURV9KT0lORUQQAxIeChpUQUlMTkVUX1NUQVRFX0tFWV9SRUpFQ1RFRBAEEhgKFFRBSUxORVRfU1RBVEVfRkFJTEVEEAUSFQoRVEFJTE5FVF9TVEFURV9PRkYQBjL1BwoRR3Vlc3RBZ2VudFNlcnZpY2USQwoEUGluZxIcLmhhbmdhci5ndWVzdC52MS5QaW5nUmVxdWVzdBodLmhhbmdhci5ndWVzdC52MS5QaW5nUmVzcG9uc2USRwoERXhlYxIcLmhhbmdhci5ndWVzdC52MS5FeGVjUmVxdWVzdBodLmhhbmdhci5ndWVzdC52MS5FeGVjUmVzcG9uc2UoATABEkMKBFN0b3ASHC5oYW5nYXIuZ3Vlc3QudjEuU3RvcFJlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuU3RvcFJlc3BvbnNlEkwKB1NldElQdjYSHy5oYW5nYXIuZ3Vlc3QudjEuU2V0SVB2NlJlcXVlc3QaIC5oYW5nYXIuZ3Vlc3QudjEuU2V0SVB2NlJlc3BvbnNlElIKCVJvb3RVc2FnZRIhLmhhbmdhci5ndWVzdC52MS5Sb290VXNhZ2VSZXF1ZXN0GiIuaGFuZ2FyLmd1ZXN0LnYxLlJvb3RVc2FnZVJlc3BvbnNlEk8KCEdyb3dSb290EiAuaGFuZ2FyLmd1ZXN0LnYxLkdyb3dSb290UmVxdWVzdBohLmhhbmdhci5ndWVzdC52MS5Hcm93Um9vdFJlc3BvbnNlElgKC1ZvbHVtZVVzYWdlEiMuaGFuZ2FyLmd1ZXN0LnYxLlZvbHVtZVVzYWdlUmVxdWVzdBokLmhhbmdhci5ndWVzdC52MS5Wb2x1bWVVc2FnZVJlc3BvbnNlElUKCkdyb3dWb2x1bWUSIi5oYW5nYXIuZ3Vlc3QudjEuR3Jvd1ZvbHVtZVJlcXVlc3QaIy5oYW5nYXIuZ3Vlc3QudjEuR3Jvd1ZvbHVtZVJlc3BvbnNlElUKClNldFRhaWxuZXQSIi5oYW5nYXIuZ3Vlc3QudjEuU2V0VGFpbG5ldFJlcXVlc3QaIy5oYW5nYXIuZ3Vlc3QudjEuU2V0VGFpbG5ldFJlc3BvbnNlEl4KDVRhaWxuZXRTdGF0dXMSJS5oYW5nYXIuZ3Vlc3QudjEuVGFpbG5ldFN0YXR1c1JlcXVlc3QaJi5oYW5nYXIuZ3Vlc3QudjEuVGFpbG5ldFN0YXR1c1Jlc3BvbnNlElgKC0pvaW5UYWlsbmV0EiMuaGFuZ2FyLmd1ZXN0LnYxLkpvaW5UYWlsbmV0UmVxdWVzdBokLmhhbmdhci5ndWVzdC52MS5Kb2luVGFpbG5ldFJlc3BvbnNlElgKC01lbW9yeVVzYWdlEiMuaGFuZ2FyLmd1ZXN0LnYxLk1lbW9yeVVzYWdlUmVxdWVzdBokLmhhbmdhci5ndWVzdC52MS5NZW1vcnlVc2FnZVJlc3BvbnNlQsEBChNjb20uaGFuZ2FyLmd1ZXN0LnYxQgpHdWVzdFByb3RvUAFaQGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2d1ZXN0L3YxO2d1ZXN0djGiAgNIR1iqAg9IYW5nYXIuR3Vlc3QuVjHKAg9IYW5nYXJcR3Vlc3RcVjHiAhtIYW5nYXJcR3Vlc3RcVjFcR1BCTWV0YWRhdGHqAhFIYW5nYXI6Okd1ZXN0OjpWMWIGcHJvdG8z", [file_google_protobuf_duration, file_hangar_guest_v1_converter, file_hangar_guest_v1_file_share]);
 
 /**
  * BootConfig is all a guest needs from the node to boot, and to boot again:
@@ -314,6 +314,44 @@ export const InterfaceSchema: GenMessage<Interface> = /*@__PURE__*/
   messageDesc(file_hangar_guest_v1_guest, 4);
 
 /**
+ * @generated from message hangar.guest.v1.MemoryUsageRequest
+ */
+export type MemoryUsageRequest = Message<"hangar.guest.v1.MemoryUsageRequest"> & {
+};
+
+/**
+ * Describes the message hangar.guest.v1.MemoryUsageRequest.
+ * Use `create(MemoryUsageRequestSchema)` to create a new message.
+ */
+export const MemoryUsageRequestSchema: GenMessage<MemoryUsageRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 5);
+
+/**
+ * @generated from message hangar.guest.v1.MemoryUsageResponse
+ */
+export type MemoryUsageResponse = Message<"hangar.guest.v1.MemoryUsageResponse"> & {
+  /**
+   * MemTotal and MemAvailable of /proc/meminfo, in bytes: what the guest
+   * uses is their difference.
+   *
+   * @generated from field: uint64 total = 1;
+   */
+  total: bigint;
+
+  /**
+   * @generated from field: uint64 available = 2;
+   */
+  available: bigint;
+};
+
+/**
+ * Describes the message hangar.guest.v1.MemoryUsageResponse.
+ * Use `create(MemoryUsageResponseSchema)` to create a new message.
+ */
+export const MemoryUsageResponseSchema: GenMessage<MemoryUsageResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 6);
+
+/**
  * @generated from message hangar.guest.v1.TailnetStatusRequest
  */
 export type TailnetStatusRequest = Message<"hangar.guest.v1.TailnetStatusRequest"> & {
@@ -324,7 +362,7 @@ export type TailnetStatusRequest = Message<"hangar.guest.v1.TailnetStatusRequest
  * Use `create(TailnetStatusRequestSchema)` to create a new message.
  */
 export const TailnetStatusRequestSchema: GenMessage<TailnetStatusRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 5);
+  messageDesc(file_hangar_guest_v1_guest, 7);
 
 /**
  * @generated from message hangar.guest.v1.TailnetStatusResponse
@@ -359,7 +397,7 @@ export type TailnetStatusResponse = Message<"hangar.guest.v1.TailnetStatusRespon
  * Use `create(TailnetStatusResponseSchema)` to create a new message.
  */
 export const TailnetStatusResponseSchema: GenMessage<TailnetStatusResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 6);
+  messageDesc(file_hangar_guest_v1_guest, 8);
 
 /**
  * @generated from message hangar.guest.v1.SetTailnetRequest
@@ -378,7 +416,7 @@ export type SetTailnetRequest = Message<"hangar.guest.v1.SetTailnetRequest"> & {
  * Use `create(SetTailnetRequestSchema)` to create a new message.
  */
 export const SetTailnetRequestSchema: GenMessage<SetTailnetRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 7);
+  messageDesc(file_hangar_guest_v1_guest, 9);
 
 /**
  * @generated from message hangar.guest.v1.SetTailnetResponse
@@ -391,7 +429,7 @@ export type SetTailnetResponse = Message<"hangar.guest.v1.SetTailnetResponse"> &
  * Use `create(SetTailnetResponseSchema)` to create a new message.
  */
 export const SetTailnetResponseSchema: GenMessage<SetTailnetResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 8);
+  messageDesc(file_hangar_guest_v1_guest, 10);
 
 /**
  * @generated from message hangar.guest.v1.JoinTailnetRequest
@@ -408,7 +446,7 @@ export type JoinTailnetRequest = Message<"hangar.guest.v1.JoinTailnetRequest"> &
  * Use `create(JoinTailnetRequestSchema)` to create a new message.
  */
 export const JoinTailnetRequestSchema: GenMessage<JoinTailnetRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 9);
+  messageDesc(file_hangar_guest_v1_guest, 11);
 
 /**
  * @generated from message hangar.guest.v1.JoinTailnetResponse
@@ -421,7 +459,7 @@ export type JoinTailnetResponse = Message<"hangar.guest.v1.JoinTailnetResponse">
  * Use `create(JoinTailnetResponseSchema)` to create a new message.
  */
 export const JoinTailnetResponseSchema: GenMessage<JoinTailnetResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 10);
+  messageDesc(file_hangar_guest_v1_guest, 12);
 
 /**
  * @generated from message hangar.guest.v1.VolumeUsageRequest
@@ -440,7 +478,7 @@ export type VolumeUsageRequest = Message<"hangar.guest.v1.VolumeUsageRequest"> &
  * Use `create(VolumeUsageRequestSchema)` to create a new message.
  */
 export const VolumeUsageRequestSchema: GenMessage<VolumeUsageRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 11);
+  messageDesc(file_hangar_guest_v1_guest, 13);
 
 /**
  * @generated from message hangar.guest.v1.VolumeUsageResponse
@@ -476,7 +514,7 @@ export type VolumeUsageResponse = Message<"hangar.guest.v1.VolumeUsageResponse">
  * Use `create(VolumeUsageResponseSchema)` to create a new message.
  */
 export const VolumeUsageResponseSchema: GenMessage<VolumeUsageResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 12);
+  messageDesc(file_hangar_guest_v1_guest, 14);
 
 /**
  * @generated from message hangar.guest.v1.GrowVolumeRequest
@@ -495,7 +533,7 @@ export type GrowVolumeRequest = Message<"hangar.guest.v1.GrowVolumeRequest"> & {
  * Use `create(GrowVolumeRequestSchema)` to create a new message.
  */
 export const GrowVolumeRequestSchema: GenMessage<GrowVolumeRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 13);
+  messageDesc(file_hangar_guest_v1_guest, 15);
 
 /**
  * @generated from message hangar.guest.v1.GrowVolumeResponse
@@ -514,7 +552,7 @@ export type GrowVolumeResponse = Message<"hangar.guest.v1.GrowVolumeResponse"> &
  * Use `create(GrowVolumeResponseSchema)` to create a new message.
  */
 export const GrowVolumeResponseSchema: GenMessage<GrowVolumeResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 14);
+  messageDesc(file_hangar_guest_v1_guest, 16);
 
 /**
  * @generated from message hangar.guest.v1.RootUsageRequest
@@ -527,7 +565,7 @@ export type RootUsageRequest = Message<"hangar.guest.v1.RootUsageRequest"> & {
  * Use `create(RootUsageRequestSchema)` to create a new message.
  */
 export const RootUsageRequestSchema: GenMessage<RootUsageRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 15);
+  messageDesc(file_hangar_guest_v1_guest, 17);
 
 /**
  * @generated from message hangar.guest.v1.RootUsageResponse
@@ -566,7 +604,7 @@ export type RootUsageResponse = Message<"hangar.guest.v1.RootUsageResponse"> & {
  * Use `create(RootUsageResponseSchema)` to create a new message.
  */
 export const RootUsageResponseSchema: GenMessage<RootUsageResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 16);
+  messageDesc(file_hangar_guest_v1_guest, 18);
 
 /**
  * @generated from message hangar.guest.v1.GrowRootRequest
@@ -579,7 +617,7 @@ export type GrowRootRequest = Message<"hangar.guest.v1.GrowRootRequest"> & {
  * Use `create(GrowRootRequestSchema)` to create a new message.
  */
 export const GrowRootRequestSchema: GenMessage<GrowRootRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 17);
+  messageDesc(file_hangar_guest_v1_guest, 19);
 
 /**
  * @generated from message hangar.guest.v1.GrowRootResponse
@@ -598,7 +636,7 @@ export type GrowRootResponse = Message<"hangar.guest.v1.GrowRootResponse"> & {
  * Use `create(GrowRootResponseSchema)` to create a new message.
  */
 export const GrowRootResponseSchema: GenMessage<GrowRootResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 18);
+  messageDesc(file_hangar_guest_v1_guest, 20);
 
 /**
  * @generated from message hangar.guest.v1.SetIPv6Request
@@ -618,7 +656,7 @@ export type SetIPv6Request = Message<"hangar.guest.v1.SetIPv6Request"> & {
  * Use `create(SetIPv6RequestSchema)` to create a new message.
  */
 export const SetIPv6RequestSchema: GenMessage<SetIPv6Request> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 19);
+  messageDesc(file_hangar_guest_v1_guest, 21);
 
 /**
  * @generated from message hangar.guest.v1.SetIPv6Response
@@ -631,7 +669,7 @@ export type SetIPv6Response = Message<"hangar.guest.v1.SetIPv6Response"> & {
  * Use `create(SetIPv6ResponseSchema)` to create a new message.
  */
 export const SetIPv6ResponseSchema: GenMessage<SetIPv6Response> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 20);
+  messageDesc(file_hangar_guest_v1_guest, 22);
 
 /**
  * @generated from message hangar.guest.v1.StopRequest
@@ -650,7 +688,7 @@ export type StopRequest = Message<"hangar.guest.v1.StopRequest"> & {
  * Use `create(StopRequestSchema)` to create a new message.
  */
 export const StopRequestSchema: GenMessage<StopRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 21);
+  messageDesc(file_hangar_guest_v1_guest, 23);
 
 /**
  * @generated from message hangar.guest.v1.StopResponse
@@ -663,7 +701,7 @@ export type StopResponse = Message<"hangar.guest.v1.StopResponse"> & {
  * Use `create(StopResponseSchema)` to create a new message.
  */
 export const StopResponseSchema: GenMessage<StopResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 22);
+  messageDesc(file_hangar_guest_v1_guest, 24);
 
 /**
  * @generated from message hangar.guest.v1.PingRequest
@@ -676,7 +714,7 @@ export type PingRequest = Message<"hangar.guest.v1.PingRequest"> & {
  * Use `create(PingRequestSchema)` to create a new message.
  */
 export const PingRequestSchema: GenMessage<PingRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 23);
+  messageDesc(file_hangar_guest_v1_guest, 25);
 
 /**
  * @generated from message hangar.guest.v1.PingResponse
@@ -702,7 +740,7 @@ export type PingResponse = Message<"hangar.guest.v1.PingResponse"> & {
  * Use `create(PingResponseSchema)` to create a new message.
  */
 export const PingResponseSchema: GenMessage<PingResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 24);
+  messageDesc(file_hangar_guest_v1_guest, 26);
 
 /**
  * @generated from message hangar.guest.v1.ExecRequest
@@ -753,7 +791,7 @@ export type ExecRequest = Message<"hangar.guest.v1.ExecRequest"> & {
  * Use `create(ExecRequestSchema)` to create a new message.
  */
 export const ExecRequestSchema: GenMessage<ExecRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 25);
+  messageDesc(file_hangar_guest_v1_guest, 27);
 
 /**
  * ExecStart starts the process.
@@ -786,7 +824,7 @@ export type ExecStart = Message<"hangar.guest.v1.ExecStart"> & {
  * Use `create(ExecStartSchema)` to create a new message.
  */
 export const ExecStartSchema: GenMessage<ExecStart> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 26);
+  messageDesc(file_hangar_guest_v1_guest, 28);
 
 /**
  * @generated from message hangar.guest.v1.StdinClose
@@ -799,7 +837,7 @@ export type StdinClose = Message<"hangar.guest.v1.StdinClose"> & {
  * Use `create(StdinCloseSchema)` to create a new message.
  */
 export const StdinCloseSchema: GenMessage<StdinClose> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 27);
+  messageDesc(file_hangar_guest_v1_guest, 29);
 
 /**
  * @generated from message hangar.guest.v1.WindowSize
@@ -821,7 +859,7 @@ export type WindowSize = Message<"hangar.guest.v1.WindowSize"> & {
  * Use `create(WindowSizeSchema)` to create a new message.
  */
 export const WindowSizeSchema: GenMessage<WindowSize> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 28);
+  messageDesc(file_hangar_guest_v1_guest, 30);
 
 /**
  * @generated from message hangar.guest.v1.ExecResponse
@@ -858,7 +896,7 @@ export type ExecResponse = Message<"hangar.guest.v1.ExecResponse"> & {
  * Use `create(ExecResponseSchema)` to create a new message.
  */
 export const ExecResponseSchema: GenMessage<ExecResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 29);
+  messageDesc(file_hangar_guest_v1_guest, 31);
 
 /**
  * ExecExit says how the process ended.
@@ -886,7 +924,7 @@ export type ExecExit = Message<"hangar.guest.v1.ExecExit"> & {
  * Use `create(ExecExitSchema)` to create a new message.
  */
 export const ExecExitSchema: GenMessage<ExecExit> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 30);
+  messageDesc(file_hangar_guest_v1_guest, 32);
 
 /**
  * TailnetState is where a guest's tailnet join stands.
@@ -1086,6 +1124,18 @@ export const GuestAgentService: GenService<{
     methodKind: "unary";
     input: typeof JoinTailnetRequestSchema;
     output: typeof JoinTailnetResponseSchema;
+  },
+  /**
+   * MemoryUsage says how much memory the guest's kernel has and how much
+   * of it is available, as /proc/meminfo says. See
+   * docs/decisions/machine-usage.md.
+   *
+   * @generated from rpc hangar.guest.v1.GuestAgentService.MemoryUsage
+   */
+  memoryUsage: {
+    methodKind: "unary";
+    input: typeof MemoryUsageRequestSchema;
+    output: typeof MemoryUsageResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_guest_v1_guest, 0);

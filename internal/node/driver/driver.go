@@ -903,6 +903,22 @@ type Hypervisor interface {
 	// before its console was interactive, until it is started again, or one
 	// booting no firmware, is ErrNoConsole.
 	AttachConsole(ctx context.Context, machineUID string) (net.Conn, error)
+	// Usage reads what a running VM has used, as the host counts it for
+	// the VM's whole unit, its VMM's own work included. A machine with no
+	// running VM fails.
+	Usage(ctx context.Context, machineUID string) (VMUsage, error)
+}
+
+// VMUsage is what a running VM has used, as the cgroup of its unit counts
+// it (docs/decisions/machine-usage.md).
+type VMUsage struct {
+	// CPU is the CPU time its unit has used since it started, its vCPUs'
+	// and its VMM's: cpu.stat's usage_usec. It may start again from zero
+	// when the VM starts again.
+	CPU time.Duration
+	// Memory is the memory its unit holds, in bytes: memory.current, the
+	// guest's memory it touched, page cache included, and the VMM's own.
+	Memory uint64
 }
 
 // ErrNoLiveResize is a VM whose disk's size is told it only as it boots.
@@ -1259,6 +1275,11 @@ type VM struct {
 	// DiskSizes are the sizes of its Disks as the VM was started, in their
 	// order; a container's may have grown since (Hypervisor.ResizeVolume).
 	DiskSizes []int64
+	// VCPUs are its vCPUs as the VM was started.
+	VCPUs int32
+	// Firmware and FileShareServer say what it runs, as its spec's do:
+	// neither is a container's.
+	Firmware, FileShareServer bool
 }
 
 // VMState is where a VM is.
@@ -1322,6 +1343,16 @@ type Guest interface {
 	// its node's state refuses it with ErrTailnetHasState, one that waits
 	// for no key now with ErrTailnetBusy. The key is never logged.
 	JoinTailnet(ctx context.Context, machineUID, authKey string) error
+	// MemoryUsage says how much memory a container's guest has and how much
+	// of it is available, as the guest claims. A guest that cannot, as one
+	// started before it could, fails with ErrGuestCannot.
+	MemoryUsage(ctx context.Context, machineUID string) (GuestMemory, error)
+}
+
+// GuestMemory is a guest's memory as its kernel counts it, in bytes: what
+// it uses is Total less Available.
+type GuestMemory struct {
+	Total, Available uint64
 }
 
 // TailnetStatus is where a guest's tailnet join stands, as it says.

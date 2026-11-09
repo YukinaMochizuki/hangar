@@ -155,6 +155,19 @@ service GuestAgentService {
   // FAILED_PRECONDITION. It answers once the join has begun; TailnetStatus
   // says how it went. The guest keeps the key in memory for the join alone.
   rpc JoinTailnet(JoinTailnetRequest) returns (JoinTailnetResponse);
+  // MemoryUsage says how much memory the guest's kernel has and how much
+  // of it is available, as /proc/meminfo says. See
+  // docs/decisions/machine-usage.md.
+  rpc MemoryUsage(MemoryUsageRequest) returns (MemoryUsageResponse);
+}
+
+message MemoryUsageRequest {}
+
+message MemoryUsageResponse {
+  // MemTotal and MemAvailable of /proc/meminfo, in bytes: what the guest
+  // uses is their difference.
+  uint64 total = 1;
+  uint64 available = 2;
 }
 
 message TailnetStatusRequest {}

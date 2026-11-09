@@ -73,6 +73,10 @@ to boot again.
   while the guest runs, as hangar-init does at every boot
   (`disk-autogrow.md`). A guest asserts its own usage: one that lies grows
   its own disk, within its own quota, and nothing else.
+- **The node asks the agent what the guest uses of its memory.**
+  `MemoryUsage` answers MemTotal and MemAvailable of `/proc/meminfo`, for a
+  container's usage graph (`machine-usage.md`). Like the root's usage, it is
+  what the guest asserts, and shown to its own tenant alone.
 - **Output goes to the virtio console, framed** (`internal/guest/console`):
   every write of the container's stdout and stderr, hangar-init's own
   messages, and, last, how the process ended. Cloud Hypervisor hands the

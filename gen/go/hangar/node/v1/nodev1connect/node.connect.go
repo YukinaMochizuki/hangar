@@ -54,6 +54,9 @@ const (
 	// NodeServiceGetCustomImageUploadProcedure is the fully-qualified name of the NodeService's
 	// GetCustomImageUpload RPC.
 	NodeServiceGetCustomImageUploadProcedure = "/hangar.node.v1.NodeService/GetCustomImageUpload"
+	// NodeServiceMachineUsageProcedure is the fully-qualified name of the NodeService's MachineUsage
+	// RPC.
+	NodeServiceMachineUsageProcedure = "/hangar.node.v1.NodeService/MachineUsage"
 )
 
 // NodeServiceClient is a client for the hangar.node.v1.NodeService service.
@@ -97,6 +100,11 @@ type NodeServiceClient interface {
 	// GetCustomImageUpload says how many bytes of a CustomImage's upload
 	// the node holds, every chunk checked: where the next chunk starts.
 	GetCustomImageUpload(context.Context, *connect.Request[v1.GetCustomImageUploadRequest]) (*connect.Response[v1.GetCustomImageUploadResponse], error)
+	// MachineUsage says what a running machine used over the last hour, as
+	// the node samples it every ten seconds and keeps in memory alone: a
+	// point a minute, and the last sample. A machine with no running VM on
+	// this node is FAILED_PRECONDITION. See docs/decisions/machine-usage.md.
+	MachineUsage(context.Context, *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the hangar.node.v1.NodeService service. By default,
@@ -152,6 +160,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("GetCustomImageUpload")),
 			connect.WithClientOptions(opts...),
 		),
+		machineUsage: connect.NewClient[v1.MachineUsageRequest, v1.MachineUsageResponse](
+			httpClient,
+			baseURL+NodeServiceMachineUsageProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("MachineUsage")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -164,6 +178,7 @@ type nodeServiceClient struct {
 	console              *connect.Client[v1.ConsoleRequest, v1.ConsoleResponse]
 	uploadCustomImage    *connect.Client[v1.UploadCustomImageRequest, v1.UploadCustomImageResponse]
 	getCustomImageUpload *connect.Client[v1.GetCustomImageUploadRequest, v1.GetCustomImageUploadResponse]
+	machineUsage         *connect.Client[v1.MachineUsageRequest, v1.MachineUsageResponse]
 }
 
 // Logs calls hangar.node.v1.NodeService.Logs.
@@ -199,6 +214,11 @@ func (c *nodeServiceClient) UploadCustomImage(ctx context.Context) *connect.Clie
 // GetCustomImageUpload calls hangar.node.v1.NodeService.GetCustomImageUpload.
 func (c *nodeServiceClient) GetCustomImageUpload(ctx context.Context, req *connect.Request[v1.GetCustomImageUploadRequest]) (*connect.Response[v1.GetCustomImageUploadResponse], error) {
 	return c.getCustomImageUpload.CallUnary(ctx, req)
+}
+
+// MachineUsage calls hangar.node.v1.NodeService.MachineUsage.
+func (c *nodeServiceClient) MachineUsage(ctx context.Context, req *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error) {
+	return c.machineUsage.CallUnary(ctx, req)
 }
 
 // NodeServiceHandler is an implementation of the hangar.node.v1.NodeService service.
@@ -242,6 +262,11 @@ type NodeServiceHandler interface {
 	// GetCustomImageUpload says how many bytes of a CustomImage's upload
 	// the node holds, every chunk checked: where the next chunk starts.
 	GetCustomImageUpload(context.Context, *connect.Request[v1.GetCustomImageUploadRequest]) (*connect.Response[v1.GetCustomImageUploadResponse], error)
+	// MachineUsage says what a running machine used over the last hour, as
+	// the node samples it every ten seconds and keeps in memory alone: a
+	// point a minute, and the last sample. A machine with no running VM on
+	// this node is FAILED_PRECONDITION. See docs/decisions/machine-usage.md.
+	MachineUsage(context.Context, *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -293,6 +318,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("GetCustomImageUpload")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceMachineUsageHandler := connect.NewUnaryHandler(
+		NodeServiceMachineUsageProcedure,
+		svc.MachineUsage,
+		connect.WithSchema(nodeServiceMethods.ByName("MachineUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceLogsProcedure:
@@ -309,6 +340,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceUploadCustomImageHandler.ServeHTTP(w, r)
 		case NodeServiceGetCustomImageUploadProcedure:
 			nodeServiceGetCustomImageUploadHandler.ServeHTTP(w, r)
+		case NodeServiceMachineUsageProcedure:
+			nodeServiceMachineUsageHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -344,4 +377,8 @@ func (UnimplementedNodeServiceHandler) UploadCustomImage(context.Context, *conne
 
 func (UnimplementedNodeServiceHandler) GetCustomImageUpload(context.Context, *connect.Request[v1.GetCustomImageUploadRequest]) (*connect.Response[v1.GetCustomImageUploadResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.GetCustomImageUpload is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) MachineUsage(context.Context, *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.MachineUsage is not implemented"))
 }

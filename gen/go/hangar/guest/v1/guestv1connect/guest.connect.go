@@ -68,6 +68,9 @@ const (
 	// GuestAgentServiceJoinTailnetProcedure is the fully-qualified name of the GuestAgentService's
 	// JoinTailnet RPC.
 	GuestAgentServiceJoinTailnetProcedure = "/hangar.guest.v1.GuestAgentService/JoinTailnet"
+	// GuestAgentServiceMemoryUsageProcedure is the fully-qualified name of the GuestAgentService's
+	// MemoryUsage RPC.
+	GuestAgentServiceMemoryUsageProcedure = "/hangar.guest.v1.GuestAgentService/MemoryUsage"
 )
 
 // GuestAgentServiceClient is a client for the hangar.guest.v1.GuestAgentService service.
@@ -117,6 +120,10 @@ type GuestAgentServiceClient interface {
 	// FAILED_PRECONDITION. It answers once the join has begun; TailnetStatus
 	// says how it went. The guest keeps the key in memory for the join alone.
 	JoinTailnet(context.Context, *connect.Request[v1.JoinTailnetRequest]) (*connect.Response[v1.JoinTailnetResponse], error)
+	// MemoryUsage says how much memory the guest's kernel has and how much
+	// of it is available, as /proc/meminfo says. See
+	// docs/decisions/machine-usage.md.
+	MemoryUsage(context.Context, *connect.Request[v1.MemoryUsageRequest]) (*connect.Response[v1.MemoryUsageResponse], error)
 }
 
 // NewGuestAgentServiceClient constructs a client for the hangar.guest.v1.GuestAgentService service.
@@ -196,6 +203,12 @@ func NewGuestAgentServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(guestAgentServiceMethods.ByName("JoinTailnet")),
 			connect.WithClientOptions(opts...),
 		),
+		memoryUsage: connect.NewClient[v1.MemoryUsageRequest, v1.MemoryUsageResponse](
+			httpClient,
+			baseURL+GuestAgentServiceMemoryUsageProcedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("MemoryUsage")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -212,6 +225,7 @@ type guestAgentServiceClient struct {
 	setTailnet    *connect.Client[v1.SetTailnetRequest, v1.SetTailnetResponse]
 	tailnetStatus *connect.Client[v1.TailnetStatusRequest, v1.TailnetStatusResponse]
 	joinTailnet   *connect.Client[v1.JoinTailnetRequest, v1.JoinTailnetResponse]
+	memoryUsage   *connect.Client[v1.MemoryUsageRequest, v1.MemoryUsageResponse]
 }
 
 // Ping calls hangar.guest.v1.GuestAgentService.Ping.
@@ -269,6 +283,11 @@ func (c *guestAgentServiceClient) JoinTailnet(ctx context.Context, req *connect.
 	return c.joinTailnet.CallUnary(ctx, req)
 }
 
+// MemoryUsage calls hangar.guest.v1.GuestAgentService.MemoryUsage.
+func (c *guestAgentServiceClient) MemoryUsage(ctx context.Context, req *connect.Request[v1.MemoryUsageRequest]) (*connect.Response[v1.MemoryUsageResponse], error) {
+	return c.memoryUsage.CallUnary(ctx, req)
+}
+
 // GuestAgentServiceHandler is an implementation of the hangar.guest.v1.GuestAgentService service.
 type GuestAgentServiceHandler interface {
 	// Ping answers once the guest is up.
@@ -316,6 +335,10 @@ type GuestAgentServiceHandler interface {
 	// FAILED_PRECONDITION. It answers once the join has begun; TailnetStatus
 	// says how it went. The guest keeps the key in memory for the join alone.
 	JoinTailnet(context.Context, *connect.Request[v1.JoinTailnetRequest]) (*connect.Response[v1.JoinTailnetResponse], error)
+	// MemoryUsage says how much memory the guest's kernel has and how much
+	// of it is available, as /proc/meminfo says. See
+	// docs/decisions/machine-usage.md.
+	MemoryUsage(context.Context, *connect.Request[v1.MemoryUsageRequest]) (*connect.Response[v1.MemoryUsageResponse], error)
 }
 
 // NewGuestAgentServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -391,6 +414,12 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 		connect.WithSchema(guestAgentServiceMethods.ByName("JoinTailnet")),
 		connect.WithHandlerOptions(opts...),
 	)
+	guestAgentServiceMemoryUsageHandler := connect.NewUnaryHandler(
+		GuestAgentServiceMemoryUsageProcedure,
+		svc.MemoryUsage,
+		connect.WithSchema(guestAgentServiceMethods.ByName("MemoryUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.guest.v1.GuestAgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GuestAgentServicePingProcedure:
@@ -415,6 +444,8 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 			guestAgentServiceTailnetStatusHandler.ServeHTTP(w, r)
 		case GuestAgentServiceJoinTailnetProcedure:
 			guestAgentServiceJoinTailnetHandler.ServeHTTP(w, r)
+		case GuestAgentServiceMemoryUsageProcedure:
+			guestAgentServiceMemoryUsageHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -466,4 +497,8 @@ func (UnimplementedGuestAgentServiceHandler) TailnetStatus(context.Context, *con
 
 func (UnimplementedGuestAgentServiceHandler) JoinTailnet(context.Context, *connect.Request[v1.JoinTailnetRequest]) (*connect.Response[v1.JoinTailnetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.JoinTailnet is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) MemoryUsage(context.Context, *connect.Request[v1.MemoryUsageRequest]) (*connect.Response[v1.MemoryUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.MemoryUsage is not implemented"))
 }

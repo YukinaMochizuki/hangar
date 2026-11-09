@@ -18,7 +18,94 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/node/v1/node.proto.
  */
 export const file_hangar_node_v1_node: GenFile = /*@__PURE__*/
-  fileDesc("ChloYW5nYXIvbm9kZS92MS9ub2RlLnByb3RvEg5oYW5nYXIubm9kZS52MSKFAQoLTG9nc1JlcXVlc3QSEwoLbWFjaGluZV91aWQYASABKAkSDgoGZm9sbG93GAIgASgIEhcKCnRhaWxfbGluZXMYAyABKANIAIgBARIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCDQoLX3RhaWxfbGluZXMiOgoMTG9nc1Jlc3BvbnNlEioKB3JlY29yZHMYASADKAsyGS5oYW5nYXIubm9kZS52MS5Mb2dSZWNvcmQitQEKCUxvZ1JlY29yZBIMCgRib290GAEgASgDEikKBnN0cmVhbRgCIAEoDjIZLmhhbmdhci5ub2RlLnYxLkxvZ1N0cmVhbRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgRkYXRhGAQgASgMSAASKgoEZXhpdBgFIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdjb250ZW50IioKCkV4aXRTdGF0dXMSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUizAEKC0V4ZWNSZXF1ZXN0EioKBXN0YXJ0GAEgASgLMhkuaGFuZ2FyLm5vZGUudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABI1CgtzdGRpbl9jbG9zZRgDIAEoCzIeLmhhbmdhci5ub2RlLnYxLkV4ZWNTdGRpbkNsb3NlSAASLAoGcmVzaXplGAQgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UipAEKCUV4ZWNTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIMCgRhcmdzGAIgAygJEgsKA2VudhgDIAMoCRITCgt3b3JraW5nX2RpchgEIAEoCRIMCgR1c2VyGAUgASgJEgsKA3R0eRgGIAEoCBIoCgRzaXplGAcgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZRINCgVzdGRpbhgIIAEoCCIQCg5FeGVjU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJpCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKgoEZXhpdBgDIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdtZXNzYWdlIj4KClNTSFJlcXVlc3QSFQoLbWFjaGluZV91aWQYASABKAlIABIOCgRkYXRhGAIgASgMSABCCQoHbWVzc2FnZSIbCgtTU0hSZXNwb25zZRIMCgRkYXRhGAEgASgMImIKElBvcnRGb3J3YXJkUmVxdWVzdBIxCgVzdGFydBgBIAEoCzIgLmhhbmdhci5ub2RlLnYxLlBvcnRGb3J3YXJkU3RhcnRIABIOCgRkYXRhGAIgASgMSABCCQoHbWVzc2FnZSI1ChBQb3J0Rm9yd2FyZFN0YXJ0EhMKC21hY2hpbmVfdWlkGAEgASgJEgwKBHBvcnQYAiABKAUiIwoTUG9ydEZvcndhcmRSZXNwb25zZRIMCgRkYXRhGAEgASgMImMKGFVwbG9hZEN1c3RvbUltYWdlUmVxdWVzdBIsCgVjaHVuaxgBIAEoCzIbLmhhbmdhci5ub2RlLnYxLlVwbG9hZENodW5rSAASDgoEZGF0YRgCIAEoDEgAQgkKB21lc3NhZ2UiUAoLVXBsb2FkQ2h1bmsSEQoJaW1hZ2VfdWlkGAEgASgJEg4KBm9mZnNldBgCIAEoAxIOCgZsZW5ndGgYAyABKAMSDgoGc2hhMjU2GAQgASgJIjMKGVVwbG9hZEN1c3RvbUltYWdlUmVzcG9uc2USFgoOcmVjZWl2ZWRfYnl0ZXMYASABKAMiMAobR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXF1ZXN0EhEKCWltYWdlX3VpZBgBIAEoCSI2ChxHZXRDdXN0b21JbWFnZVVwbG9hZFJlc3BvbnNlEhYKDnJlY2VpdmVkX2J5dGVzGAEgASgDIooBCg5Db25zb2xlUmVxdWVzdBItCgVzdGFydBgBIAEoCzIcLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTdGFydEgAEg8KBWlucHV0GAIgASgMSAASLQoGcmVzaXplGAMgASgLMhsuaGFuZ2FyLm5vZGUudjEuQ29uc29sZVNpemVIAEIJCgdtZXNzYWdlIkUKDENvbnNvbGVTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIRCglyZWFkX29ubHkYAiABKAgSDQoFZm9yY2UYAyABKAgiLAoLQ29uc29sZVNpemUSDwoHY29sdW1ucxgBIAEoDRIMCgRyb3dzGAIgASgNIm4KD0NvbnNvbGVSZXNwb25zZRIQCgZvdXRwdXQYASABKAxIABItCgVzdGF0ZRgCIAEoCzIcLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTdGF0ZUgAEg8KBWVuZGVkGAMgASgJSABCCQoHbWVzc2FnZSJICgxDb25zb2xlU3RhdGUSDQoFaW5wdXQYASABKAgSKQoEc2l6ZRgCIAEoCzIbLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTaXplKn8KCUxvZ1N0cmVhbRIaChZMT0dfU1RSRUFNX1VOU1BFQ0lGSUVEEAASFQoRTE9HX1NUUkVBTV9TVERPVVQQARIVChFMT0dfU1RSRUFNX1NUREVSUhACEhMKD0xPR19TVFJFQU1fSU5JVBADEhMKD0xPR19TVFJFQU1fRVhJVBAEMugECgtOb2RlU2VydmljZRJDCgRMb2dzEhsuaGFuZ2FyLm5vZGUudjEuTG9nc1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5Mb2dzUmVzcG9uc2UwARJFCgRFeGVjEhsuaGFuZ2FyLm5vZGUudjEuRXhlY1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5FeGVjUmVzcG9uc2UoATABEkIKA1NTSBIaLmhhbmdhci5ub2RlLnYxLlNTSFJlcXVlc3QaGy5oYW5nYXIubm9kZS52MS5TU0hSZXNwb25zZSgBMAESWgoLUG9ydEZvcndhcmQSIi5oYW5nYXIubm9kZS52MS5Qb3J0Rm9yd2FyZFJlcXVlc3QaIy5oYW5nYXIubm9kZS52MS5Qb3J0Rm9yd2FyZFJlc3BvbnNlKAEwARJOCgdDb25zb2xlEh4uaGFuZ2FyLm5vZGUudjEuQ29uc29sZVJlcXVlc3QaHy5oYW5nYXIubm9kZS52MS5Db25zb2xlUmVzcG9uc2UoATABEmoKEVVwbG9hZEN1c3RvbUltYWdlEiguaGFuZ2FyLm5vZGUudjEuVXBsb2FkQ3VzdG9tSW1hZ2VSZXF1ZXN0GikuaGFuZ2FyLm5vZGUudjEuVXBsb2FkQ3VzdG9tSW1hZ2VSZXNwb25zZSgBEnEKFEdldEN1c3RvbUltYWdlVXBsb2FkEisuaGFuZ2FyLm5vZGUudjEuR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXF1ZXN0GiwuaGFuZ2FyLm5vZGUudjEuR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXNwb25zZUK5AQoSY29tLmhhbmdhci5ub2RlLnYxQglOb2RlUHJvdG9QAVo+Z2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvbm9kZS92MTtub2RldjGiAgNITliqAg5IYW5nYXIuTm9kZS5WMcoCDkhhbmdhclxOb2RlXFYx4gIaSGFuZ2FyXE5vZGVcVjFcR1BCTWV0YWRhdGHqAhBIYW5nYXI6Ok5vZGU6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("ChloYW5nYXIvbm9kZS92MS9ub2RlLnByb3RvEg5oYW5nYXIubm9kZS52MSIqChNNYWNoaW5lVXNhZ2VSZXF1ZXN0EhMKC21hY2hpbmVfdWlkGAEgASgJIqMBChRNYWNoaW5lVXNhZ2VSZXNwb25zZRIzCg1tZW1vcnlfc291cmNlGAEgASgOMhwuaGFuZ2FyLm5vZGUudjEuTWVtb3J5U291cmNlEioKBnBvaW50cxgCIAMoCzIaLmhhbmdhci5ub2RlLnYxLlVzYWdlUG9pbnQSKgoGbGF0ZXN0GAMgASgLMhouaGFuZ2FyLm5vZGUudjEuVXNhZ2VQb2ludCJvCgpVc2FnZVBvaW50EigKBHRpbWUYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgsKA2NwdRgCIAEoARIZCgxtZW1vcnlfYnl0ZXMYAyABKARIAIgBAUIPCg1fbWVtb3J5X2J5dGVzIoUBCgtMb2dzUmVxdWVzdBITCgttYWNoaW5lX3VpZBgBIAEoCRIOCgZmb2xsb3cYAiABKAgSFwoKdGFpbF9saW5lcxgDIAEoA0gAiAEBEikKBXNpbmNlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEINCgtfdGFpbF9saW5lcyI6CgxMb2dzUmVzcG9uc2USKgoHcmVjb3JkcxgBIAMoCzIZLmhhbmdhci5ub2RlLnYxLkxvZ1JlY29yZCK1AQoJTG9nUmVjb3JkEgwKBGJvb3QYASABKAMSKQoGc3RyZWFtGAIgASgOMhkuaGFuZ2FyLm5vZGUudjEuTG9nU3RyZWFtEigKBHRpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg4KBGRhdGEYBCABKAxIABIqCgRleGl0GAUgASgLMhouaGFuZ2FyLm5vZGUudjEuRXhpdFN0YXR1c0gAQgkKB2NvbnRlbnQiKgoKRXhpdFN0YXR1cxIMCgRjb2RlGAEgASgFEg4KBnNpZ25hbBgCIAEoBSLMAQoLRXhlY1JlcXVlc3QSKgoFc3RhcnQYASABKAsyGS5oYW5nYXIubm9kZS52MS5FeGVjU3RhcnRIABIPCgVzdGRpbhgCIAEoDEgAEjUKC3N0ZGluX2Nsb3NlGAMgASgLMh4uaGFuZ2FyLm5vZGUudjEuRXhlY1N0ZGluQ2xvc2VIABIsCgZyZXNpemUYBCABKAsyGi5oYW5nYXIubm9kZS52MS5XaW5kb3dTaXplSAASEAoGc2lnbmFsGAUgASgFSABCCQoHbWVzc2FnZSKkAQoJRXhlY1N0YXJ0EhMKC21hY2hpbmVfdWlkGAEgASgJEgwKBGFyZ3MYAiADKAkSCwoDZW52GAMgAygJEhMKC3dvcmtpbmdfZGlyGAQgASgJEgwKBHVzZXIYBSABKAkSCwoDdHR5GAYgASgIEigKBHNpemUYByABKAsyGi5oYW5nYXIubm9kZS52MS5XaW5kb3dTaXplEg0KBXN0ZGluGAggASgIIhAKDkV4ZWNTdGRpbkNsb3NlIigKCldpbmRvd1NpemUSDAoEcm93cxgBIAEoDRIMCgRjb2xzGAIgASgNImkKDEV4ZWNSZXNwb25zZRIQCgZzdGRvdXQYASABKAxIABIQCgZzdGRlcnIYAiABKAxIABIqCgRleGl0GAMgASgLMhouaGFuZ2FyLm5vZGUudjEuRXhpdFN0YXR1c0gAQgkKB21lc3NhZ2UiPgoKU1NIUmVxdWVzdBIVCgttYWNoaW5lX3VpZBgBIAEoCUgAEg4KBGRhdGEYAiABKAxIAEIJCgdtZXNzYWdlIhsKC1NTSFJlc3BvbnNlEgwKBGRhdGEYASABKAwiYgoSUG9ydEZvcndhcmRSZXF1ZXN0EjEKBXN0YXJ0GAEgASgLMiAuaGFuZ2FyLm5vZGUudjEuUG9ydEZvcndhcmRTdGFydEgAEg4KBGRhdGEYAiABKAxIAEIJCgdtZXNzYWdlIjUKEFBvcnRGb3J3YXJkU3RhcnQSEwoLbWFjaGluZV91aWQYASABKAkSDAoEcG9ydBgCIAEoBSIjChNQb3J0Rm9yd2FyZFJlc3BvbnNlEgwKBGRhdGEYASABKAwiYwoYVXBsb2FkQ3VzdG9tSW1hZ2VSZXF1ZXN0EiwKBWNodW5rGAEgASgLMhsuaGFuZ2FyLm5vZGUudjEuVXBsb2FkQ2h1bmtIABIOCgRkYXRhGAIgASgMSABCCQoHbWVzc2FnZSJQCgtVcGxvYWRDaHVuaxIRCglpbWFnZV91aWQYASABKAkSDgoGb2Zmc2V0GAIgASgDEg4KBmxlbmd0aBgDIAEoAxIOCgZzaGEyNTYYBCABKAkiMwoZVXBsb2FkQ3VzdG9tSW1hZ2VSZXNwb25zZRIWCg5yZWNlaXZlZF9ieXRlcxgBIAEoAyIwChtHZXRDdXN0b21JbWFnZVVwbG9hZFJlcXVlc3QSEQoJaW1hZ2VfdWlkGAEgASgJIjYKHEdldEN1c3RvbUltYWdlVXBsb2FkUmVzcG9uc2USFgoOcmVjZWl2ZWRfYnl0ZXMYASABKAMiigEKDkNvbnNvbGVSZXF1ZXN0Ei0KBXN0YXJ0GAEgASgLMhwuaGFuZ2FyLm5vZGUudjEuQ29uc29sZVN0YXJ0SAASDwoFaW5wdXQYAiABKAxIABItCgZyZXNpemUYAyABKAsyGy5oYW5nYXIubm9kZS52MS5Db25zb2xlU2l6ZUgAQgkKB21lc3NhZ2UiRQoMQ29uc29sZVN0YXJ0EhMKC21hY2hpbmVfdWlkGAEgASgJEhEKCXJlYWRfb25seRgCIAEoCBINCgVmb3JjZRgDIAEoCCIsCgtDb25zb2xlU2l6ZRIPCgdjb2x1bW5zGAEgASgNEgwKBHJvd3MYAiABKA0ibgoPQ29uc29sZVJlc3BvbnNlEhAKBm91dHB1dBgBIAEoDEgAEi0KBXN0YXRlGAIgASgLMhwuaGFuZ2FyLm5vZGUudjEuQ29uc29sZVN0YXRlSAASDwoFZW5kZWQYAyABKAlIAEIJCgdtZXNzYWdlIkgKDENvbnNvbGVTdGF0ZRINCgVpbnB1dBgBIAEoCBIpCgRzaXplGAIgASgLMhsuaGFuZ2FyLm5vZGUudjEuQ29uc29sZVNpemUqaAoMTWVtb3J5U291cmNlEh0KGU1FTU9SWV9TT1VSQ0VfVU5TUEVDSUZJRUQQABIcChhNRU1PUllfU09VUkNFX0dVRVNUX1VTRUQQARIbChdNRU1PUllfU09VUkNFX0hPU1RfSEVMRBACKn8KCUxvZ1N0cmVhbRIaChZMT0dfU1RSRUFNX1VOU1BFQ0lGSUVEEAASFQoRTE9HX1NUUkVBTV9TVERPVVQQARIVChFMT0dfU1RSRUFNX1NUREVSUhACEhMKD0xPR19TVFJFQU1fSU5JVBADEhMKD0xPR19TVFJFQU1fRVhJVBAEMsMFCgtOb2RlU2VydmljZRJDCgRMb2dzEhsuaGFuZ2FyLm5vZGUudjEuTG9nc1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5Mb2dzUmVzcG9uc2UwARJFCgRFeGVjEhsuaGFuZ2FyLm5vZGUudjEuRXhlY1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5FeGVjUmVzcG9uc2UoATABEkIKA1NTSBIaLmhhbmdhci5ub2RlLnYxLlNTSFJlcXVlc3QaGy5oYW5nYXIubm9kZS52MS5TU0hSZXNwb25zZSgBMAESWgoLUG9ydEZvcndhcmQSIi5oYW5nYXIubm9kZS52MS5Qb3J0Rm9yd2FyZFJlcXVlc3QaIy5oYW5nYXIubm9kZS52MS5Qb3J0Rm9yd2FyZFJlc3BvbnNlKAEwARJOCgdDb25zb2xlEh4uaGFuZ2FyLm5vZGUudjEuQ29uc29sZVJlcXVlc3QaHy5oYW5nYXIubm9kZS52MS5Db25zb2xlUmVzcG9uc2UoATABEmoKEVVwbG9hZEN1c3RvbUltYWdlEiguaGFuZ2FyLm5vZGUudjEuVXBsb2FkQ3VzdG9tSW1hZ2VSZXF1ZXN0GikuaGFuZ2FyLm5vZGUudjEuVXBsb2FkQ3VzdG9tSW1hZ2VSZXNwb25zZSgBEnEKFEdldEN1c3RvbUltYWdlVXBsb2FkEisuaGFuZ2FyLm5vZGUudjEuR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXF1ZXN0GiwuaGFuZ2FyLm5vZGUudjEuR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXNwb25zZRJZCgxNYWNoaW5lVXNhZ2USIy5oYW5nYXIubm9kZS52MS5NYWNoaW5lVXNhZ2VSZXF1ZXN0GiQuaGFuZ2FyLm5vZGUudjEuTWFjaGluZVVzYWdlUmVzcG9uc2VCuQEKEmNvbS5oYW5nYXIubm9kZS52MUIJTm9kZVByb3RvUAFaPmdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL25vZGUvdjE7bm9kZXYxogIDSE5YqgIOSGFuZ2FyLk5vZGUuVjHKAg5IYW5nYXJcTm9kZVxWMeICGkhhbmdhclxOb2RlXFYxXEdQQk1ldGFkYXRh6gIQSGFuZ2FyOjpOb2RlOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
+
+/**
+ * @generated from message hangar.node.v1.MachineUsageRequest
+ */
+export type MachineUsageRequest = Message<"hangar.node.v1.MachineUsageRequest"> & {
+  /**
+   * @generated from field: string machine_uid = 1;
+   */
+  machineUid: string;
+};
+
+/**
+ * Describes the message hangar.node.v1.MachineUsageRequest.
+ * Use `create(MachineUsageRequestSchema)` to create a new message.
+ */
+export const MachineUsageRequestSchema: GenMessage<MachineUsageRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 0);
+
+/**
+ * @generated from message hangar.node.v1.MachineUsageResponse
+ */
+export type MachineUsageResponse = Message<"hangar.node.v1.MachineUsageResponse"> & {
+  /**
+   * What memory_bytes counts.
+   *
+   * @generated from field: hangar.node.v1.MemorySource memory_source = 1;
+   */
+  memorySource: MemorySource;
+
+  /**
+   * A point a minute, oldest first, at most 60, of the minutes the node
+   * sampled the machine in: each the minute's mean.
+   *
+   * @generated from field: repeated hangar.node.v1.UsagePoint points = 2;
+   */
+  points: UsagePoint[];
+
+  /**
+   * The last sample with a CPU value; unset before there is one, and once
+   * it is more than three polls old.
+   *
+   * @generated from field: hangar.node.v1.UsagePoint latest = 3;
+   */
+  latest?: UsagePoint | undefined;
+};
+
+/**
+ * Describes the message hangar.node.v1.MachineUsageResponse.
+ * Use `create(MachineUsageResponseSchema)` to create a new message.
+ */
+export const MachineUsageResponseSchema: GenMessage<MachineUsageResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 1);
+
+/**
+ * UsagePoint is a machine's usage at a time, or over the minute from it.
+ *
+ * @generated from message hangar.node.v1.UsagePoint
+ */
+export type UsagePoint = Message<"hangar.node.v1.UsagePoint"> & {
+  /**
+   * @generated from field: google.protobuf.Timestamp time = 1;
+   */
+  time?: Timestamp | undefined;
+
+  /**
+   * How busy the machine was, from 0 to 1 of all its vCPUs: its unit's
+   * CPU time over the time passed times its vCPUs.
+   *
+   * @generated from field: double cpu = 2;
+   */
+  cpu: number;
+
+  /**
+   * The memory it uses, in bytes, as memory_source says; unset when the
+   * node could not tell.
+   *
+   * @generated from field: optional uint64 memory_bytes = 3;
+   */
+  memoryBytes?: bigint | undefined;
+};
+
+/**
+ * Describes the message hangar.node.v1.UsagePoint.
+ * Use `create(UsagePointSchema)` to create a new message.
+ */
+export const UsagePointSchema: GenMessage<UsagePoint> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 2);
 
 /**
  * @generated from message hangar.node.v1.LogsRequest
@@ -58,7 +145,7 @@ export type LogsRequest = Message<"hangar.node.v1.LogsRequest"> & {
  * Use `create(LogsRequestSchema)` to create a new message.
  */
 export const LogsRequestSchema: GenMessage<LogsRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 0);
+  messageDesc(file_hangar_node_v1_node, 3);
 
 /**
  * @generated from message hangar.node.v1.LogsResponse
@@ -75,7 +162,7 @@ export type LogsResponse = Message<"hangar.node.v1.LogsResponse"> & {
  * Use `create(LogsResponseSchema)` to create a new message.
  */
 export const LogsResponseSchema: GenMessage<LogsResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 1);
+  messageDesc(file_hangar_node_v1_node, 4);
 
 /**
  * LogRecord is one record of a console log. All but its boot is what the
@@ -128,7 +215,7 @@ export type LogRecord = Message<"hangar.node.v1.LogRecord"> & {
  * Use `create(LogRecordSchema)` to create a new message.
  */
 export const LogRecordSchema: GenMessage<LogRecord> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 2);
+  messageDesc(file_hangar_node_v1_node, 5);
 
 /**
  * ExitStatus is how a container's process, or an exec's, ended.
@@ -154,7 +241,7 @@ export type ExitStatus = Message<"hangar.node.v1.ExitStatus"> & {
  * Use `create(ExitStatusSchema)` to create a new message.
  */
 export const ExitStatusSchema: GenMessage<ExitStatus> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 3);
+  messageDesc(file_hangar_node_v1_node, 6);
 
 /**
  * @generated from message hangar.node.v1.ExecRequest
@@ -209,7 +296,7 @@ export type ExecRequest = Message<"hangar.node.v1.ExecRequest"> & {
  * Use `create(ExecRequestSchema)` to create a new message.
  */
 export const ExecRequestSchema: GenMessage<ExecRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 4);
+  messageDesc(file_hangar_node_v1_node, 7);
 
 /**
  * ExecStart starts an exec's process. What it leaves empty is the
@@ -279,7 +366,7 @@ export type ExecStart = Message<"hangar.node.v1.ExecStart"> & {
  * Use `create(ExecStartSchema)` to create a new message.
  */
 export const ExecStartSchema: GenMessage<ExecStart> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 5);
+  messageDesc(file_hangar_node_v1_node, 8);
 
 /**
  * @generated from message hangar.node.v1.ExecStdinClose
@@ -292,7 +379,7 @@ export type ExecStdinClose = Message<"hangar.node.v1.ExecStdinClose"> & {
  * Use `create(ExecStdinCloseSchema)` to create a new message.
  */
 export const ExecStdinCloseSchema: GenMessage<ExecStdinClose> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 6);
+  messageDesc(file_hangar_node_v1_node, 9);
 
 /**
  * @generated from message hangar.node.v1.WindowSize
@@ -314,7 +401,7 @@ export type WindowSize = Message<"hangar.node.v1.WindowSize"> & {
  * Use `create(WindowSizeSchema)` to create a new message.
  */
 export const WindowSizeSchema: GenMessage<WindowSize> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 7);
+  messageDesc(file_hangar_node_v1_node, 10);
 
 /**
  * @generated from message hangar.node.v1.ExecResponse
@@ -351,7 +438,7 @@ export type ExecResponse = Message<"hangar.node.v1.ExecResponse"> & {
  * Use `create(ExecResponseSchema)` to create a new message.
  */
 export const ExecResponseSchema: GenMessage<ExecResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 8);
+  messageDesc(file_hangar_node_v1_node, 11);
 
 /**
  * @generated from message hangar.node.v1.SSHRequest
@@ -384,7 +471,7 @@ export type SSHRequest = Message<"hangar.node.v1.SSHRequest"> & {
  * Use `create(SSHRequestSchema)` to create a new message.
  */
 export const SSHRequestSchema: GenMessage<SSHRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 9);
+  messageDesc(file_hangar_node_v1_node, 12);
 
 /**
  * @generated from message hangar.node.v1.SSHResponse
@@ -403,7 +490,7 @@ export type SSHResponse = Message<"hangar.node.v1.SSHResponse"> & {
  * Use `create(SSHResponseSchema)` to create a new message.
  */
 export const SSHResponseSchema: GenMessage<SSHResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 10);
+  messageDesc(file_hangar_node_v1_node, 13);
 
 /**
  * @generated from message hangar.node.v1.PortForwardRequest
@@ -436,7 +523,7 @@ export type PortForwardRequest = Message<"hangar.node.v1.PortForwardRequest"> & 
  * Use `create(PortForwardRequestSchema)` to create a new message.
  */
 export const PortForwardRequestSchema: GenMessage<PortForwardRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 11);
+  messageDesc(file_hangar_node_v1_node, 14);
 
 /**
  * PortForwardStart names what a port forward connects to.
@@ -462,7 +549,7 @@ export type PortForwardStart = Message<"hangar.node.v1.PortForwardStart"> & {
  * Use `create(PortForwardStartSchema)` to create a new message.
  */
 export const PortForwardStartSchema: GenMessage<PortForwardStart> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 12);
+  messageDesc(file_hangar_node_v1_node, 15);
 
 /**
  * @generated from message hangar.node.v1.PortForwardResponse
@@ -481,7 +568,7 @@ export type PortForwardResponse = Message<"hangar.node.v1.PortForwardResponse"> 
  * Use `create(PortForwardResponseSchema)` to create a new message.
  */
 export const PortForwardResponseSchema: GenMessage<PortForwardResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 13);
+  messageDesc(file_hangar_node_v1_node, 16);
 
 /**
  * @generated from message hangar.node.v1.UploadCustomImageRequest
@@ -514,7 +601,7 @@ export type UploadCustomImageRequest = Message<"hangar.node.v1.UploadCustomImage
  * Use `create(UploadCustomImageRequestSchema)` to create a new message.
  */
 export const UploadCustomImageRequestSchema: GenMessage<UploadCustomImageRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 14);
+  messageDesc(file_hangar_node_v1_node, 17);
 
 /**
  * UploadChunk says where a chunk of an upload goes.
@@ -552,7 +639,7 @@ export type UploadChunk = Message<"hangar.node.v1.UploadChunk"> & {
  * Use `create(UploadChunkSchema)` to create a new message.
  */
 export const UploadChunkSchema: GenMessage<UploadChunk> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 15);
+  messageDesc(file_hangar_node_v1_node, 18);
 
 /**
  * @generated from message hangar.node.v1.UploadCustomImageResponse
@@ -569,7 +656,7 @@ export type UploadCustomImageResponse = Message<"hangar.node.v1.UploadCustomImag
  * Use `create(UploadCustomImageResponseSchema)` to create a new message.
  */
 export const UploadCustomImageResponseSchema: GenMessage<UploadCustomImageResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 16);
+  messageDesc(file_hangar_node_v1_node, 19);
 
 /**
  * @generated from message hangar.node.v1.GetCustomImageUploadRequest
@@ -586,7 +673,7 @@ export type GetCustomImageUploadRequest = Message<"hangar.node.v1.GetCustomImage
  * Use `create(GetCustomImageUploadRequestSchema)` to create a new message.
  */
 export const GetCustomImageUploadRequestSchema: GenMessage<GetCustomImageUploadRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 17);
+  messageDesc(file_hangar_node_v1_node, 20);
 
 /**
  * @generated from message hangar.node.v1.GetCustomImageUploadResponse
@@ -603,7 +690,7 @@ export type GetCustomImageUploadResponse = Message<"hangar.node.v1.GetCustomImag
  * Use `create(GetCustomImageUploadResponseSchema)` to create a new message.
  */
 export const GetCustomImageUploadResponseSchema: GenMessage<GetCustomImageUploadResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 18);
+  messageDesc(file_hangar_node_v1_node, 21);
 
 /**
  * ConsoleRequest is what a client of a firmware machine's interactive
@@ -650,7 +737,7 @@ export type ConsoleRequest = Message<"hangar.node.v1.ConsoleRequest"> & {
  * Use `create(ConsoleRequestSchema)` to create a new message.
  */
 export const ConsoleRequestSchema: GenMessage<ConsoleRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 19);
+  messageDesc(file_hangar_node_v1_node, 22);
 
 /**
  * ConsoleStart attaches a client to a machine's serial console.
@@ -686,7 +773,7 @@ export type ConsoleStart = Message<"hangar.node.v1.ConsoleStart"> & {
  * Use `create(ConsoleStartSchema)` to create a new message.
  */
 export const ConsoleStartSchema: GenMessage<ConsoleStart> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 20);
+  messageDesc(file_hangar_node_v1_node, 23);
 
 /**
  * ConsoleSize is a screen's size in character cells.
@@ -710,7 +797,7 @@ export type ConsoleSize = Message<"hangar.node.v1.ConsoleSize"> & {
  * Use `create(ConsoleSizeSchema)` to create a new message.
  */
 export const ConsoleSizeSchema: GenMessage<ConsoleSize> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 21);
+  messageDesc(file_hangar_node_v1_node, 24);
 
 /**
  * ConsoleResponse is what an attached client gets: its state first, then
@@ -755,7 +842,7 @@ export type ConsoleResponse = Message<"hangar.node.v1.ConsoleResponse"> & {
  * Use `create(ConsoleResponseSchema)` to create a new message.
  */
 export const ConsoleResponseSchema: GenMessage<ConsoleResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 22);
+  messageDesc(file_hangar_node_v1_node, 25);
 
 /**
  * ConsoleState is how a client is attached.
@@ -783,7 +870,42 @@ export type ConsoleState = Message<"hangar.node.v1.ConsoleState"> & {
  * Use `create(ConsoleStateSchema)` to create a new message.
  */
 export const ConsoleStateSchema: GenMessage<ConsoleState> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 23);
+  messageDesc(file_hangar_node_v1_node, 26);
+
+/**
+ * MemorySource is what a machine's memory figures count.
+ *
+ * @generated from enum hangar.node.v1.MemorySource
+ */
+export enum MemorySource {
+  /**
+   * @generated from enum value: MEMORY_SOURCE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * What the guest says it uses: MemTotal less MemAvailable. A
+   * container's.
+   *
+   * @generated from enum value: MEMORY_SOURCE_GUEST_USED = 1;
+   */
+  GUEST_USED = 1,
+
+  /**
+   * What the VM's unit holds on the host, memory.current: the guest's
+   * memory it touched, page cache included, and the VMM's own. A machine
+   * booting firmware, a virtual machine's.
+   *
+   * @generated from enum value: MEMORY_SOURCE_HOST_HELD = 2;
+   */
+  HOST_HELD = 2,
+}
+
+/**
+ * Describes the enum hangar.node.v1.MemorySource.
+ */
+export const MemorySourceSchema: GenEnum<MemorySource> = /*@__PURE__*/
+  enumDesc(file_hangar_node_v1_node, 0);
 
 /**
  * LogStream says what a record carries.
@@ -823,7 +945,7 @@ export enum LogStream {
  * Describes the enum hangar.node.v1.LogStream.
  */
 export const LogStreamSchema: GenEnum<LogStream> = /*@__PURE__*/
-  enumDesc(file_hangar_node_v1_node, 0);
+  enumDesc(file_hangar_node_v1_node, 1);
 
 /**
  * NodeService is what the apiserver asks of a node agent about the
@@ -926,6 +1048,19 @@ export const NodeService: GenService<{
     methodKind: "unary";
     input: typeof GetCustomImageUploadRequestSchema;
     output: typeof GetCustomImageUploadResponseSchema;
+  },
+  /**
+   * MachineUsage says what a running machine used over the last hour, as
+   * the node samples it every ten seconds and keeps in memory alone: a
+   * point a minute, and the last sample. A machine with no running VM on
+   * this node is FAILED_PRECONDITION. See docs/decisions/machine-usage.md.
+   *
+   * @generated from rpc hangar.node.v1.NodeService.MachineUsage
+   */
+  machineUsage: {
+    methodKind: "unary";
+    input: typeof MachineUsageRequestSchema;
+    output: typeof MachineUsageResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_node_v1_node, 0);

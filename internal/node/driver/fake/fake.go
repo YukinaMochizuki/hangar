@@ -49,6 +49,13 @@ type Host struct {
 	noTailscaleDisk  bool
 	oldTailnetGuests map[string]bool
 
+	// memHeld, guestMemUsed and oldMemGuests are, by machine uid, what
+	// each VM's unit holds of memory, what each container's guest says it
+	// uses, and the guests that cannot say (usage.go).
+	memHeld      map[string]uint64
+	guestMemUsed map[string]uint64
+	oldMemGuests map[string]bool
+
 	tags      map[string]string             // reference to digest
 	configs   map[string]driver.ImageConfig // by digest; a digest stays pullable
 	pullErr   map[string]error              // by reference
@@ -258,6 +265,11 @@ type vm struct {
 	// Disks, its size as its guest sees it, and its filesystem's
 	// (bootVolumes).
 	guestVols, guestVolFS []int64
+	// cpu is the CPU time its unit had used in its current boot at
+	// spinFrom, from when it uses spin of its vCPUs (usage.go).
+	cpu      time.Duration
+	spin     float64
+	spinFrom time.Time
 }
 
 // New returns an empty host.
@@ -282,6 +294,7 @@ func New() *Host {
 		rootUsed: map[string]uint64{}, rootFilesUsed: map[string]uint64{}, rootClaims: map[string]driver.FSUsage{}, oldRootGuests: map[string]bool{}, noLiveResize: map[string]bool{}, rootCalls: map[string][]string{}, rootHolds: map[string]chan struct{}{},
 		volumeUsed: map[string]uint64{}, volumeFilesUsed: map[string]uint64{}, volumeClaims: map[string]driver.FSUsage{}, oldVolumeGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
+		memHeld: map[string]uint64{}, guestMemUsed: map[string]uint64{}, oldMemGuests: map[string]bool{},
 	}
 }
 
@@ -1640,6 +1653,7 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		VM: driver.VM{
 			MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now(), Run: spec.Run, Interfaces: spec.Interfaces,
 			RootSize: spec.Root.Size, DiskSizes: diskSizes(spec.Disks),
+			VCPUs: spec.VCPUs, Firmware: spec.Firmware, FileShareServer: spec.FileShareServer != nil,
 		},
 		spec:  spec,
 		boots: boots,
@@ -1661,6 +1675,7 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 // earlier boot. A container's is its public IPv6, a share's server's its
 // export.
 func (h *Host) bootGuest(v *vm) {
+	v.cpu, v.spin = bootCPU, 0
 	switch {
 	case v.spec.FileShareServer != nil:
 		h.exports[v.MachineUID] = cloneExport(v.spec.FileShareServer.Export)

@@ -141,6 +141,10 @@ func (g *fakeGuest) RootUsage(context.Context, string) (driver.FSUsage, error) {
 	return driver.FSUsage{}, errors.New("the hypervisor driver never asks a guest's root")
 }
 
+func (g *fakeGuest) MemoryUsage(context.Context, string) (driver.GuestMemory, error) {
+	return driver.GuestMemory{}, errors.New("the hypervisor driver never asks a guest's memory")
+}
+
 func (g *fakeGuest) GrowRoot(context.Context, string) error {
 	return errors.New("the hypervisor driver never grows a guest's root")
 }

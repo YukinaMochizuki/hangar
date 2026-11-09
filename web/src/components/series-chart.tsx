@@ -5,7 +5,15 @@
 
 import type { ReactNode } from "react";
 import { Card, CardHeader } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { axisTime, formatValue, rangeSeconds, type Series, type SeriesRange } from "@/lib/monitoring";
+
+/**
+ * A series as the chart draws it; a machine's own series have no monitoring
+ * name. `lastGapSeconds` is how far its last point may be from the one
+ * before and still join it, when that point is not on the series' step.
+ */
+export type ChartSeries = Omit<Series, "name"> & { name?: Series["name"]; lastGapSeconds?: number };
 
 const W = 300;
 const H = 100;
@@ -15,7 +23,7 @@ const H = 100;
  * share of the CPU or one whose alert is high, else a round number above
  * its highest point.
  */
-export function axisMax(s: Series): number {
+export function axisMax(s: ChartSeries): number {
   if (s.capacity) return s.capacity;
   if (s.name === "HOST_CPU" || (s.unit === "ratio" && (s.alertAbove ?? 0) >= 0.5)) return 1;
   const top = Math.max(...s.points.map((p) => p.value), 0) * 1.2;
@@ -31,17 +39,18 @@ export function axisMax(s: Series): number {
  * A point with no neighbour draws no line, so it goes in `dots` instead:
  * a series only minutes old has a single point at a day's step.
  */
-export function plotPaths(s: Series, range: SeriesRange, max: number, now: Date): { line: string; area: string; dots: string } {
+export function plotPaths(s: ChartSeries, range: SeriesRange, max: number, now: Date): { line: string; area: string; dots: string } {
   const span = rangeSeconds[range] * 1000;
   const start = now.getTime() - span;
   const gap = Math.max(s.stepSeconds, 1) * 1000 * 1.5;
   const runs: string[][] = [];
+  const lastGap = s.lastGapSeconds !== undefined ? s.lastGapSeconds * 1000 : gap;
   let prev: number | undefined;
-  for (const p of s.points) {
+  for (const [i, p] of s.points.entries()) {
     const t = p.time.getTime();
     const x = Math.min(Math.max(((t - start) / span) * W, 0), W);
     const y = H - Math.min(Math.max(p.value / max, 0), 1) * H;
-    if (prev === undefined || t - prev > gap) runs.push([]);
+    if (prev === undefined || t - prev > (i === s.points.length - 1 ? lastGap : gap)) runs.push([]);
     runs[runs.length - 1].push(`${x.toFixed(2)},${y.toFixed(2)}`);
     prev = t;
   }
@@ -81,7 +90,30 @@ export function ChartPlaceholder({ title, children }: { title: string; children:
   );
 }
 
-export function SeriesChart({ title, series, range, now = new Date() }: { title: string; series: Series; range: SeriesRange; now?: Date }) {
+/** A series' last value as a chart's head shows it, with its capacity on hover; "no data" without one. */
+export function SeriesValue({ series }: { series: ChartSeries }) {
+  const last = series.points.at(-1);
+  const fmt = (v: number) => formatValue(v, series.unit);
+  return last ? <span title={series.capacity !== undefined ? `of ${fmt(series.capacity)}` : undefined}>{fmt(last.value)}</span> : <span className="text-subtle">no data</span>;
+}
+
+/**
+ * The plot with its axes, for a card to frame. Beside: a fixed column, so plots in a grid line up.
+ * Inside: labels on the plot's lines above 0, so a narrow card's plot spans its width.
+ */
+export function SeriesPlot({
+  title,
+  series,
+  range,
+  now = new Date(),
+  axis = "beside",
+}: {
+  title: string;
+  series: ChartSeries;
+  range: SeriesRange;
+  now?: Date;
+  axis?: "beside" | "inside";
+}) {
   const max = axisMax(series);
   const { line, area, dots } = plotPaths(series, range, max, now);
   const last = series.points.at(-1);
@@ -89,28 +121,18 @@ export function SeriesChart({ title, series, range, now = new Date() }: { title:
   const mid = new Date(now.getTime() - (rangeSeconds[range] * 1000) / 2);
   const alertY = series.alertAbove !== undefined && series.alertAbove <= max ? H - (series.alertAbove / max) * H : undefined;
   const fmt = (v: number) => formatValue(v, series.unit);
-  const legend = series.alertAbove !== undefined && (
-    <span className="flex min-w-0 items-center gap-1 truncate text-[11px] font-normal text-subtle">
-      <svg viewBox="0 0 12 2" className="h-0.5 w-3" aria-hidden>
-        <line x1={0} x2={12} y1={1} y2={1} className="stroke-pending" strokeWidth={2} strokeDasharray="3 2" />
-      </svg>
-      alert at {fmt(series.alertAbove)}
-    </span>
-  );
 
   return (
-    <Frame
-      title={title}
-      legend={legend}
-      value={last ? <span title={series.capacity !== undefined ? `of ${fmt(series.capacity)}` : undefined}>{fmt(last.value)}</span> : <span className="text-subtle">no data</span>}
-    >
-      <div className="flex gap-2">
-        <div className="flex h-20 w-14 shrink-0 flex-col justify-between text-right font-mono text-[10.5px] leading-none text-subtle tabular">
-          {/* An axis with nothing on it is not labelled. */}
-          <span>{last && fmt(max)}</span>
-          <span>{last && fmt(max / 2)}</span>
-          <span>{last && "0"}</span>
-        </div>
+    <>
+      <div className={cn("flex gap-2", axis === "inside" && "mt-6")}>
+        {axis === "beside" && (
+          <div className="flex h-20 w-14 shrink-0 flex-col justify-between text-right font-mono text-[10.5px] leading-none text-subtle tabular">
+            {/* An axis with nothing on it is not labelled. */}
+            <span>{last && fmt(max)}</span>
+            <span>{last && fmt(max / 2)}</span>
+            <span>{last && "0"}</span>
+          </div>
+        )}
         <div className="relative h-20 min-w-0 flex-1">
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="size-full overflow-visible" role="img" aria-label={`${title}, ${range}`}>
             {[0, H / 2, H].map((y) => (
@@ -123,6 +145,12 @@ export function SeriesChart({ title, series, range, now = new Date() }: { title:
               <line x1={0} x2={W} y1={alertY} y2={alertY} className="stroke-pending" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
             )}
           </svg>
+          {axis === "inside" && last && (
+            <div className="pointer-events-none font-mono text-[10.5px] leading-none text-subtle tabular">
+              <span className="absolute left-0 top-0 -translate-y-full pb-0.5">{fmt(max)}</span>
+              <span className="absolute left-0 top-1/2 -translate-y-full pb-0.5">{fmt(max / 2)}</span>
+            </div>
+          )}
           {!last && (
             <span className="absolute inset-0 flex items-center justify-center">
               <span className="bg-surface px-1.5 text-[12px] text-subtle">No data in this range</span>
@@ -130,11 +158,29 @@ export function SeriesChart({ title, series, range, now = new Date() }: { title:
           )}
         </div>
       </div>
-      <div className="ml-16 mt-1 flex justify-between font-mono text-[10.5px] text-subtle tabular">
+      <div className={cn("mt-1 flex justify-between font-mono text-[10.5px] text-subtle tabular", axis === "beside" && "ml-16")}>
         <span>{axisTime(start, range)}</span>
         <span>{axisTime(mid, range)}</span>
         <span>now</span>
       </div>
+    </>
+  );
+}
+
+export function SeriesChart({ title, series, range, now = new Date() }: { title: string; series: ChartSeries; range: SeriesRange; now?: Date }) {
+  const fmt = (v: number) => formatValue(v, series.unit);
+  const legend = series.alertAbove !== undefined && (
+    <span className="flex min-w-0 items-center gap-1 truncate text-[11px] font-normal text-subtle">
+      <svg viewBox="0 0 12 2" className="h-0.5 w-3" aria-hidden>
+        <line x1={0} x2={12} y1={1} y2={1} className="stroke-pending" strokeWidth={2} strokeDasharray="3 2" />
+      </svg>
+      alert at {fmt(series.alertAbove)}
+    </span>
+  );
+
+  return (
+    <Frame title={title} legend={legend} value={<SeriesValue series={series} />}>
+      <SeriesPlot title={title} series={series} range={range} now={now} />
     </Frame>
   );
 }

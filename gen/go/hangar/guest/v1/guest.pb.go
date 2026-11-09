@@ -561,6 +561,96 @@ func (x *Interface) GetIpv6Gateway() string {
 	return ""
 }
 
+type MemoryUsageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryUsageRequest) Reset() {
+	*x = MemoryUsageRequest{}
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryUsageRequest) ProtoMessage() {}
+
+func (x *MemoryUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryUsageRequest.ProtoReflect.Descriptor instead.
+func (*MemoryUsageRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{5}
+}
+
+type MemoryUsageResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// MemTotal and MemAvailable of /proc/meminfo, in bytes: what the guest
+	// uses is their difference.
+	Total         uint64 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
+	Available     uint64 `protobuf:"varint,2,opt,name=available,proto3" json:"available,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryUsageResponse) Reset() {
+	*x = MemoryUsageResponse{}
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryUsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryUsageResponse) ProtoMessage() {}
+
+func (x *MemoryUsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryUsageResponse.ProtoReflect.Descriptor instead.
+func (*MemoryUsageResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *MemoryUsageResponse) GetTotal() uint64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *MemoryUsageResponse) GetAvailable() uint64 {
+	if x != nil {
+		return x.Available
+	}
+	return 0
+}
+
 type TailnetStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -569,7 +659,7 @@ type TailnetStatusRequest struct {
 
 func (x *TailnetStatusRequest) Reset() {
 	*x = TailnetStatusRequest{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[5]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -581,7 +671,7 @@ func (x *TailnetStatusRequest) String() string {
 func (*TailnetStatusRequest) ProtoMessage() {}
 
 func (x *TailnetStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[5]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -594,7 +684,7 @@ func (x *TailnetStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TailnetStatusRequest.ProtoReflect.Descriptor instead.
 func (*TailnetStatusRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{5}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{7}
 }
 
 type TailnetStatusResponse struct {
@@ -614,7 +704,7 @@ type TailnetStatusResponse struct {
 
 func (x *TailnetStatusResponse) Reset() {
 	*x = TailnetStatusResponse{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[6]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -626,7 +716,7 @@ func (x *TailnetStatusResponse) String() string {
 func (*TailnetStatusResponse) ProtoMessage() {}
 
 func (x *TailnetStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[6]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -639,7 +729,7 @@ func (x *TailnetStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TailnetStatusResponse.ProtoReflect.Descriptor instead.
 func (*TailnetStatusResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{6}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TailnetStatusResponse) GetState() TailnetState {
@@ -673,7 +763,7 @@ type SetTailnetRequest struct {
 
 func (x *SetTailnetRequest) Reset() {
 	*x = SetTailnetRequest{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[7]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -685,7 +775,7 @@ func (x *SetTailnetRequest) String() string {
 func (*SetTailnetRequest) ProtoMessage() {}
 
 func (x *SetTailnetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[7]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -698,7 +788,7 @@ func (x *SetTailnetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTailnetRequest.ProtoReflect.Descriptor instead.
 func (*SetTailnetRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{7}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SetTailnetRequest) GetTailscale() *Tailscale {
@@ -716,7 +806,7 @@ type SetTailnetResponse struct {
 
 func (x *SetTailnetResponse) Reset() {
 	*x = SetTailnetResponse{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[8]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -728,7 +818,7 @@ func (x *SetTailnetResponse) String() string {
 func (*SetTailnetResponse) ProtoMessage() {}
 
 func (x *SetTailnetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[8]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -741,7 +831,7 @@ func (x *SetTailnetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTailnetResponse.ProtoReflect.Descriptor instead.
 func (*SetTailnetResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{8}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{10}
 }
 
 type JoinTailnetRequest struct {
@@ -753,7 +843,7 @@ type JoinTailnetRequest struct {
 
 func (x *JoinTailnetRequest) Reset() {
 	*x = JoinTailnetRequest{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[9]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +855,7 @@ func (x *JoinTailnetRequest) String() string {
 func (*JoinTailnetRequest) ProtoMessage() {}
 
 func (x *JoinTailnetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[9]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,7 +868,7 @@ func (x *JoinTailnetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinTailnetRequest.ProtoReflect.Descriptor instead.
 func (*JoinTailnetRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{9}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *JoinTailnetRequest) GetAuthKey() string {
@@ -796,7 +886,7 @@ type JoinTailnetResponse struct {
 
 func (x *JoinTailnetResponse) Reset() {
 	*x = JoinTailnetResponse{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[10]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -808,7 +898,7 @@ func (x *JoinTailnetResponse) String() string {
 func (*JoinTailnetResponse) ProtoMessage() {}
 
 func (x *JoinTailnetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[10]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -821,7 +911,7 @@ func (x *JoinTailnetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinTailnetResponse.ProtoReflect.Descriptor instead.
 func (*JoinTailnetResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{10}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{12}
 }
 
 type VolumeUsageRequest struct {
@@ -834,7 +924,7 @@ type VolumeUsageRequest struct {
 
 func (x *VolumeUsageRequest) Reset() {
 	*x = VolumeUsageRequest{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[11]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -846,7 +936,7 @@ func (x *VolumeUsageRequest) String() string {
 func (*VolumeUsageRequest) ProtoMessage() {}
 
 func (x *VolumeUsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[11]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -859,7 +949,7 @@ func (x *VolumeUsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VolumeUsageRequest.ProtoReflect.Descriptor instead.
 func (*VolumeUsageRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{11}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *VolumeUsageRequest) GetDevice() string {
@@ -883,7 +973,7 @@ type VolumeUsageResponse struct {
 
 func (x *VolumeUsageResponse) Reset() {
 	*x = VolumeUsageResponse{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[12]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -895,7 +985,7 @@ func (x *VolumeUsageResponse) String() string {
 func (*VolumeUsageResponse) ProtoMessage() {}
 
 func (x *VolumeUsageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[12]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -908,7 +998,7 @@ func (x *VolumeUsageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VolumeUsageResponse.ProtoReflect.Descriptor instead.
 func (*VolumeUsageResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{12}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *VolumeUsageResponse) GetSize() uint64 {
@@ -949,7 +1039,7 @@ type GrowVolumeRequest struct {
 
 func (x *GrowVolumeRequest) Reset() {
 	*x = GrowVolumeRequest{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[13]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -961,7 +1051,7 @@ func (x *GrowVolumeRequest) String() string {
 func (*GrowVolumeRequest) ProtoMessage() {}
 
 func (x *GrowVolumeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[13]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -974,7 +1064,7 @@ func (x *GrowVolumeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrowVolumeRequest.ProtoReflect.Descriptor instead.
 func (*GrowVolumeRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{13}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GrowVolumeRequest) GetDevice() string {
@@ -994,7 +1084,7 @@ type GrowVolumeResponse struct {
 
 func (x *GrowVolumeResponse) Reset() {
 	*x = GrowVolumeResponse{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[14]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1006,7 +1096,7 @@ func (x *GrowVolumeResponse) String() string {
 func (*GrowVolumeResponse) ProtoMessage() {}
 
 func (x *GrowVolumeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[14]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1019,7 +1109,7 @@ func (x *GrowVolumeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrowVolumeResponse.ProtoReflect.Descriptor instead.
 func (*GrowVolumeResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{14}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GrowVolumeResponse) GetSize() uint64 {
@@ -1037,7 +1127,7 @@ type RootUsageRequest struct {
 
 func (x *RootUsageRequest) Reset() {
 	*x = RootUsageRequest{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[15]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1049,7 +1139,7 @@ func (x *RootUsageRequest) String() string {
 func (*RootUsageRequest) ProtoMessage() {}
 
 func (x *RootUsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[15]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1062,7 +1152,7 @@ func (x *RootUsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RootUsageRequest.ProtoReflect.Descriptor instead.
 func (*RootUsageRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{15}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{17}
 }
 
 type RootUsageResponse struct {
@@ -1082,7 +1172,7 @@ type RootUsageResponse struct {
 
 func (x *RootUsageResponse) Reset() {
 	*x = RootUsageResponse{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[16]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1094,7 +1184,7 @@ func (x *RootUsageResponse) String() string {
 func (*RootUsageResponse) ProtoMessage() {}
 
 func (x *RootUsageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[16]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1107,7 +1197,7 @@ func (x *RootUsageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RootUsageResponse.ProtoReflect.Descriptor instead.
 func (*RootUsageResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{16}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RootUsageResponse) GetSize() uint64 {
@@ -1146,7 +1236,7 @@ type GrowRootRequest struct {
 
 func (x *GrowRootRequest) Reset() {
 	*x = GrowRootRequest{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[17]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1158,7 +1248,7 @@ func (x *GrowRootRequest) String() string {
 func (*GrowRootRequest) ProtoMessage() {}
 
 func (x *GrowRootRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[17]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1171,7 +1261,7 @@ func (x *GrowRootRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrowRootRequest.ProtoReflect.Descriptor instead.
 func (*GrowRootRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{17}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{19}
 }
 
 type GrowRootResponse struct {
@@ -1184,7 +1274,7 @@ type GrowRootResponse struct {
 
 func (x *GrowRootResponse) Reset() {
 	*x = GrowRootResponse{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[18]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1196,7 +1286,7 @@ func (x *GrowRootResponse) String() string {
 func (*GrowRootResponse) ProtoMessage() {}
 
 func (x *GrowRootResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[18]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1209,7 +1299,7 @@ func (x *GrowRootResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrowRootResponse.ProtoReflect.Descriptor instead.
 func (*GrowRootResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{18}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GrowRootResponse) GetSize() uint64 {
@@ -1230,7 +1320,7 @@ type SetIPv6Request struct {
 
 func (x *SetIPv6Request) Reset() {
 	*x = SetIPv6Request{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[19]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1242,7 +1332,7 @@ func (x *SetIPv6Request) String() string {
 func (*SetIPv6Request) ProtoMessage() {}
 
 func (x *SetIPv6Request) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[19]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1255,7 +1345,7 @@ func (x *SetIPv6Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetIPv6Request.ProtoReflect.Descriptor instead.
 func (*SetIPv6Request) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{19}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SetIPv6Request) GetInterfaces() []*Interface {
@@ -1273,7 +1363,7 @@ type SetIPv6Response struct {
 
 func (x *SetIPv6Response) Reset() {
 	*x = SetIPv6Response{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[20]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1285,7 +1375,7 @@ func (x *SetIPv6Response) String() string {
 func (*SetIPv6Response) ProtoMessage() {}
 
 func (x *SetIPv6Response) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[20]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1298,7 +1388,7 @@ func (x *SetIPv6Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetIPv6Response.ProtoReflect.Descriptor instead.
 func (*SetIPv6Response) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{20}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{22}
 }
 
 type StopRequest struct {
@@ -1311,7 +1401,7 @@ type StopRequest struct {
 
 func (x *StopRequest) Reset() {
 	*x = StopRequest{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[21]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1323,7 +1413,7 @@ func (x *StopRequest) String() string {
 func (*StopRequest) ProtoMessage() {}
 
 func (x *StopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[21]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1336,7 +1426,7 @@ func (x *StopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
 func (*StopRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{21}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *StopRequest) GetGrace() *durationpb.Duration {
@@ -1354,7 +1444,7 @@ type StopResponse struct {
 
 func (x *StopResponse) Reset() {
 	*x = StopResponse{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[22]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1366,7 +1456,7 @@ func (x *StopResponse) String() string {
 func (*StopResponse) ProtoMessage() {}
 
 func (x *StopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[22]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1379,7 +1469,7 @@ func (x *StopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
 func (*StopResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{22}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{24}
 }
 
 type PingRequest struct {
@@ -1390,7 +1480,7 @@ type PingRequest struct {
 
 func (x *PingRequest) Reset() {
 	*x = PingRequest{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[23]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1402,7 +1492,7 @@ func (x *PingRequest) String() string {
 func (*PingRequest) ProtoMessage() {}
 
 func (x *PingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[23]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1415,7 +1505,7 @@ func (x *PingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingRequest.ProtoReflect.Descriptor instead.
 func (*PingRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{23}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{25}
 }
 
 type PingResponse struct {
@@ -1430,7 +1520,7 @@ type PingResponse struct {
 
 func (x *PingResponse) Reset() {
 	*x = PingResponse{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[24]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1442,7 +1532,7 @@ func (x *PingResponse) String() string {
 func (*PingResponse) ProtoMessage() {}
 
 func (x *PingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[24]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1455,7 +1545,7 @@ func (x *PingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingResponse.ProtoReflect.Descriptor instead.
 func (*PingResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{24}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *PingResponse) GetVersion() string {
@@ -1488,7 +1578,7 @@ type ExecRequest struct {
 
 func (x *ExecRequest) Reset() {
 	*x = ExecRequest{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[25]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1500,7 +1590,7 @@ func (x *ExecRequest) String() string {
 func (*ExecRequest) ProtoMessage() {}
 
 func (x *ExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[25]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1513,7 +1603,7 @@ func (x *ExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
 func (*ExecRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{25}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ExecRequest) GetMessage() isExecRequest_Message {
@@ -1618,7 +1708,7 @@ type ExecStart struct {
 
 func (x *ExecStart) Reset() {
 	*x = ExecStart{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[26]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1630,7 +1720,7 @@ func (x *ExecStart) String() string {
 func (*ExecStart) ProtoMessage() {}
 
 func (x *ExecStart) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[26]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1643,7 +1733,7 @@ func (x *ExecStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecStart.ProtoReflect.Descriptor instead.
 func (*ExecStart) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{26}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ExecStart) GetProcess() *Process {
@@ -1675,7 +1765,7 @@ type StdinClose struct {
 
 func (x *StdinClose) Reset() {
 	*x = StdinClose{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[27]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1687,7 +1777,7 @@ func (x *StdinClose) String() string {
 func (*StdinClose) ProtoMessage() {}
 
 func (x *StdinClose) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[27]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1700,7 +1790,7 @@ func (x *StdinClose) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StdinClose.ProtoReflect.Descriptor instead.
 func (*StdinClose) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{27}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{29}
 }
 
 type WindowSize struct {
@@ -1713,7 +1803,7 @@ type WindowSize struct {
 
 func (x *WindowSize) Reset() {
 	*x = WindowSize{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[28]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1725,7 +1815,7 @@ func (x *WindowSize) String() string {
 func (*WindowSize) ProtoMessage() {}
 
 func (x *WindowSize) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[28]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1738,7 +1828,7 @@ func (x *WindowSize) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WindowSize.ProtoReflect.Descriptor instead.
 func (*WindowSize) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{28}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *WindowSize) GetRows() uint32 {
@@ -1769,7 +1859,7 @@ type ExecResponse struct {
 
 func (x *ExecResponse) Reset() {
 	*x = ExecResponse{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[29]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1781,7 +1871,7 @@ func (x *ExecResponse) String() string {
 func (*ExecResponse) ProtoMessage() {}
 
 func (x *ExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[29]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1794,7 +1884,7 @@ func (x *ExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecResponse.ProtoReflect.Descriptor instead.
 func (*ExecResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{29}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ExecResponse) GetMessage() isExecResponse_Message {
@@ -1867,7 +1957,7 @@ type ExecExit struct {
 
 func (x *ExecExit) Reset() {
 	*x = ExecExit{}
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[30]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1879,7 +1969,7 @@ func (x *ExecExit) String() string {
 func (*ExecExit) ProtoMessage() {}
 
 func (x *ExecExit) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_guest_proto_msgTypes[30]
+	mi := &file_hangar_guest_v1_guest_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1892,7 +1982,7 @@ func (x *ExecExit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecExit.ProtoReflect.Descriptor instead.
 func (*ExecExit) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{30}
+	return file_hangar_guest_v1_guest_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ExecExit) GetCode() int32 {
@@ -1954,7 +2044,11 @@ const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x18\n" +
 	"\agateway\x18\x03 \x01(\tR\agateway\x12\x12\n" +
 	"\x04ipv6\x18\x04 \x01(\tR\x04ipv6\x12!\n" +
-	"\fipv6_gateway\x18\x05 \x01(\tR\vipv6Gateway\"\x16\n" +
+	"\fipv6_gateway\x18\x05 \x01(\tR\vipv6Gateway\"\x14\n" +
+	"\x12MemoryUsageRequest\"I\n" +
+	"\x13MemoryUsageResponse\x12\x14\n" +
+	"\x05total\x18\x01 \x01(\x04R\x05total\x12\x1c\n" +
+	"\tavailable\x18\x02 \x01(\x04R\tavailable\"\x16\n" +
 	"\x14TailnetStatusRequest\"\x83\x01\n" +
 	"\x15TailnetStatusResponse\x123\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x1d.hangar.guest.v1.TailnetStateR\x05state\x12\x18\n" +
@@ -2033,7 +2127,7 @@ const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\x14TAILNET_STATE_JOINED\x10\x03\x12\x1e\n" +
 	"\x1aTAILNET_STATE_KEY_REJECTED\x10\x04\x12\x18\n" +
 	"\x14TAILNET_STATE_FAILED\x10\x05\x12\x15\n" +
-	"\x11TAILNET_STATE_OFF\x10\x062\x9b\a\n" +
+	"\x11TAILNET_STATE_OFF\x10\x062\xf5\a\n" +
 	"\x11GuestAgentService\x12C\n" +
 	"\x04Ping\x12\x1c.hangar.guest.v1.PingRequest\x1a\x1d.hangar.guest.v1.PingResponse\x12G\n" +
 	"\x04Exec\x12\x1c.hangar.guest.v1.ExecRequest\x1a\x1d.hangar.guest.v1.ExecResponse(\x010\x01\x12C\n" +
@@ -2047,7 +2141,8 @@ const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\n" +
 	"SetTailnet\x12\".hangar.guest.v1.SetTailnetRequest\x1a#.hangar.guest.v1.SetTailnetResponse\x12^\n" +
 	"\rTailnetStatus\x12%.hangar.guest.v1.TailnetStatusRequest\x1a&.hangar.guest.v1.TailnetStatusResponse\x12X\n" +
-	"\vJoinTailnet\x12#.hangar.guest.v1.JoinTailnetRequest\x1a$.hangar.guest.v1.JoinTailnetResponseB\xc1\x01\n" +
+	"\vJoinTailnet\x12#.hangar.guest.v1.JoinTailnetRequest\x1a$.hangar.guest.v1.JoinTailnetResponse\x12X\n" +
+	"\vMemoryUsage\x12#.hangar.guest.v1.MemoryUsageRequest\x1a$.hangar.guest.v1.MemoryUsageResponseB\xc1\x01\n" +
 	"\x13com.hangar.guest.v1B\n" +
 	"GuestProtoP\x01Z@github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1;guestv1\xa2\x02\x03HGX\xaa\x02\x0fHangar.Guest.V1\xca\x02\x0fHangar\\Guest\\V1\xe2\x02\x1bHangar\\Guest\\V1\\GPBMetadata\xea\x02\x11Hangar::Guest::V1b\x06proto3"
 
@@ -2064,7 +2159,7 @@ func file_hangar_guest_v1_guest_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_guest_v1_guest_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_guest_v1_guest_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_hangar_guest_v1_guest_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_hangar_guest_v1_guest_proto_goTypes = []any{
 	(TailnetState)(0),             // 0: hangar.guest.v1.TailnetState
 	(*BootConfig)(nil),            // 1: hangar.guest.v1.BootConfig
@@ -2072,80 +2167,84 @@ var file_hangar_guest_v1_guest_proto_goTypes = []any{
 	(*Volume)(nil),                // 3: hangar.guest.v1.Volume
 	(*Process)(nil),               // 4: hangar.guest.v1.Process
 	(*Interface)(nil),             // 5: hangar.guest.v1.Interface
-	(*TailnetStatusRequest)(nil),  // 6: hangar.guest.v1.TailnetStatusRequest
-	(*TailnetStatusResponse)(nil), // 7: hangar.guest.v1.TailnetStatusResponse
-	(*SetTailnetRequest)(nil),     // 8: hangar.guest.v1.SetTailnetRequest
-	(*SetTailnetResponse)(nil),    // 9: hangar.guest.v1.SetTailnetResponse
-	(*JoinTailnetRequest)(nil),    // 10: hangar.guest.v1.JoinTailnetRequest
-	(*JoinTailnetResponse)(nil),   // 11: hangar.guest.v1.JoinTailnetResponse
-	(*VolumeUsageRequest)(nil),    // 12: hangar.guest.v1.VolumeUsageRequest
-	(*VolumeUsageResponse)(nil),   // 13: hangar.guest.v1.VolumeUsageResponse
-	(*GrowVolumeRequest)(nil),     // 14: hangar.guest.v1.GrowVolumeRequest
-	(*GrowVolumeResponse)(nil),    // 15: hangar.guest.v1.GrowVolumeResponse
-	(*RootUsageRequest)(nil),      // 16: hangar.guest.v1.RootUsageRequest
-	(*RootUsageResponse)(nil),     // 17: hangar.guest.v1.RootUsageResponse
-	(*GrowRootRequest)(nil),       // 18: hangar.guest.v1.GrowRootRequest
-	(*GrowRootResponse)(nil),      // 19: hangar.guest.v1.GrowRootResponse
-	(*SetIPv6Request)(nil),        // 20: hangar.guest.v1.SetIPv6Request
-	(*SetIPv6Response)(nil),       // 21: hangar.guest.v1.SetIPv6Response
-	(*StopRequest)(nil),           // 22: hangar.guest.v1.StopRequest
-	(*StopResponse)(nil),          // 23: hangar.guest.v1.StopResponse
-	(*PingRequest)(nil),           // 24: hangar.guest.v1.PingRequest
-	(*PingResponse)(nil),          // 25: hangar.guest.v1.PingResponse
-	(*ExecRequest)(nil),           // 26: hangar.guest.v1.ExecRequest
-	(*ExecStart)(nil),             // 27: hangar.guest.v1.ExecStart
-	(*StdinClose)(nil),            // 28: hangar.guest.v1.StdinClose
-	(*WindowSize)(nil),            // 29: hangar.guest.v1.WindowSize
-	(*ExecResponse)(nil),          // 30: hangar.guest.v1.ExecResponse
-	(*ExecExit)(nil),              // 31: hangar.guest.v1.ExecExit
-	(*FileShareServer)(nil),       // 32: hangar.guest.v1.FileShareServer
-	(*ImageConverter)(nil),        // 33: hangar.guest.v1.ImageConverter
-	(*FileShareMount)(nil),        // 34: hangar.guest.v1.FileShareMount
-	(*durationpb.Duration)(nil),   // 35: google.protobuf.Duration
+	(*MemoryUsageRequest)(nil),    // 6: hangar.guest.v1.MemoryUsageRequest
+	(*MemoryUsageResponse)(nil),   // 7: hangar.guest.v1.MemoryUsageResponse
+	(*TailnetStatusRequest)(nil),  // 8: hangar.guest.v1.TailnetStatusRequest
+	(*TailnetStatusResponse)(nil), // 9: hangar.guest.v1.TailnetStatusResponse
+	(*SetTailnetRequest)(nil),     // 10: hangar.guest.v1.SetTailnetRequest
+	(*SetTailnetResponse)(nil),    // 11: hangar.guest.v1.SetTailnetResponse
+	(*JoinTailnetRequest)(nil),    // 12: hangar.guest.v1.JoinTailnetRequest
+	(*JoinTailnetResponse)(nil),   // 13: hangar.guest.v1.JoinTailnetResponse
+	(*VolumeUsageRequest)(nil),    // 14: hangar.guest.v1.VolumeUsageRequest
+	(*VolumeUsageResponse)(nil),   // 15: hangar.guest.v1.VolumeUsageResponse
+	(*GrowVolumeRequest)(nil),     // 16: hangar.guest.v1.GrowVolumeRequest
+	(*GrowVolumeResponse)(nil),    // 17: hangar.guest.v1.GrowVolumeResponse
+	(*RootUsageRequest)(nil),      // 18: hangar.guest.v1.RootUsageRequest
+	(*RootUsageResponse)(nil),     // 19: hangar.guest.v1.RootUsageResponse
+	(*GrowRootRequest)(nil),       // 20: hangar.guest.v1.GrowRootRequest
+	(*GrowRootResponse)(nil),      // 21: hangar.guest.v1.GrowRootResponse
+	(*SetIPv6Request)(nil),        // 22: hangar.guest.v1.SetIPv6Request
+	(*SetIPv6Response)(nil),       // 23: hangar.guest.v1.SetIPv6Response
+	(*StopRequest)(nil),           // 24: hangar.guest.v1.StopRequest
+	(*StopResponse)(nil),          // 25: hangar.guest.v1.StopResponse
+	(*PingRequest)(nil),           // 26: hangar.guest.v1.PingRequest
+	(*PingResponse)(nil),          // 27: hangar.guest.v1.PingResponse
+	(*ExecRequest)(nil),           // 28: hangar.guest.v1.ExecRequest
+	(*ExecStart)(nil),             // 29: hangar.guest.v1.ExecStart
+	(*StdinClose)(nil),            // 30: hangar.guest.v1.StdinClose
+	(*WindowSize)(nil),            // 31: hangar.guest.v1.WindowSize
+	(*ExecResponse)(nil),          // 32: hangar.guest.v1.ExecResponse
+	(*ExecExit)(nil),              // 33: hangar.guest.v1.ExecExit
+	(*FileShareServer)(nil),       // 34: hangar.guest.v1.FileShareServer
+	(*ImageConverter)(nil),        // 35: hangar.guest.v1.ImageConverter
+	(*FileShareMount)(nil),        // 36: hangar.guest.v1.FileShareMount
+	(*durationpb.Duration)(nil),   // 37: google.protobuf.Duration
 }
 var file_hangar_guest_v1_guest_proto_depIdxs = []int32{
 	4,  // 0: hangar.guest.v1.BootConfig.process:type_name -> hangar.guest.v1.Process
 	5,  // 1: hangar.guest.v1.BootConfig.interfaces:type_name -> hangar.guest.v1.Interface
 	3,  // 2: hangar.guest.v1.BootConfig.volumes:type_name -> hangar.guest.v1.Volume
-	32, // 3: hangar.guest.v1.BootConfig.file_share_server:type_name -> hangar.guest.v1.FileShareServer
-	33, // 4: hangar.guest.v1.BootConfig.image_converter:type_name -> hangar.guest.v1.ImageConverter
+	34, // 3: hangar.guest.v1.BootConfig.file_share_server:type_name -> hangar.guest.v1.FileShareServer
+	35, // 4: hangar.guest.v1.BootConfig.image_converter:type_name -> hangar.guest.v1.ImageConverter
 	2,  // 5: hangar.guest.v1.BootConfig.tailscale:type_name -> hangar.guest.v1.Tailscale
-	34, // 6: hangar.guest.v1.Volume.file_share:type_name -> hangar.guest.v1.FileShareMount
+	36, // 6: hangar.guest.v1.Volume.file_share:type_name -> hangar.guest.v1.FileShareMount
 	0,  // 7: hangar.guest.v1.TailnetStatusResponse.state:type_name -> hangar.guest.v1.TailnetState
 	2,  // 8: hangar.guest.v1.SetTailnetRequest.tailscale:type_name -> hangar.guest.v1.Tailscale
 	5,  // 9: hangar.guest.v1.SetIPv6Request.interfaces:type_name -> hangar.guest.v1.Interface
-	35, // 10: hangar.guest.v1.StopRequest.grace:type_name -> google.protobuf.Duration
-	35, // 11: hangar.guest.v1.PingResponse.uptime:type_name -> google.protobuf.Duration
-	27, // 12: hangar.guest.v1.ExecRequest.start:type_name -> hangar.guest.v1.ExecStart
-	28, // 13: hangar.guest.v1.ExecRequest.stdin_close:type_name -> hangar.guest.v1.StdinClose
-	29, // 14: hangar.guest.v1.ExecRequest.resize:type_name -> hangar.guest.v1.WindowSize
+	37, // 10: hangar.guest.v1.StopRequest.grace:type_name -> google.protobuf.Duration
+	37, // 11: hangar.guest.v1.PingResponse.uptime:type_name -> google.protobuf.Duration
+	29, // 12: hangar.guest.v1.ExecRequest.start:type_name -> hangar.guest.v1.ExecStart
+	30, // 13: hangar.guest.v1.ExecRequest.stdin_close:type_name -> hangar.guest.v1.StdinClose
+	31, // 14: hangar.guest.v1.ExecRequest.resize:type_name -> hangar.guest.v1.WindowSize
 	4,  // 15: hangar.guest.v1.ExecStart.process:type_name -> hangar.guest.v1.Process
-	29, // 16: hangar.guest.v1.ExecStart.size:type_name -> hangar.guest.v1.WindowSize
-	31, // 17: hangar.guest.v1.ExecResponse.exit:type_name -> hangar.guest.v1.ExecExit
-	24, // 18: hangar.guest.v1.GuestAgentService.Ping:input_type -> hangar.guest.v1.PingRequest
-	26, // 19: hangar.guest.v1.GuestAgentService.Exec:input_type -> hangar.guest.v1.ExecRequest
-	22, // 20: hangar.guest.v1.GuestAgentService.Stop:input_type -> hangar.guest.v1.StopRequest
-	20, // 21: hangar.guest.v1.GuestAgentService.SetIPv6:input_type -> hangar.guest.v1.SetIPv6Request
-	16, // 22: hangar.guest.v1.GuestAgentService.RootUsage:input_type -> hangar.guest.v1.RootUsageRequest
-	18, // 23: hangar.guest.v1.GuestAgentService.GrowRoot:input_type -> hangar.guest.v1.GrowRootRequest
-	12, // 24: hangar.guest.v1.GuestAgentService.VolumeUsage:input_type -> hangar.guest.v1.VolumeUsageRequest
-	14, // 25: hangar.guest.v1.GuestAgentService.GrowVolume:input_type -> hangar.guest.v1.GrowVolumeRequest
-	8,  // 26: hangar.guest.v1.GuestAgentService.SetTailnet:input_type -> hangar.guest.v1.SetTailnetRequest
-	6,  // 27: hangar.guest.v1.GuestAgentService.TailnetStatus:input_type -> hangar.guest.v1.TailnetStatusRequest
-	10, // 28: hangar.guest.v1.GuestAgentService.JoinTailnet:input_type -> hangar.guest.v1.JoinTailnetRequest
-	25, // 29: hangar.guest.v1.GuestAgentService.Ping:output_type -> hangar.guest.v1.PingResponse
-	30, // 30: hangar.guest.v1.GuestAgentService.Exec:output_type -> hangar.guest.v1.ExecResponse
-	23, // 31: hangar.guest.v1.GuestAgentService.Stop:output_type -> hangar.guest.v1.StopResponse
-	21, // 32: hangar.guest.v1.GuestAgentService.SetIPv6:output_type -> hangar.guest.v1.SetIPv6Response
-	17, // 33: hangar.guest.v1.GuestAgentService.RootUsage:output_type -> hangar.guest.v1.RootUsageResponse
-	19, // 34: hangar.guest.v1.GuestAgentService.GrowRoot:output_type -> hangar.guest.v1.GrowRootResponse
-	13, // 35: hangar.guest.v1.GuestAgentService.VolumeUsage:output_type -> hangar.guest.v1.VolumeUsageResponse
-	15, // 36: hangar.guest.v1.GuestAgentService.GrowVolume:output_type -> hangar.guest.v1.GrowVolumeResponse
-	9,  // 37: hangar.guest.v1.GuestAgentService.SetTailnet:output_type -> hangar.guest.v1.SetTailnetResponse
-	7,  // 38: hangar.guest.v1.GuestAgentService.TailnetStatus:output_type -> hangar.guest.v1.TailnetStatusResponse
-	11, // 39: hangar.guest.v1.GuestAgentService.JoinTailnet:output_type -> hangar.guest.v1.JoinTailnetResponse
-	29, // [29:40] is the sub-list for method output_type
-	18, // [18:29] is the sub-list for method input_type
+	31, // 16: hangar.guest.v1.ExecStart.size:type_name -> hangar.guest.v1.WindowSize
+	33, // 17: hangar.guest.v1.ExecResponse.exit:type_name -> hangar.guest.v1.ExecExit
+	26, // 18: hangar.guest.v1.GuestAgentService.Ping:input_type -> hangar.guest.v1.PingRequest
+	28, // 19: hangar.guest.v1.GuestAgentService.Exec:input_type -> hangar.guest.v1.ExecRequest
+	24, // 20: hangar.guest.v1.GuestAgentService.Stop:input_type -> hangar.guest.v1.StopRequest
+	22, // 21: hangar.guest.v1.GuestAgentService.SetIPv6:input_type -> hangar.guest.v1.SetIPv6Request
+	18, // 22: hangar.guest.v1.GuestAgentService.RootUsage:input_type -> hangar.guest.v1.RootUsageRequest
+	20, // 23: hangar.guest.v1.GuestAgentService.GrowRoot:input_type -> hangar.guest.v1.GrowRootRequest
+	14, // 24: hangar.guest.v1.GuestAgentService.VolumeUsage:input_type -> hangar.guest.v1.VolumeUsageRequest
+	16, // 25: hangar.guest.v1.GuestAgentService.GrowVolume:input_type -> hangar.guest.v1.GrowVolumeRequest
+	10, // 26: hangar.guest.v1.GuestAgentService.SetTailnet:input_type -> hangar.guest.v1.SetTailnetRequest
+	8,  // 27: hangar.guest.v1.GuestAgentService.TailnetStatus:input_type -> hangar.guest.v1.TailnetStatusRequest
+	12, // 28: hangar.guest.v1.GuestAgentService.JoinTailnet:input_type -> hangar.guest.v1.JoinTailnetRequest
+	6,  // 29: hangar.guest.v1.GuestAgentService.MemoryUsage:input_type -> hangar.guest.v1.MemoryUsageRequest
+	27, // 30: hangar.guest.v1.GuestAgentService.Ping:output_type -> hangar.guest.v1.PingResponse
+	32, // 31: hangar.guest.v1.GuestAgentService.Exec:output_type -> hangar.guest.v1.ExecResponse
+	25, // 32: hangar.guest.v1.GuestAgentService.Stop:output_type -> hangar.guest.v1.StopResponse
+	23, // 33: hangar.guest.v1.GuestAgentService.SetIPv6:output_type -> hangar.guest.v1.SetIPv6Response
+	19, // 34: hangar.guest.v1.GuestAgentService.RootUsage:output_type -> hangar.guest.v1.RootUsageResponse
+	21, // 35: hangar.guest.v1.GuestAgentService.GrowRoot:output_type -> hangar.guest.v1.GrowRootResponse
+	15, // 36: hangar.guest.v1.GuestAgentService.VolumeUsage:output_type -> hangar.guest.v1.VolumeUsageResponse
+	17, // 37: hangar.guest.v1.GuestAgentService.GrowVolume:output_type -> hangar.guest.v1.GrowVolumeResponse
+	11, // 38: hangar.guest.v1.GuestAgentService.SetTailnet:output_type -> hangar.guest.v1.SetTailnetResponse
+	9,  // 39: hangar.guest.v1.GuestAgentService.TailnetStatus:output_type -> hangar.guest.v1.TailnetStatusResponse
+	13, // 40: hangar.guest.v1.GuestAgentService.JoinTailnet:output_type -> hangar.guest.v1.JoinTailnetResponse
+	7,  // 41: hangar.guest.v1.GuestAgentService.MemoryUsage:output_type -> hangar.guest.v1.MemoryUsageResponse
+	30, // [30:42] is the sub-list for method output_type
+	18, // [18:30] is the sub-list for method input_type
 	18, // [18:18] is the sub-list for extension type_name
 	18, // [18:18] is the sub-list for extension extendee
 	0,  // [0:18] is the sub-list for field type_name
@@ -2158,14 +2257,14 @@ func file_hangar_guest_v1_guest_proto_init() {
 	}
 	file_hangar_guest_v1_converter_proto_init()
 	file_hangar_guest_v1_file_share_proto_init()
-	file_hangar_guest_v1_guest_proto_msgTypes[25].OneofWrappers = []any{
+	file_hangar_guest_v1_guest_proto_msgTypes[27].OneofWrappers = []any{
 		(*ExecRequest_Start)(nil),
 		(*ExecRequest_Stdin)(nil),
 		(*ExecRequest_StdinClose)(nil),
 		(*ExecRequest_Resize)(nil),
 		(*ExecRequest_Signal)(nil),
 	}
-	file_hangar_guest_v1_guest_proto_msgTypes[29].OneofWrappers = []any{
+	file_hangar_guest_v1_guest_proto_msgTypes[31].OneofWrappers = []any{
 		(*ExecResponse_Stdout)(nil),
 		(*ExecResponse_Stderr)(nil),
 		(*ExecResponse_Exit)(nil),
@@ -2176,7 +2275,7 @@ func file_hangar_guest_v1_guest_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_guest_v1_guest_proto_rawDesc), len(file_hangar_guest_v1_guest_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   31,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

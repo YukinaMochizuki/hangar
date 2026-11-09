@@ -85,6 +85,21 @@ func (g Guest) RootUsage(ctx context.Context, machineUID string) (driver.FSUsage
 	return driver.FSUsage{Size: res.Msg.GetSize(), Used: res.Msg.GetUsed(), Files: res.Msg.GetFiles(), FilesUsed: res.Msg.GetFilesUsed()}, nil
 }
 
+// MemoryUsage asks the guest agent how much memory it has and how much is
+// available.
+func (g Guest) MemoryUsage(ctx context.Context, machineUID string) (driver.GuestMemory, error) {
+	c, done := g.Client(machineUID)
+	defer done()
+	res, err := c.MemoryUsage(ctx, connect.NewRequest(&guestv1.MemoryUsageRequest{}))
+	if connect.CodeOf(err) == connect.CodeUnimplemented {
+		return driver.GuestMemory{}, fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+	}
+	if err != nil {
+		return driver.GuestMemory{}, err
+	}
+	return driver.GuestMemory{Total: res.Msg.GetTotal(), Available: res.Msg.GetAvailable()}, nil
+}
+
 // GrowRoot has the guest agent grow the root filesystem to its disk.
 func (g Guest) GrowRoot(ctx context.Context, machineUID string) error {
 	c, done := g.Client(machineUID)

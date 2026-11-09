@@ -42,6 +42,9 @@ const (
 	// MachineCapabilityServiceForgetSSHHostKeysProcedure is the fully-qualified name of the
 	// MachineCapabilityService's ForgetSSHHostKeys RPC.
 	MachineCapabilityServiceForgetSSHHostKeysProcedure = "/hangar.compute.v1alpha1.MachineCapabilityService/ForgetSSHHostKeys"
+	// MachineCapabilityServiceUsageProcedure is the fully-qualified name of the
+	// MachineCapabilityService's Usage RPC.
+	MachineCapabilityServiceUsageProcedure = "/hangar.compute.v1alpha1.MachineCapabilityService/Usage"
 )
 
 // MachineCapabilityServiceClient is a client for the
@@ -68,6 +71,16 @@ type MachineCapabilityServiceClient interface {
 	// compute.machines.ssh: one who may only log in cannot reset the trust
 	// their logins rest on. It leaves hangar ssh's known_hosts as it is.
 	ForgetSSHHostKeys(context.Context, *connect.Request[v1alpha1.ForgetSSHHostKeysRequest]) (*connect.Response[v1alpha1.ForgetSSHHostKeysResponse], error)
+	// Usage says how busy the object's running machine's vCPUs were and how
+	// much memory it used over the last hour, a point a minute, and at its
+	// last sample, as its node samples it every ten seconds. The node keeps
+	// it in memory alone: a restart of its agent, or a stop of the machine,
+	// empties it. It needs the object's own get permission, such as
+	// compute.containers.get, no capability's. An object whose machine is
+	// not on a node yet, or not running, fails with FailedPrecondition, and
+	// one whose node is not connected with Unavailable. See
+	// docs/decisions/machine-usage.md.
+	Usage(context.Context, *connect.Request[v1alpha1.UsageRequest]) (*connect.Response[v1alpha1.UsageResponse], error)
 }
 
 // NewMachineCapabilityServiceClient constructs a client for the
@@ -100,6 +113,12 @@ func NewMachineCapabilityServiceClient(httpClient connect.HTTPClient, baseURL st
 			connect.WithSchema(machineCapabilityServiceMethods.ByName("ForgetSSHHostKeys")),
 			connect.WithClientOptions(opts...),
 		),
+		usage: connect.NewClient[v1alpha1.UsageRequest, v1alpha1.UsageResponse](
+			httpClient,
+			baseURL+MachineCapabilityServiceUsageProcedure,
+			connect.WithSchema(machineCapabilityServiceMethods.ByName("Usage")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -108,6 +127,7 @@ type machineCapabilityServiceClient struct {
 	logs              *connect.Client[v1alpha1.LogsRequest, v1alpha1.LogsResponse]
 	signSSHKey        *connect.Client[v1alpha1.SignSSHKeyRequest, v1alpha1.SignSSHKeyResponse]
 	forgetSSHHostKeys *connect.Client[v1alpha1.ForgetSSHHostKeysRequest, v1alpha1.ForgetSSHHostKeysResponse]
+	usage             *connect.Client[v1alpha1.UsageRequest, v1alpha1.UsageResponse]
 }
 
 // Logs calls hangar.compute.v1alpha1.MachineCapabilityService.Logs.
@@ -123,6 +143,11 @@ func (c *machineCapabilityServiceClient) SignSSHKey(ctx context.Context, req *co
 // ForgetSSHHostKeys calls hangar.compute.v1alpha1.MachineCapabilityService.ForgetSSHHostKeys.
 func (c *machineCapabilityServiceClient) ForgetSSHHostKeys(ctx context.Context, req *connect.Request[v1alpha1.ForgetSSHHostKeysRequest]) (*connect.Response[v1alpha1.ForgetSSHHostKeysResponse], error) {
 	return c.forgetSSHHostKeys.CallUnary(ctx, req)
+}
+
+// Usage calls hangar.compute.v1alpha1.MachineCapabilityService.Usage.
+func (c *machineCapabilityServiceClient) Usage(ctx context.Context, req *connect.Request[v1alpha1.UsageRequest]) (*connect.Response[v1alpha1.UsageResponse], error) {
+	return c.usage.CallUnary(ctx, req)
 }
 
 // MachineCapabilityServiceHandler is an implementation of the
@@ -149,6 +174,16 @@ type MachineCapabilityServiceHandler interface {
 	// compute.machines.ssh: one who may only log in cannot reset the trust
 	// their logins rest on. It leaves hangar ssh's known_hosts as it is.
 	ForgetSSHHostKeys(context.Context, *connect.Request[v1alpha1.ForgetSSHHostKeysRequest]) (*connect.Response[v1alpha1.ForgetSSHHostKeysResponse], error)
+	// Usage says how busy the object's running machine's vCPUs were and how
+	// much memory it used over the last hour, a point a minute, and at its
+	// last sample, as its node samples it every ten seconds. The node keeps
+	// it in memory alone: a restart of its agent, or a stop of the machine,
+	// empties it. It needs the object's own get permission, such as
+	// compute.containers.get, no capability's. An object whose machine is
+	// not on a node yet, or not running, fails with FailedPrecondition, and
+	// one whose node is not connected with Unavailable. See
+	// docs/decisions/machine-usage.md.
+	Usage(context.Context, *connect.Request[v1alpha1.UsageRequest]) (*connect.Response[v1alpha1.UsageResponse], error)
 }
 
 // NewMachineCapabilityServiceHandler builds an HTTP handler from the service implementation. It
@@ -176,6 +211,12 @@ func NewMachineCapabilityServiceHandler(svc MachineCapabilityServiceHandler, opt
 		connect.WithSchema(machineCapabilityServiceMethods.ByName("ForgetSSHHostKeys")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineCapabilityServiceUsageHandler := connect.NewUnaryHandler(
+		MachineCapabilityServiceUsageProcedure,
+		svc.Usage,
+		connect.WithSchema(machineCapabilityServiceMethods.ByName("Usage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.compute.v1alpha1.MachineCapabilityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineCapabilityServiceLogsProcedure:
@@ -184,6 +225,8 @@ func NewMachineCapabilityServiceHandler(svc MachineCapabilityServiceHandler, opt
 			machineCapabilityServiceSignSSHKeyHandler.ServeHTTP(w, r)
 		case MachineCapabilityServiceForgetSSHHostKeysProcedure:
 			machineCapabilityServiceForgetSSHHostKeysHandler.ServeHTTP(w, r)
+		case MachineCapabilityServiceUsageProcedure:
+			machineCapabilityServiceUsageHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -203,4 +246,8 @@ func (UnimplementedMachineCapabilityServiceHandler) SignSSHKey(context.Context, 
 
 func (UnimplementedMachineCapabilityServiceHandler) ForgetSSHHostKeys(context.Context, *connect.Request[v1alpha1.ForgetSSHHostKeysRequest]) (*connect.Response[v1alpha1.ForgetSSHHostKeysResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.compute.v1alpha1.MachineCapabilityService.ForgetSSHHostKeys is not implemented"))
+}
+
+func (UnimplementedMachineCapabilityServiceHandler) Usage(context.Context, *connect.Request[v1alpha1.UsageRequest]) (*connect.Response[v1alpha1.UsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.compute.v1alpha1.MachineCapabilityService.Usage is not implemented"))
 }

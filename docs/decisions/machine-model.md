@@ -76,6 +76,10 @@ Hypervisor directly, without Kata or Kubernetes.
   Machine: holding them leaves it system-managed. A log's records are the machine's, not the
   kind's: a container's carry its process's streams and exits, a VM's, which
   boots firmware, its serial console and how each boot ended.
+- A machine's usage over the last hour (`MachineCapabilityService.Usage`)
+  is no capability: it needs the named object's own get, such as
+  `compute.containers.get`, and is resolved to the machine as the
+  capabilities are (`machine-usage.md`).
 - `Node` is a global kind, one per host. The apiserver creates it for each node
   agent it is configured to accept; the agent only reports status (capacity,
   heartbeat), and the apiserver marks a node `Ready=Unknown` when the reports

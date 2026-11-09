@@ -81,6 +81,65 @@ service MachineCapabilityService {
   // compute.machines.ssh: one who may only log in cannot reset the trust
   // their logins rest on. It leaves hangar ssh's known_hosts as it is.
   rpc ForgetSSHHostKeys(ForgetSSHHostKeysRequest) returns (ForgetSSHHostKeysResponse);
+  // Usage says how busy the object's running machine's vCPUs were and how
+  // much memory it used over the last hour, a point a minute, and at its
+  // last sample, as its node samples it every ten seconds. The node keeps
+  // it in memory alone: a restart of its agent, or a stop of the machine,
+  // empties it. It needs the object's own get permission, such as
+  // compute.containers.get, no capability's. An object whose machine is
+  // not on a node yet, or not running, fails with FailedPrecondition, and
+  // one whose node is not connected with Unavailable. See
+  // docs/decisions/machine-usage.md.
+  rpc Usage(UsageRequest) returns (UsageResponse);
+}
+
+message UsageRequest {
+  string project = 1;
+  // The object's kind, such as Container or VirtualMachine.
+  string kind = 2;
+  string name = 3;
+}
+
+message UsageResponse {
+  // The machine's vCPUs, of which each cpu is a share.
+  int32 vcpus = 1;
+  // The machine's memory, in bytes.
+  int64 memory_limit_bytes = 2;
+  // What memory_bytes counts.
+  MachineMemoryKind memory_kind = 3;
+  // A point a minute, oldest first, at most 60: each minute's mean, at
+  // the minute's start. A minute the node did not sample the machine in,
+  // as while it was not running, has no point; the minute being sampled
+  // has none yet.
+  repeated MachineUsagePoint points = 4;
+  // The last sample with a CPU value; unset before the node has one, and
+  // once it is more than three samples old, as when the node no longer
+  // reaches the machine.
+  MachineUsagePoint latest = 5;
+}
+
+// MachineUsagePoint is a machine's usage at a time, or over the minute from
+// it.
+message MachineUsagePoint {
+  google.protobuf.Timestamp time = 1;
+  // How busy the machine's vCPUs were, from 0 to 1 of them all, its
+  // VMM's own work on the host included.
+  double cpu = 2;
+  // The memory it used, in bytes, as memory_kind says; unset when its node
+  // could not tell, as from a container's guest that cannot say it.
+  optional int64 memory_bytes = 3;
+}
+
+// MachineMemoryKind is what a machine's memory figures count.
+enum MachineMemoryKind {
+  MACHINE_MEMORY_KIND_UNSPECIFIED = 0;
+  // What the guest's kernel says it uses, its total less what it has
+  // available, so cache it could free is not counted: a container's.
+  MACHINE_MEMORY_KIND_GUEST_USED = 1;
+  // What the machine holds on its host: the guest's memory it has touched,
+  // its page cache's too, and its VMM's own; it seldom shrinks. A virtual
+  // machine's, whose guest the platform does not ask.
+  MACHINE_MEMORY_KIND_HOST_HELD = 2;
 }
 
 message LogsRequest {

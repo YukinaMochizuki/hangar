@@ -70,6 +70,9 @@ type Server struct {
 	// error wrapping ErrNoVolume.
 	StatVolume   func(device string) (Usage, error)
 	ResizeVolume func(device string) (size uint64, err error)
+	// StatMemory, if set, says how much memory the guest has and how much
+	// of it is available.
+	StatMemory func() (Memory, error)
 	// ExecEnv, if set, makes the environment of each process Exec runs.
 	ExecEnv func(env []string) []string
 	// TailnetState, TailnetSet and TailnetJoin, if set, say where the
