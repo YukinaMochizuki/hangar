@@ -14,7 +14,124 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/compute/v1alpha1/machine_capability.proto.
  */
 export const file_hangar_compute_v1alpha1_machine_capability: GenFile = /*@__PURE__*/
-  fileDesc("CjBoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9tYWNoaW5lX2NhcGFiaWxpdHkucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIp0BCgtMb2dzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEgwKBGtpbmQYAiABKAkSDAoEbmFtZRgDIAEoCRIOCgZmb2xsb3cYBCABKAgSFwoKdGFpbF9saW5lcxgFIAEoA0gAiAEBEikKBXNpbmNlGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEINCgtfdGFpbF9saW5lcyJKCgxMb2dzUmVzcG9uc2USOgoHcmVjb3JkcxgBIAMoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVMb2dSZWNvcmQi3AEKEE1hY2hpbmVMb2dSZWNvcmQSDAoEYm9vdBgBIAEoAxI5CgZzdHJlYW0YAiABKA4yKS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lTG9nU3RyZWFtEigKBHRpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg4KBGRhdGEYBCABKAxIABI6CgRleGl0GAUgASgLMiouaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4aXRTdGF0dXNIAEIJCgdjb250ZW50IkIKEU1hY2hpbmVFeGl0U3RhdHVzEgwKBGNvZGUYASABKAUSDgoGc2lnbmFsGAIgASgFEg8KB3N0b3BwZWQYAyABKAgiVAoRU2lnblNTSEtleVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAQgASgJEgwKBG5hbWUYAiABKAkSEgoKcHVibGljX2tleRgDIAEoCSKEAQoSU2lnblNTSEtleVJlc3BvbnNlEhMKC2NlcnRpZmljYXRlGAEgASgJEhEKCXByaW5jaXBhbBgCIAEoCRIUCgxkZWZhdWx0X3VzZXIYAyABKAkSMAoMdmFsaWRfYmVmb3JlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJHChhGb3JnZXRTU0hIb3N0S2V5c1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAIgASgJEgwKBG5hbWUYAyABKAkiLgoZRm9yZ2V0U1NISG9zdEtleXNSZXNwb25zZRIRCglmb3Jnb3R0ZW4YASADKAkihwIKEk1hY2hpbmVFeGVjUmVxdWVzdBI6CgVzdGFydBgBIAEoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVFeGVjU3RhcnRIABIPCgVzdGRpbhgCIAEoDEgAEkUKC3N0ZGluX2Nsb3NlGAMgASgLMi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4ZWNTdGRpbkNsb3NlSAASQAoGcmVzaXplGAQgASgLMi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4ZWNXaW5kb3dTaXplSAASEAoGc2lnbmFsGAUgASgFSABCCQoHbWVzc2FnZSLOAQoQTWFjaGluZUV4ZWNTdGFydBIPCgdjb21tYW5kGAEgAygJEg0KBXN0ZGluGAIgASgIEgsKA3R0eRgDIAEoCBI8CgRzaXplGAQgASgLMi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4ZWNXaW5kb3dTaXplEgwKBHVzZXIYBSABKAkSLAoDZW52GAYgAygLMh8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRW52VmFyEhMKC3dvcmtpbmdfZGlyGAcgASgJIhcKFU1hY2hpbmVFeGVjU3RkaW5DbG9zZSIzChVNYWNoaW5lRXhlY1dpbmRvd1NpemUSDAoEcm93cxgBIAEoDRIMCgRjb2xzGAIgASgNIn4KE01hY2hpbmVFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASOAoEZXhpdBgDIAEoCzIoLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVFeGVjRXhpdEgAQgkKB21lc3NhZ2UiLwoPTWFjaGluZUV4ZWNFeGl0EgwKBGNvZGUYASABKAUSDgoGc2lnbmFsGAIgASgFIrEBChVNYWNoaW5lQ29uc29sZVJlcXVlc3QSPQoFc3RhcnQYASABKAsyLC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lQ29uc29sZVN0YXJ0SAASDwoFaW5wdXQYAiABKAxIABI9CgZyZXNpemUYAyABKAsyKy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lQ29uc29sZVNpemVIAEIJCgdtZXNzYWdlIjcKE01hY2hpbmVDb25zb2xlU3RhcnQSEQoJcmVhZF9vbmx5GAEgASgIEg0KBWZvcmNlGAIgASgIIjMKEk1hY2hpbmVDb25zb2xlU2l6ZRIPCgdjb2x1bW5zGAEgASgNEgwKBHJvd3MYAiABKA0idAoWTWFjaGluZUNvbnNvbGVSZXNwb25zZRIQCgZvdXRwdXQYASABKAxIABI9CgVzdGF0ZRgCIAEoCzIsLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVDb25zb2xlU3RhdGVIAEIJCgdtZXNzYWdlIl8KE01hY2hpbmVDb25zb2xlU3RhdGUSDQoFaW5wdXQYASABKAgSOQoEc2l6ZRgCIAEoCzIrLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVDb25zb2xlU2l6ZSrOAQoQTWFjaGluZUxvZ1N0cmVhbRIiCh5NQUNISU5FX0xPR19TVFJFQU1fVU5TUEVDSUZJRUQQABIdChlNQUNISU5FX0xPR19TVFJFQU1fU1RET1VUEAESHQoZTUFDSElORV9MT0dfU1RSRUFNX1NUREVSUhACEhsKF01BQ0hJTkVfTE9HX1NUUkVBTV9JTklUEAMSGwoXTUFDSElORV9MT0dfU1RSRUFNX0VYSVQQBBIeChpNQUNISU5FX0xPR19TVFJFQU1fQ09OU09MRRAFMtQCChhNYWNoaW5lQ2FwYWJpbGl0eVNlcnZpY2USVQoETG9ncxIkLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkxvZ3NSZXF1ZXN0GiUuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTG9nc1Jlc3BvbnNlMAESZQoKU2lnblNTSEtleRIqLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlNpZ25TU0hLZXlSZXF1ZXN0GisuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuU2lnblNTSEtleVJlc3BvbnNlEnoKEUZvcmdldFNTSEhvc3RLZXlzEjEuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRm9yZ2V0U1NISG9zdEtleXNSZXF1ZXN0GjIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRm9yZ2V0U1NISG9zdEtleXNSZXNwb25zZUKFAgobY29tLmhhbmdhci5jb21wdXRlLnYxYWxwaGExQhZNYWNoaW5lQ2FwYWJpbGl0eVByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2NvbXB1dGUvdjFhbHBoYTE7Y29tcHV0ZXYxYWxwaGExogIDSENYqgIXSGFuZ2FyLkNvbXB1dGUuVjFhbHBoYTHKAhdIYW5nYXJcQ29tcHV0ZVxWMWFscGhhMeICI0hhbmdhclxDb21wdXRlXFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpDb21wdXRlOjpWMWFscGhhMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_container]);
+  fileDesc("CjBoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9tYWNoaW5lX2NhcGFiaWxpdHkucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIjsKDFVzYWdlUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEgwKBGtpbmQYAiABKAkSDAoEbmFtZRgDIAEoCSLzAQoNVXNhZ2VSZXNwb25zZRINCgV2Y3B1cxgBIAEoBRIaChJtZW1vcnlfbGltaXRfYnl0ZXMYAiABKAMSPwoLbWVtb3J5X2tpbmQYAyABKA4yKi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lTWVtb3J5S2luZBI6CgZwb2ludHMYBCADKAsyKi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lVXNhZ2VQb2ludBI6CgZsYXRlc3QYBSABKAsyKi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lVXNhZ2VQb2ludCJ2ChFNYWNoaW5lVXNhZ2VQb2ludBIoCgR0aW1lGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBILCgNjcHUYAiABKAESGQoMbWVtb3J5X2J5dGVzGAMgASgDSACIAQFCDwoNX21lbW9yeV9ieXRlcyKdAQoLTG9nc1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAIgASgJEgwKBG5hbWUYAyABKAkSDgoGZm9sbG93GAQgASgIEhcKCnRhaWxfbGluZXMYBSABKANIAIgBARIpCgVzaW5jZRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCDQoLX3RhaWxfbGluZXMiSgoMTG9nc1Jlc3BvbnNlEjoKB3JlY29yZHMYASADKAsyKS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lTG9nUmVjb3JkItwBChBNYWNoaW5lTG9nUmVjb3JkEgwKBGJvb3QYASABKAMSOQoGc3RyZWFtGAIgASgOMikuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUxvZ1N0cmVhbRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgRkYXRhGAQgASgMSAASOgoEZXhpdBgFIAEoCzIqLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVFeGl0U3RhdHVzSABCCQoHY29udGVudCJCChFNYWNoaW5lRXhpdFN0YXR1cxIMCgRjb2RlGAEgASgFEg4KBnNpZ25hbBgCIAEoBRIPCgdzdG9wcGVkGAMgASgIIlQKEVNpZ25TU0hLZXlSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEa2luZBgEIAEoCRIMCgRuYW1lGAIgASgJEhIKCnB1YmxpY19rZXkYAyABKAkihAEKElNpZ25TU0hLZXlSZXNwb25zZRITCgtjZXJ0aWZpY2F0ZRgBIAEoCRIRCglwcmluY2lwYWwYAiABKAkSFAoMZGVmYXVsdF91c2VyGAMgASgJEjAKDHZhbGlkX2JlZm9yZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiRwoYRm9yZ2V0U1NISG9zdEtleXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEa2luZBgCIAEoCRIMCgRuYW1lGAMgASgJIi4KGUZvcmdldFNTSEhvc3RLZXlzUmVzcG9uc2USEQoJZm9yZ290dGVuGAEgAygJIocCChJNYWNoaW5lRXhlY1JlcXVlc3QSOgoFc3RhcnQYASABKAsyKS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABJFCgtzdGRpbl9jbG9zZRgDIAEoCzIuLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVFeGVjU3RkaW5DbG9zZUgAEkAKBnJlc2l6ZRgEIAEoCzIuLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVFeGVjV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UizgEKEE1hY2hpbmVFeGVjU3RhcnQSDwoHY29tbWFuZBgBIAMoCRINCgVzdGRpbhgCIAEoCBILCgN0dHkYAyABKAgSPAoEc2l6ZRgEIAEoCzIuLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVFeGVjV2luZG93U2l6ZRIMCgR1c2VyGAUgASgJEiwKA2VudhgGIAMoCzIfLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkVudlZhchITCgt3b3JraW5nX2RpchgHIAEoCSIXChVNYWNoaW5lRXhlY1N0ZGluQ2xvc2UiMwoVTWFjaGluZUV4ZWNXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJ+ChNNYWNoaW5lRXhlY1Jlc3BvbnNlEhAKBnN0ZG91dBgBIAEoDEgAEhAKBnN0ZGVychgCIAEoDEgAEjgKBGV4aXQYAyABKAsyKC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lRXhlY0V4aXRIAEIJCgdtZXNzYWdlIi8KD01hY2hpbmVFeGVjRXhpdBIMCgRjb2RlGAEgASgFEg4KBnNpZ25hbBgCIAEoBSKxAQoVTWFjaGluZUNvbnNvbGVSZXF1ZXN0Ej0KBXN0YXJ0GAEgASgLMiwuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUNvbnNvbGVTdGFydEgAEg8KBWlucHV0GAIgASgMSAASPQoGcmVzaXplGAMgASgLMisuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUNvbnNvbGVTaXplSABCCQoHbWVzc2FnZSI3ChNNYWNoaW5lQ29uc29sZVN0YXJ0EhEKCXJlYWRfb25seRgBIAEoCBINCgVmb3JjZRgCIAEoCCIzChJNYWNoaW5lQ29uc29sZVNpemUSDwoHY29sdW1ucxgBIAEoDRIMCgRyb3dzGAIgASgNInQKFk1hY2hpbmVDb25zb2xlUmVzcG9uc2USEAoGb3V0cHV0GAEgASgMSAASPQoFc3RhdGUYAiABKAsyLC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lQ29uc29sZVN0YXRlSABCCQoHbWVzc2FnZSJfChNNYWNoaW5lQ29uc29sZVN0YXRlEg0KBWlucHV0GAEgASgIEjkKBHNpemUYAiABKAsyKy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lQ29uc29sZVNpemUqfwoRTWFjaGluZU1lbW9yeUtpbmQSIwofTUFDSElORV9NRU1PUllfS0lORF9VTlNQRUNJRklFRBAAEiIKHk1BQ0hJTkVfTUVNT1JZX0tJTkRfR1VFU1RfVVNFRBABEiEKHU1BQ0hJTkVfTUVNT1JZX0tJTkRfSE9TVF9IRUxEEAIqzgEKEE1hY2hpbmVMb2dTdHJlYW0SIgoeTUFDSElORV9MT0dfU1RSRUFNX1VOU1BFQ0lGSUVEEAASHQoZTUFDSElORV9MT0dfU1RSRUFNX1NURE9VVBABEh0KGU1BQ0hJTkVfTE9HX1NUUkVBTV9TVERFUlIQAhIbChdNQUNISU5FX0xPR19TVFJFQU1fSU5JVBADEhsKF01BQ0hJTkVfTE9HX1NUUkVBTV9FWElUEAQSHgoaTUFDSElORV9MT0dfU1RSRUFNX0NPTlNPTEUQBTKsAwoYTWFjaGluZUNhcGFiaWxpdHlTZXJ2aWNlElUKBExvZ3MSJC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Mb2dzUmVxdWVzdBolLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkxvZ3NSZXNwb25zZTABEmUKClNpZ25TU0hLZXkSKi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5TaWduU1NIS2V5UmVxdWVzdBorLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlNpZ25TU0hLZXlSZXNwb25zZRJ6ChFGb3JnZXRTU0hIb3N0S2V5cxIxLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkZvcmdldFNTSEhvc3RLZXlzUmVxdWVzdBoyLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkZvcmdldFNTSEhvc3RLZXlzUmVzcG9uc2USVgoFVXNhZ2USJS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Vc2FnZVJlcXVlc3QaJi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Vc2FnZVJlc3BvbnNlQoUCChtjb20uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTFCFk1hY2hpbmVDYXBhYmlsaXR5UHJvdG9QAVpQZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvY29tcHV0ZS92MWFscGhhMTtjb21wdXRldjFhbHBoYTGiAgNIQ1iqAhdIYW5nYXIuQ29tcHV0ZS5WMWFscGhhMcoCF0hhbmdhclxDb21wdXRlXFYxYWxwaGEx4gIjSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTFcR1BCTWV0YWRhdGHqAhlIYW5nYXI6OkNvbXB1dGU6OlYxYWxwaGExYgZwcm90bzM", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_container]);
+
+/**
+ * @generated from message hangar.compute.v1alpha1.UsageRequest
+ */
+export type UsageRequest = Message<"hangar.compute.v1alpha1.UsageRequest"> & {
+  /**
+   * @generated from field: string project = 1;
+   */
+  project: string;
+
+  /**
+   * The object's kind, such as Container or VirtualMachine.
+   *
+   * @generated from field: string kind = 2;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string name = 3;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.UsageRequest.
+ * Use `create(UsageRequestSchema)` to create a new message.
+ */
+export const UsageRequestSchema: GenMessage<UsageRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 0);
+
+/**
+ * @generated from message hangar.compute.v1alpha1.UsageResponse
+ */
+export type UsageResponse = Message<"hangar.compute.v1alpha1.UsageResponse"> & {
+  /**
+   * The machine's vCPUs, of which each cpu is a share.
+   *
+   * @generated from field: int32 vcpus = 1;
+   */
+  vcpus: number;
+
+  /**
+   * The machine's memory, in bytes.
+   *
+   * @generated from field: int64 memory_limit_bytes = 2;
+   */
+  memoryLimitBytes: bigint;
+
+  /**
+   * What memory_bytes counts.
+   *
+   * @generated from field: hangar.compute.v1alpha1.MachineMemoryKind memory_kind = 3;
+   */
+  memoryKind: MachineMemoryKind;
+
+  /**
+   * A point a minute, oldest first, at most 60: each minute's mean, at
+   * the minute's start. A minute the node did not sample the machine in,
+   * as while it was not running, has no point; the minute being sampled
+   * has none yet.
+   *
+   * @generated from field: repeated hangar.compute.v1alpha1.MachineUsagePoint points = 4;
+   */
+  points: MachineUsagePoint[];
+
+  /**
+   * The last sample with a CPU value; unset before the node has one, and
+   * once it is more than three samples old, as when the node no longer
+   * reaches the machine.
+   *
+   * @generated from field: hangar.compute.v1alpha1.MachineUsagePoint latest = 5;
+   */
+  latest?: MachineUsagePoint | undefined;
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.UsageResponse.
+ * Use `create(UsageResponseSchema)` to create a new message.
+ */
+export const UsageResponseSchema: GenMessage<UsageResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 1);
+
+/**
+ * MachineUsagePoint is a machine's usage at a time, or over the minute from
+ * it.
+ *
+ * @generated from message hangar.compute.v1alpha1.MachineUsagePoint
+ */
+export type MachineUsagePoint = Message<"hangar.compute.v1alpha1.MachineUsagePoint"> & {
+  /**
+   * @generated from field: google.protobuf.Timestamp time = 1;
+   */
+  time?: Timestamp | undefined;
+
+  /**
+   * How busy the machine's vCPUs were, from 0 to 1 of them all, its
+   * VMM's own work on the host included.
+   *
+   * @generated from field: double cpu = 2;
+   */
+  cpu: number;
+
+  /**
+   * The memory it used, in bytes, as memory_kind says; unset when its node
+   * could not tell, as from a container's guest that cannot say it.
+   *
+   * @generated from field: optional int64 memory_bytes = 3;
+   */
+  memoryBytes?: bigint | undefined;
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.MachineUsagePoint.
+ * Use `create(MachineUsagePointSchema)` to create a new message.
+ */
+export const MachineUsagePointSchema: GenMessage<MachineUsagePoint> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 2);
 
 /**
  * @generated from message hangar.compute.v1alpha1.LogsRequest
@@ -66,7 +183,7 @@ export type LogsRequest = Message<"hangar.compute.v1alpha1.LogsRequest"> & {
  * Use `create(LogsRequestSchema)` to create a new message.
  */
 export const LogsRequestSchema: GenMessage<LogsRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 0);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 3);
 
 /**
  * @generated from message hangar.compute.v1alpha1.LogsResponse
@@ -83,7 +200,7 @@ export type LogsResponse = Message<"hangar.compute.v1alpha1.LogsResponse"> & {
  * Use `create(LogsResponseSchema)` to create a new message.
  */
 export const LogsResponseSchema: GenMessage<LogsResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 1);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 4);
 
 /**
  * MachineLogRecord is one piece of a machine's output, or the end of a
@@ -139,7 +256,7 @@ export type MachineLogRecord = Message<"hangar.compute.v1alpha1.MachineLogRecord
  * Use `create(MachineLogRecordSchema)` to create a new message.
  */
 export const MachineLogRecordSchema: GenMessage<MachineLogRecord> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 2);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 5);
 
 /**
  * MachineExitStatus is how a boot ended.
@@ -180,7 +297,7 @@ export type MachineExitStatus = Message<"hangar.compute.v1alpha1.MachineExitStat
  * Use `create(MachineExitStatusSchema)` to create a new message.
  */
 export const MachineExitStatusSchema: GenMessage<MachineExitStatus> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 3);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 6);
 
 /**
  * @generated from message hangar.compute.v1alpha1.SignSSHKeyRequest
@@ -216,7 +333,7 @@ export type SignSSHKeyRequest = Message<"hangar.compute.v1alpha1.SignSSHKeyReque
  * Use `create(SignSSHKeyRequestSchema)` to create a new message.
  */
 export const SignSSHKeyRequestSchema: GenMessage<SignSSHKeyRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 4);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 7);
 
 /**
  * @generated from message hangar.compute.v1alpha1.SignSSHKeyResponse
@@ -256,7 +373,7 @@ export type SignSSHKeyResponse = Message<"hangar.compute.v1alpha1.SignSSHKeyResp
  * Use `create(SignSSHKeyResponseSchema)` to create a new message.
  */
 export const SignSSHKeyResponseSchema: GenMessage<SignSSHKeyResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 5);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 8);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ForgetSSHHostKeysRequest
@@ -285,7 +402,7 @@ export type ForgetSSHHostKeysRequest = Message<"hangar.compute.v1alpha1.ForgetSS
  * Use `create(ForgetSSHHostKeysRequestSchema)` to create a new message.
  */
 export const ForgetSSHHostKeysRequestSchema: GenMessage<ForgetSSHHostKeysRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 6);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 9);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ForgetSSHHostKeysResponse
@@ -305,7 +422,7 @@ export type ForgetSSHHostKeysResponse = Message<"hangar.compute.v1alpha1.ForgetS
  * Use `create(ForgetSSHHostKeysResponseSchema)` to create a new message.
  */
 export const ForgetSSHHostKeysResponseSchema: GenMessage<ForgetSSHHostKeysResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 7);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 10);
 
 /**
  * MachineExecRequest is a message from an exec's client.
@@ -364,7 +481,7 @@ export type MachineExecRequest = Message<"hangar.compute.v1alpha1.MachineExecReq
  * Use `create(MachineExecRequestSchema)` to create a new message.
  */
 export const MachineExecRequestSchema: GenMessage<MachineExecRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 8);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 11);
 
 /**
  * MachineExecStart runs a process in the machine, as docker exec does in a
@@ -436,7 +553,7 @@ export type MachineExecStart = Message<"hangar.compute.v1alpha1.MachineExecStart
  * Use `create(MachineExecStartSchema)` to create a new message.
  */
 export const MachineExecStartSchema: GenMessage<MachineExecStart> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 9);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 12);
 
 /**
  * @generated from message hangar.compute.v1alpha1.MachineExecStdinClose
@@ -449,7 +566,7 @@ export type MachineExecStdinClose = Message<"hangar.compute.v1alpha1.MachineExec
  * Use `create(MachineExecStdinCloseSchema)` to create a new message.
  */
 export const MachineExecStdinCloseSchema: GenMessage<MachineExecStdinClose> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 10);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 13);
 
 /**
  * @generated from message hangar.compute.v1alpha1.MachineExecWindowSize
@@ -471,7 +588,7 @@ export type MachineExecWindowSize = Message<"hangar.compute.v1alpha1.MachineExec
  * Use `create(MachineExecWindowSizeSchema)` to create a new message.
  */
 export const MachineExecWindowSizeSchema: GenMessage<MachineExecWindowSize> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 11);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 14);
 
 /**
  * MachineExecResponse is a message from the server.
@@ -510,7 +627,7 @@ export type MachineExecResponse = Message<"hangar.compute.v1alpha1.MachineExecRe
  * Use `create(MachineExecResponseSchema)` to create a new message.
  */
 export const MachineExecResponseSchema: GenMessage<MachineExecResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 12);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 15);
 
 /**
  * MachineExecExit is how an exec's process ended.
@@ -540,7 +657,7 @@ export type MachineExecExit = Message<"hangar.compute.v1alpha1.MachineExecExit">
  * Use `create(MachineExecExitSchema)` to create a new message.
  */
 export const MachineExecExitSchema: GenMessage<MachineExecExit> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 13);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 16);
 
 /**
  * MachineConsoleRequest is a message from a serial console's client.
@@ -586,7 +703,7 @@ export type MachineConsoleRequest = Message<"hangar.compute.v1alpha1.MachineCons
  * Use `create(MachineConsoleRequestSchema)` to create a new message.
  */
 export const MachineConsoleRequestSchema: GenMessage<MachineConsoleRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 14);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 17);
 
 /**
  * MachineConsoleStart attaches a client to the serial console.
@@ -615,7 +732,7 @@ export type MachineConsoleStart = Message<"hangar.compute.v1alpha1.MachineConsol
  * Use `create(MachineConsoleStartSchema)` to create a new message.
  */
 export const MachineConsoleStartSchema: GenMessage<MachineConsoleStart> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 15);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 18);
 
 /**
  * MachineConsoleSize is the screen's size in character cells, within
@@ -640,7 +757,7 @@ export type MachineConsoleSize = Message<"hangar.compute.v1alpha1.MachineConsole
  * Use `create(MachineConsoleSizeSchema)` to create a new message.
  */
 export const MachineConsoleSizeSchema: GenMessage<MachineConsoleSize> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 16);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 19);
 
 /**
  * MachineConsoleResponse is a message from the server: the client's state
@@ -676,7 +793,7 @@ export type MachineConsoleResponse = Message<"hangar.compute.v1alpha1.MachineCon
  * Use `create(MachineConsoleResponseSchema)` to create a new message.
  */
 export const MachineConsoleResponseSchema: GenMessage<MachineConsoleResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 17);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 20);
 
 /**
  * MachineConsoleState is how the client is attached.
@@ -702,7 +819,42 @@ export type MachineConsoleState = Message<"hangar.compute.v1alpha1.MachineConsol
  * Use `create(MachineConsoleStateSchema)` to create a new message.
  */
 export const MachineConsoleStateSchema: GenMessage<MachineConsoleState> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 18);
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 21);
+
+/**
+ * MachineMemoryKind is what a machine's memory figures count.
+ *
+ * @generated from enum hangar.compute.v1alpha1.MachineMemoryKind
+ */
+export enum MachineMemoryKind {
+  /**
+   * @generated from enum value: MACHINE_MEMORY_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * What the guest's kernel says it uses, its total less what it has
+   * available, so cache it could free is not counted: a container's.
+   *
+   * @generated from enum value: MACHINE_MEMORY_KIND_GUEST_USED = 1;
+   */
+  GUEST_USED = 1,
+
+  /**
+   * What the machine holds on its host: the guest's memory it has touched,
+   * its page cache's too, and its VMM's own; it seldom shrinks. A virtual
+   * machine's, whose guest the platform does not ask.
+   *
+   * @generated from enum value: MACHINE_MEMORY_KIND_HOST_HELD = 2;
+   */
+  HOST_HELD = 2,
+}
+
+/**
+ * Describes the enum hangar.compute.v1alpha1.MachineMemoryKind.
+ */
+export const MachineMemoryKindSchema: GenEnum<MachineMemoryKind> = /*@__PURE__*/
+  enumDesc(file_hangar_compute_v1alpha1_machine_capability, 0);
 
 /**
  * MachineLogStream says what a record carries.
@@ -755,7 +907,7 @@ export enum MachineLogStream {
  * Describes the enum hangar.compute.v1alpha1.MachineLogStream.
  */
 export const MachineLogStreamSchema: GenEnum<MachineLogStream> = /*@__PURE__*/
-  enumDesc(file_hangar_compute_v1alpha1_machine_capability, 0);
+  enumDesc(file_hangar_compute_v1alpha1_machine_capability, 1);
 
 /**
  * MachineCapabilityService reaches into what a machine holds or says: its
@@ -860,6 +1012,24 @@ export const MachineCapabilityService: GenService<{
     methodKind: "unary";
     input: typeof ForgetSSHHostKeysRequestSchema;
     output: typeof ForgetSSHHostKeysResponseSchema;
+  },
+  /**
+   * Usage says how busy the object's running machine's vCPUs were and how
+   * much memory it used over the last hour, a point a minute, and at its
+   * last sample, as its node samples it every ten seconds. The node keeps
+   * it in memory alone: a restart of its agent, or a stop of the machine,
+   * empties it. It needs the object's own get permission, such as
+   * compute.containers.get, no capability's. An object whose machine is
+   * not on a node yet, or not running, fails with FailedPrecondition, and
+   * one whose node is not connected with Unavailable. See
+   * docs/decisions/machine-usage.md.
+   *
+   * @generated from rpc hangar.compute.v1alpha1.MachineCapabilityService.Usage
+   */
+  usage: {
+    methodKind: "unary";
+    input: typeof UsageRequestSchema;
+    output: typeof UsageResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_compute_v1alpha1_machine_capability, 0);

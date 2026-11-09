@@ -73,6 +73,9 @@ type world struct {
 	// imageCacheHigh and imageCacheLow, if set before the agent starts,
 	// bound the images no machine uses.
 	imageCacheHigh, imageCacheLow int64
+	// usagePoll, if set before the agent starts, is how often it samples
+	// the machines' usage; zero is node.DefaultUsagePoll.
+	usagePoll time.Duration
 	// sweepInterval, if set before the agent starts, is how often it
 	// sweeps; 100ms if not.
 	sweepInterval time.Duration
@@ -195,6 +198,7 @@ func (w *world) startAgent() {
 		SweepInterval:     cmp.Or(w.sweepInterval, 100*time.Millisecond),
 		RootPoll:          20 * time.Millisecond,
 		TailnetPoll:       20 * time.Millisecond,
+		UsagePoll:         w.usagePoll,
 		PullTimeout:       w.pullTimeout,
 		CaptureTimeout:    w.captureTimeout,
 		DNSUpstreams:      w.dnsUpstreams,
