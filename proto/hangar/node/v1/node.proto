@@ -51,6 +51,49 @@ service NodeService {
   // GetCustomImageUpload says how many bytes of a CustomImage's upload
   // the node holds, every chunk checked: where the next chunk starts.
   rpc GetCustomImageUpload(GetCustomImageUploadRequest) returns (GetCustomImageUploadResponse);
+  // MachineUsage says what a running machine used over the last hour, as
+  // the node samples it every ten seconds and keeps in memory alone: a
+  // point a minute, and the last sample. A machine with no running VM on
+  // this node is FAILED_PRECONDITION. See docs/decisions/machine-usage.md.
+  rpc MachineUsage(MachineUsageRequest) returns (MachineUsageResponse);
+}
+
+message MachineUsageRequest {
+  string machine_uid = 1;
+}
+
+message MachineUsageResponse {
+  // What memory_bytes counts.
+  MemorySource memory_source = 1;
+  // A point a minute, oldest first, at most 60, of the minutes the node
+  // sampled the machine in: each the minute's mean.
+  repeated UsagePoint points = 2;
+  // The last sample with a CPU value; unset before there is one, and once
+  // it is more than three polls old.
+  UsagePoint latest = 3;
+}
+
+// UsagePoint is a machine's usage at a time, or over the minute from it.
+message UsagePoint {
+  google.protobuf.Timestamp time = 1;
+  // How busy the machine was, from 0 to 1 of all its vCPUs: its unit's
+  // CPU time over the time passed times its vCPUs.
+  double cpu = 2;
+  // The memory it uses, in bytes, as memory_source says; unset when the
+  // node could not tell.
+  optional uint64 memory_bytes = 3;
+}
+
+// MemorySource is what a machine's memory figures count.
+enum MemorySource {
+  MEMORY_SOURCE_UNSPECIFIED = 0;
+  // What the guest says it uses: MemTotal less MemAvailable. A
+  // container's.
+  MEMORY_SOURCE_GUEST_USED = 1;
+  // What the VM's unit holds on the host, memory.current: the guest's
+  // memory it touched, page cache included, and the VMM's own. A machine
+  // booting firmware, a virtual machine's.
+  MEMORY_SOURCE_HOST_HELD = 2;
 }
 
 message LogsRequest {
