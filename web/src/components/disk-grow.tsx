@@ -135,7 +135,8 @@ export function DiskGrowFields({
             <Field label="by" ariaLabel="Grow by" value={g.step} placeholder={diskGrowDefaults.step} onChange={(step) => set({ step })} width="w-20" />
           </div>
           <p className="text-[11.5px] text-muted">
-            {note} Each step counts toward the disk quota as it is taken; a step past quota waits, and the disk stays as it is. Grow
+            {note} Full counts files as well as bytes: a disk of many small files grows once they use up most of the files it can
+            hold. Each step counts toward the disk quota as it is taken; a step past quota waits, and the disk stays as it is. Grow
             by a factor such as <span className="font-mono">2x</span>, or by GiB such as <span className="font-mono">3</span>.
           </p>
           {steps.length > 1 && (

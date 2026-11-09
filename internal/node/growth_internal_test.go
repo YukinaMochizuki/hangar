@@ -264,6 +264,22 @@ func TestTheRootIsAskedForEveryPoll(t *testing.T) {
 	})
 }
 
+// TestARootOutOfInodesGrows: a root whose inodes are used up asks for the
+// next size though its bytes are far below the threshold, as a root of
+// small files is (hangar#245).
+func TestARootOutOfInodesGrows(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := rootPollAgent(t)
+		r.host.FillRoot("m1", 1<<30)
+		r.host.FillRootFiles("m1", 1<<18) // all of a 4Gi root's
+		time.Sleep(DefaultRootPoll)       //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if w := r.store.written(); !slices.Equal(w, []string{"8Gi"}) {
+			t.Errorf("a root out of inodes at 25%% of its bytes wrote %q; want the next size, 8Gi", w)
+		}
+	})
+}
+
 // TestAGuestThatCannotSayIsNotAskedAgain: a guest from before RootUsage is
 // asked once in its boot, and its machine asks for nothing.
 func TestAGuestThatCannotSayIsNotAskedAgain(t *testing.T) {
@@ -294,6 +310,7 @@ func TestAGuestThatCannotSayIsNotAskedAgain(t *testing.T) {
 func TestALyingGuestIsNotBelieved(t *testing.T) {
 	for name, u := range map[string]driver.FSUsage{
 		"more used than it has":   {Size: 4 << 30, Used: 5 << 30},
+		"more inodes used":        {Size: 4 << 30, Used: 4 << 30, Files: 1 << 18, FilesUsed: 1<<18 + 1},
 		"larger than its disk":    {Size: 40 << 30, Used: 40 << 30},
 		"a filesystem of no size": {},
 	} {
@@ -333,6 +350,12 @@ func TestWantedSize(t *testing.T) {
 		"still taking its size": {4 << 30, 4 << 30, false, full, "", false},
 		"larger than its disk":  {4 << 30, 2 << 30, true, full, "", false},
 		"more used than it has": {4 << 30, 4 << 30, true, driver.FSUsage{Size: 4 << 30, Used: 5 << 30}, "", false},
+		// ext4 at an inode per 16 KiB out of inodes at a third of its
+		// bytes, as a disk full of small files is (hangar#245).
+		"out of inodes":             {4 << 30, 4 << 30, true, driver.FSUsage{Size: 4 << 30, Used: 4 << 30 / 3, Files: 1 << 18, FilesUsed: 1 << 18}, "7Gi", true},
+		"inodes past the threshold": {4 << 30, 4 << 30, true, driver.FSUsage{Size: 4 << 30, Used: 1 << 30, Files: 100, FilesUsed: 90}, "7Gi", true},
+		"inodes below it":           {4 << 30, 4 << 30, true, driver.FSUsage{Size: 4 << 30, Used: 1 << 30, Files: 100, FilesUsed: 89}, "", true},
+		"more inodes used":          {4 << 30, 4 << 30, true, driver.FSUsage{Size: 4 << 30, Used: 1 << 30, Files: 100, FilesUsed: 101}, "", false},
 	} {
 		got, ok := wantedSize(g, tt.size, tt.have, tt.settled, tt.u, "spec.grow")
 		if got != tt.want || ok != tt.ok {
@@ -553,6 +576,21 @@ func TestAGuestThatCannotSayOfItsVolumes(t *testing.T) {
 		}
 		if c := conditionOf(conds, computeapi.RootGrowth); c != nil {
 			t.Errorf("RootGrowth %v; want none", c)
+		}
+	})
+}
+
+// TestAVolumeOutOfInodesGrows: a volume whose inodes are used up asks for
+// the next size though its bytes are far below the threshold.
+func TestAVolumeOutOfInodesGrows(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := rootPollAgent(t)
+		r.host.FillVolume("d-data", 1<<29)
+		r.host.FillVolumeFiles("d-data", 1<<17) // all of a 2Gi volume's
+		time.Sleep(DefaultRootPoll)             //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if w := r.store.disksWritten(); !slices.Equal(w, []string{"data=4Gi"}) {
+			t.Errorf("data out of inodes at 25%% of its bytes wrote %q; want data's next size, 4Gi", w)
 		}
 	})
 }

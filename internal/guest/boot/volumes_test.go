@@ -262,12 +262,12 @@ func TestMountedReachesOnlyItsVolumes(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = unix.Close(fd) })
 	m := Mounted{"/dev/vdc": fd}
-	size, used, err := m.Stat("/dev/vdc")
-	if err != nil || size == 0 || used > size {
-		t.Errorf("Stat of the volume: %d bytes, %d used, %v", size, used, err)
+	u, err := m.Stat("/dev/vdc")
+	if err != nil || u.Size == 0 || u.Used > u.Size || u.FilesUsed > u.Files {
+		t.Errorf("Stat of the volume: %+v, %v", u, err)
 	}
 	for _, dev := range []string{"/dev/vdd", "/dev/vda", "/dev/../dev/vdc"} {
-		if _, _, err := m.Stat(dev); !errors.Is(err, ErrNotVolume) {
+		if _, err := m.Stat(dev); !errors.Is(err, ErrNotVolume) {
 			t.Errorf("Stat of %s: %v, want ErrNotVolume", dev, err)
 		}
 		if _, err := m.Grow(dev); !errors.Is(err, ErrNotVolume) {

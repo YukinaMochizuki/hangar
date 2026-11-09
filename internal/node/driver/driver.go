@@ -1382,9 +1382,11 @@ func GuestIPv6Of(ifaces []Interface) []GuestIPv6 {
 }
 
 // FSUsage is how large a guest's filesystem, its root or a volume's, is and
-// how much of it is used, in bytes.
+// how much of it is used: Size and Used in bytes, Files and FilesUsed in
+// inodes. A guest that does not say its inodes says 0 of 0.
 type FSUsage struct {
-	Size, Used uint64
+	Size, Used       uint64
+	Files, FilesUsed uint64
 }
 
 // ErrGuestCannot is a guest asked what it does not know how to do.

@@ -32,7 +32,7 @@ func rootGrowth(t *testing.T, h Host) {
 	}
 	booted, err := h.Guest.RootUsage(ctx, "m1")
 	must(t, err)
-	if booted.Size == 0 || booted.Size > uint64(spec.Root.Size) || booted.Used > booted.Size {
+	if booted.Size == 0 || booted.Size > uint64(spec.Root.Size) || booted.Used > booted.Size || booted.Files == 0 || booted.FilesUsed > booted.Files {
 		t.Fatalf("the guest's root, on a %d-byte disk, is %+v", spec.Root.Size, booted)
 	}
 	// Told the size it has, nothing changes.
@@ -55,8 +55,12 @@ func rootGrowth(t *testing.T, h Host) {
 		after, err = h.Guest.RootUsage(ctx, "m1")
 		return err == nil && after.Size > uint64(spec.Root.Size), fmt.Sprintf("%+v %v, was %+v on %d bytes", after, err, booted, spec.Root.Size)
 	})
-	if after.Size > uint64(grown.Size) || after.Used > after.Size {
+	if after.Size > uint64(grown.Size) || after.Used > after.Size || after.FilesUsed > after.Files {
 		t.Errorf("the guest's root, on a %d-byte disk, is %+v", grown.Size, after)
+	}
+	// Its inodes grow with it: what lets a root out of them grow.
+	if after.Files <= booted.Files {
+		t.Errorf("the guest's root grown has %d inodes; it had %d", after.Files, booted.Files)
 	}
 	vm, ok := vmOf(t, h, "m1")
 	if !ok || vm.State != driver.VMRunning || !vm.Started.Equal(before.Started) || vm.SpecHash != before.SpecHash {

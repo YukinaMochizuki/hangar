@@ -65,7 +65,7 @@ func (d guest) VolumeUsage(_ context.Context, machineUID, device string) (driver
 		return u, nil
 	}
 	size := uint64(max(v.guestVolFS[n], 0))
-	return driver.FSUsage{Size: size, Used: min(d.h.volumeUsed[diskUID], size)}, nil
+	return usage(size, d.h.volumeUsed[diskUID], d.h.volumeFilesUsed[diskUID]), nil
 }
 
 func (d guest) GrowVolume(ctx context.Context, machineUID, device string) error {
@@ -126,6 +126,14 @@ func (h *Host) FillVolume(diskUID string, used uint64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.volumeUsed[diskUID] = used
+}
+
+// FillVolumeFiles has the guests mounting the Disk of diskUID use files
+// inodes of its filesystem, or all of them if that is less.
+func (h *Host) FillVolumeFiles(diskUID string, files uint64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.volumeFilesUsed[diskUID] = files
 }
 
 // ClaimVolume has the guests mounting the Disk of diskUID answer

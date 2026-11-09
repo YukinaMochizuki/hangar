@@ -82,7 +82,7 @@ func (g Guest) RootUsage(ctx context.Context, machineUID string) (driver.FSUsage
 	if err != nil {
 		return driver.FSUsage{}, err
 	}
-	return driver.FSUsage{Size: res.Msg.GetSize(), Used: res.Msg.GetUsed()}, nil
+	return driver.FSUsage{Size: res.Msg.GetSize(), Used: res.Msg.GetUsed(), Files: res.Msg.GetFiles(), FilesUsed: res.Msg.GetFilesUsed()}, nil
 }
 
 // GrowRoot has the guest agent grow the root filesystem to its disk.
@@ -108,7 +108,7 @@ func (g Guest) VolumeUsage(ctx context.Context, machineUID, device string) (driv
 	if err != nil {
 		return driver.FSUsage{}, err
 	}
-	return driver.FSUsage{Size: res.Msg.GetSize(), Used: res.Msg.GetUsed()}, nil
+	return driver.FSUsage{Size: res.Msg.GetSize(), Used: res.Msg.GetUsed(), Files: res.Msg.GetFiles(), FilesUsed: res.Msg.GetFilesUsed()}, nil
 }
 
 // GrowVolume has the guest agent grow the filesystem of the volume on

@@ -40,7 +40,7 @@ func volumeGrowth(t *testing.T, h Host) {
 	const vdc, vdd = "/dev/vdc", "/dev/vdd"
 	booted, err := h.Guest.VolumeUsage(ctx, "m1", vdc)
 	must(t, err)
-	if booted.Size == 0 || booted.Size > uint64(data.Size) || booted.Used > booted.Size {
+	if booted.Size == 0 || booted.Size > uint64(data.Size) || booted.Used > booted.Size || booted.Files == 0 || booted.FilesUsed > booted.Files {
 		t.Fatalf("the guest's volume, on a %d-byte disk, is %+v", data.Size, booted)
 	}
 	for _, dev := range []string{vdd, "/dev/vda", "/dev/vde"} {
@@ -74,8 +74,12 @@ func volumeGrowth(t *testing.T, h Host) {
 		after, err = h.Guest.VolumeUsage(ctx, "m1", vdc)
 		return err == nil && after.Size > uint64(data.Size), fmt.Sprintf("%+v %v, was %+v on %d bytes", after, err, booted, data.Size)
 	})
-	if after.Size > uint64(grown.Size) || after.Used > after.Size {
+	if after.Size > uint64(grown.Size) || after.Used > after.Size || after.FilesUsed > after.Files {
 		t.Errorf("the guest's volume, on a %d-byte disk, is %+v", grown.Size, after)
+	}
+	// Its inodes grow with it: what lets a volume out of them grow.
+	if after.Files <= booted.Files {
+		t.Errorf("the guest's volume grown has %d inodes; it had %d", after.Files, booted.Files)
 	}
 	// A volume mounted read-only alone is told its size all the same.
 	grownLogs, err := h.Storage.EnsureVolume(ctx, "d2", 2*logs.Size, "")

@@ -23,7 +23,8 @@ full filesystem, and holds for one node, while a plan spans many).
 - **`resources.disk_grow` turns growth on.** `max`, required, is the
   largest the disk grows to, at least `resources.disk`, which is then the
   size it starts at. `threshold`, a whole percentage from 50% to 95%, is
-  how full the root filesystem is when it grows; empty is 80%. `step` is a
+  how full the root filesystem is when it grows, of its bytes or of its
+  inodes, whichever is fuller; empty is 80%. `step` is a
   factor over 1x and at most 16x, such as `2x`, or a quantity of at least
   1Gi, such as `3Gi`; empty is `2x`. Each step rounds up to whole Gi, and
   none passes `max`. The rules are `computeapi.ParseDiskGrow`, which
@@ -31,7 +32,8 @@ full filesystem, and holds for one node, while a plan spans many).
   mirrors them (`web/src/components/disk-grow.tsx`).
 - **The guest says how full it is; the node asks; the apiserver decides.**
   The node asks each running container's hangar-init for its root
-  filesystem's size and use (`RootUsage`), and past the threshold sets the
+  filesystem's size and use, in bytes and in inodes (`RootUsage`), and
+  past the threshold sets the
   machine's `status.disk_wanted`. The container controller grants the next
   step from the disk the machine has, never the node's number, so an ask
   repeated is granted once.
@@ -125,6 +127,11 @@ are sized up front just as its root disk was, so a Disk grows the same way.
 - A container whose growth is blocked fills its disk as one without growth
   does: the guest sees a full filesystem, never an I/O error, since the
   filesystem is always the size the zvol has.
+- A filesystem of many small files runs out of inodes, fixed per byte when
+  ext4 is made (`storage-zfs.md`), long before its bytes: a 2Gi disk holds
+  about 131k. Growing adds inodes in proportion, so inodes count toward the
+  threshold as bytes do. A guest whose hangar-init predates saying its
+  inodes says none, and grows on its bytes alone until its next boot.
 - A guest is not trusted: one reporting itself full grows its own disk to
   its own `max`, which its tenant's quota pays for, and no further.
 - A disk only grows; nothing shrinks a root disk, grown or asked.

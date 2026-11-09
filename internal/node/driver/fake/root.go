@@ -14,6 +14,17 @@ import (
 // saw as it booted, or when it was last grown (GrowRoot): as Cloud
 // Hypervisor and hangar-init have them.
 
+// bytesPerInode is how many bytes of a guest's filesystem have an inode, as
+// zfsstore makes ext4: its inodes grow with it.
+const bytesPerInode = 16 << 10
+
+// usage is a filesystem of size bytes with used bytes and filesUsed inodes
+// in use, or all of either if that is less.
+func usage(size, used, filesUsed uint64) driver.FSUsage {
+	files := size / bytesPerInode
+	return driver.FSUsage{Size: size, Used: min(used, size), Files: files, FilesUsed: min(filesUsed, files)}
+}
+
 // What RootCalls lists.
 const (
 	RootCallUsage  = "usage"
@@ -58,7 +69,7 @@ func (d guest) RootUsage(_ context.Context, machineUID string) (driver.FSUsage, 
 		return u, nil
 	}
 	size := uint64(max(v.guestFS, 0))
-	return driver.FSUsage{Size: size, Used: min(d.h.rootUsed[machineUID], size)}, nil
+	return usage(size, d.h.rootUsed[machineUID], d.h.rootFilesUsed[machineUID]), nil
 }
 
 func (d guest) GrowRoot(ctx context.Context, machineUID string) error {
@@ -108,6 +119,14 @@ func (h *Host) FillRoot(machineUID string, used uint64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.rootUsed[machineUID] = used
+}
+
+// FillRootFiles has the machine's guest use files inodes of its root
+// filesystem, or all of them if that is less.
+func (h *Host) FillRootFiles(machineUID string, files uint64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.rootFilesUsed[machineUID] = files
 }
 
 // ClaimRoot has the machine's guest answer RootUsage with u, whatever its

@@ -213,7 +213,10 @@ func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.St
 			logf("hangar-init: stopping the container, %v before SIGKILL", grace)
 			stopper.Stop(grace)
 		},
-		StatRoot: boot.StatRoot,
+		StatRoot: func() (agent.Usage, error) {
+			u, err := boot.StatRoot()
+			return agent.Usage(u), err
+		},
 		ResizeRoot: func() (uint64, error) {
 			size, err := boot.ResizeRoot()
 			if err != nil {
@@ -221,9 +224,9 @@ func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.St
 			}
 			return size, err
 		},
-		StatVolume: func(device string) (uint64, uint64, error) {
-			size, used, err := mounted.Stat(device)
-			return size, used, asAgentVolumeError(err)
+		StatVolume: func(device string) (agent.Usage, error) {
+			u, err := mounted.Stat(device)
+			return agent.Usage(u), asAgentVolumeError(err)
 		},
 		ResizeVolume: func(device string) (uint64, error) {
 			size, err := mounted.Grow(device)
