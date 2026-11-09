@@ -121,9 +121,9 @@ restart count.
   man's switch is added.
 - Telling which machines an alert counts takes the admin socket.
 - A new graph in the console is a change to the proto and the apiserver.
-- **Usage graphs for tenants are later work, and not on this path.** A
-  tenant's machine numbers cannot go into Prometheus (no tenant in a label)
-  nor into its status (`machine-placement.md`). They will be a pipeline of
-  their own: the node agent sampling each VM's cgroup and Cloud Hypervisor's
-  counters, read through the tunnel and answered under the machine's own
-  permission. Memory in use needs the guest agent.
+- **Usage graphs for tenants are not on this path.** A tenant's machine
+  numbers cannot go into Prometheus (no tenant in a label) nor into its
+  status (`machine-placement.md`). They are a pipeline of their own: the
+  node agent samples each VM's cgroup, and a container's guest agent its
+  memory, and the apiserver reads them through the tunnel under the
+  object's own get permission (`machine-usage.md`).
