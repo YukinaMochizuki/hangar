@@ -287,6 +287,9 @@ func (g *launcherGuest) Exec(context.Context, string, driver.ExecSpec) (driver.E
 func (g *launcherGuest) SetIPv6(context.Context, string, []driver.GuestIPv6) error { return nil }
 
 func (g *launcherGuest) SetExport(context.Context, string, driver.ShareExport) error { return nil }
+func (g *launcherGuest) ListDir(context.Context, string, driver.ShareListDir) (driver.ShareDirPage, error) {
+	return driver.ShareDirPage{}, nil
+}
 
 func (g *launcherGuest) RootUsage(context.Context, string) (driver.FSUsage, error) {
 	return driver.FSUsage{}, errors.New("the launcher never asks a guest's root")

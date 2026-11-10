@@ -39,6 +39,9 @@ const (
 	// FileShareServerServiceSetExportProcedure is the fully-qualified name of the
 	// FileShareServerService's SetExport RPC.
 	FileShareServerServiceSetExportProcedure = "/hangar.guest.v1.FileShareServerService/SetExport"
+	// FileShareServerServiceListDirProcedure is the fully-qualified name of the
+	// FileShareServerService's ListDir RPC.
+	FileShareServerServiceListDirProcedure = "/hangar.guest.v1.FileShareServerService/ListDir"
 )
 
 // FileShareServerServiceClient is a client for the hangar.guest.v1.FileShareServerService service.
@@ -49,6 +52,14 @@ type FileShareServerServiceClient interface {
 	// included. The first export a server has, from its boot disk or from
 	// this call, starts nfsd.
 	SetExport(context.Context, *connect.Request[v1.SetExportRequest]) (*connect.Response[v1.SetExportResponse], error)
+	// ListDir lists one directory of the share, sorted by name as bytes, a
+	// page at a time: names, types, sizes and modification times, never what
+	// a file holds or where a link points. The path is resolved beneath the
+	// share's root and through no symbolic link. A path that does not exist
+	// is NOT_FOUND, one that is not a directory FAILED_PRECONDITION, and a
+	// directory of more than 100,000 entries RESOURCE_EXHAUSTED. See
+	// docs/decisions/file-shares.md.
+	ListDir(context.Context, *connect.Request[v1.ListDirRequest]) (*connect.Response[v1.ListDirResponse], error)
 }
 
 // NewFileShareServerServiceClient constructs a client for the
@@ -68,17 +79,29 @@ func NewFileShareServerServiceClient(httpClient connect.HTTPClient, baseURL stri
 			connect.WithSchema(fileShareServerServiceMethods.ByName("SetExport")),
 			connect.WithClientOptions(opts...),
 		),
+		listDir: connect.NewClient[v1.ListDirRequest, v1.ListDirResponse](
+			httpClient,
+			baseURL+FileShareServerServiceListDirProcedure,
+			connect.WithSchema(fileShareServerServiceMethods.ByName("ListDir")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // fileShareServerServiceClient implements FileShareServerServiceClient.
 type fileShareServerServiceClient struct {
 	setExport *connect.Client[v1.SetExportRequest, v1.SetExportResponse]
+	listDir   *connect.Client[v1.ListDirRequest, v1.ListDirResponse]
 }
 
 // SetExport calls hangar.guest.v1.FileShareServerService.SetExport.
 func (c *fileShareServerServiceClient) SetExport(ctx context.Context, req *connect.Request[v1.SetExportRequest]) (*connect.Response[v1.SetExportResponse], error) {
 	return c.setExport.CallUnary(ctx, req)
+}
+
+// ListDir calls hangar.guest.v1.FileShareServerService.ListDir.
+func (c *fileShareServerServiceClient) ListDir(ctx context.Context, req *connect.Request[v1.ListDirRequest]) (*connect.Response[v1.ListDirResponse], error) {
+	return c.listDir.CallUnary(ctx, req)
 }
 
 // FileShareServerServiceHandler is an implementation of the hangar.guest.v1.FileShareServerService
@@ -90,6 +113,14 @@ type FileShareServerServiceHandler interface {
 	// included. The first export a server has, from its boot disk or from
 	// this call, starts nfsd.
 	SetExport(context.Context, *connect.Request[v1.SetExportRequest]) (*connect.Response[v1.SetExportResponse], error)
+	// ListDir lists one directory of the share, sorted by name as bytes, a
+	// page at a time: names, types, sizes and modification times, never what
+	// a file holds or where a link points. The path is resolved beneath the
+	// share's root and through no symbolic link. A path that does not exist
+	// is NOT_FOUND, one that is not a directory FAILED_PRECONDITION, and a
+	// directory of more than 100,000 entries RESOURCE_EXHAUSTED. See
+	// docs/decisions/file-shares.md.
+	ListDir(context.Context, *connect.Request[v1.ListDirRequest]) (*connect.Response[v1.ListDirResponse], error)
 }
 
 // NewFileShareServerServiceHandler builds an HTTP handler from the service implementation. It
@@ -105,10 +136,18 @@ func NewFileShareServerServiceHandler(svc FileShareServerServiceHandler, opts ..
 		connect.WithSchema(fileShareServerServiceMethods.ByName("SetExport")),
 		connect.WithHandlerOptions(opts...),
 	)
+	fileShareServerServiceListDirHandler := connect.NewUnaryHandler(
+		FileShareServerServiceListDirProcedure,
+		svc.ListDir,
+		connect.WithSchema(fileShareServerServiceMethods.ByName("ListDir")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.guest.v1.FileShareServerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case FileShareServerServiceSetExportProcedure:
 			fileShareServerServiceSetExportHandler.ServeHTTP(w, r)
+		case FileShareServerServiceListDirProcedure:
+			fileShareServerServiceListDirHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -120,4 +159,8 @@ type UnimplementedFileShareServerServiceHandler struct{}
 
 func (UnimplementedFileShareServerServiceHandler) SetExport(context.Context, *connect.Request[v1.SetExportRequest]) (*connect.Response[v1.SetExportResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.FileShareServerService.SetExport is not implemented"))
+}
+
+func (UnimplementedFileShareServerServiceHandler) ListDir(context.Context, *connect.Request[v1.ListDirRequest]) (*connect.Response[v1.ListDirResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.FileShareServerService.ListDir is not implemented"))
 }

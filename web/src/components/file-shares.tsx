@@ -57,7 +57,7 @@ export function useDeclarations(project: string): { items: Declaration[]; machin
 
 /** The share controls' permissions, asked of TestPermissions at the project as one question. */
 export function useShareCan(project: string) {
-  return useCan({ level: "project", name: project }, [sharePerms.apply, sharePerms.delete]);
+  return useCan({ level: "project", name: project }, [sharePerms.apply, sharePerms.delete, sharePerms.browse]);
 }
 
 /** Which share controls the caller may use in the project; none while the answer is unknown or failed. */

@@ -56,6 +56,45 @@ service NodeService {
   // point a minute, and the last sample. A machine with no running VM on
   // this node is FAILED_PRECONDITION. See docs/decisions/machine-usage.md.
   rpc MachineUsage(MachineUsageRequest) returns (MachineUsageResponse);
+  // ListFileShareDir lists a directory of the share a FileShare's server
+  // on this node serves, as the server's ListDir does, and with its codes.
+  // A machine that is no share's server with a running VM on this node is
+  // UNAVAILABLE; a server whose hangar-init has no ListDir, booted
+  // before it had one, is UNIMPLEMENTED until it starts again. See
+  // docs/decisions/file-shares.md.
+  rpc ListFileShareDir(ListFileShareDirRequest) returns (ListFileShareDirResponse);
+}
+
+message ListFileShareDirRequest {
+  // The share's server.
+  string machine_uid = 1;
+  // As the guest's ListDirRequest.
+  repeated bytes path = 2;
+  bytes after = 3;
+  uint32 limit = 4;
+}
+
+message ListFileShareDirResponse {
+  repeated FileShareDirEntry entries = 1;
+  bool more = 2;
+}
+
+// FileShareDirEntry is one entry of a share's directory.
+message FileShareDirEntry {
+  bytes name = 1;
+  FileShareFileType type = 2;
+  // A regular file's length in bytes; 0 for every other type.
+  uint64 size = 3;
+  google.protobuf.Timestamp modify_time = 4;
+}
+
+enum FileShareFileType {
+  FILE_SHARE_FILE_TYPE_UNSPECIFIED = 0;
+  FILE_SHARE_FILE_TYPE_REGULAR = 1;
+  FILE_SHARE_FILE_TYPE_DIRECTORY = 2;
+  FILE_SHARE_FILE_TYPE_SYMLINK = 3;
+  // A device, FIFO or socket.
+  FILE_SHARE_FILE_TYPE_OTHER = 4;
 }
 
 message MachineUsageRequest {

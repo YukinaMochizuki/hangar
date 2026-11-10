@@ -23,6 +23,7 @@ import { EditMachine } from "@/pages/edit-machine";
 import { CreateFileShare } from "@/pages/create-file-share";
 import { FileShareDetail } from "@/pages/file-share-detail";
 import { FileShareList } from "@/pages/file-share-list";
+import { FileShareFiles } from "@/pages/file-share-files";
 import { Gate } from "@/pages/gate";
 import { CreateCustomImage } from "@/pages/create-custom-image";
 import { CustomImageDetail } from "@/pages/custom-image-detail";
@@ -263,6 +264,19 @@ const fileShareRoute = createRoute({
   component: function FileSharePage() {
     const { name } = fileShareRoute.useParams();
     return <FileShareDetail key={name} name={name} />;
+  },
+});
+const fileShareFilesRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/file-shares/$name/files",
+  // path is the directory's names, each percent-encoded, as encodePath
+  // writes them; the router reads a path such as "2026" as a number.
+  validateSearch: (s: Record<string, unknown>): { path?: string } =>
+    (typeof s.path === "string" || typeof s.path === "number") && String(s.path) ? { path: String(s.path) } : {},
+  component: function FileSharePageFiles() {
+    const { project, name } = fileShareFilesRoute.useParams();
+    const { path } = fileShareFilesRoute.useSearch();
+    return <FileShareFiles key={name} project={project} name={name} path={path} />;
   },
 });
 const newFileShareRoute = createRoute({
@@ -567,6 +581,7 @@ export const routeTree = rootRoute.addChildren([
     fileSharesRoute,
     fileShareRoute,
     newFileShareRoute,
+    fileShareFilesRoute,
     imagesRoute,
     imageRoute,
     customImageRoute,

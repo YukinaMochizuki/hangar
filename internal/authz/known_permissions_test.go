@@ -38,6 +38,7 @@ func TestKnownPermissions(t *testing.T) {
 		"compute.containers.apply", "iam.rolebindings.apply", "compute.machines.updateStatus",
 		"tenancy.tenants.create", "compute.machines.logs", "compute.machines.exec",
 		"compute.machines.ssh", "compute.machines.portforward", "network.publicendpoints.access",
+		"storage.fileshares.browse",
 		"compute.machinesizes.get", "compute.machinesizes.apply", "compute.machinesizes.updateStatus",
 		"platform.monitoring.read",
 	} {
@@ -47,7 +48,7 @@ func TestKnownPermissions(t *testing.T) {
 	}
 	for _, perm := range []string{
 		"", "compute.containers", "compute.containers.aply", "compute.containers.logs",
-		"tenancy.projects.create", "compute.containers.access", "nosuch.things.get", "compute.containers.apply.x",
+		"tenancy.projects.create", "compute.containers.access", "storage.disks.browse", "nosuch.things.get", "compute.containers.apply.x",
 		"platform.monitoring.get", "platform.monitoring.apply", "compute.containers.read",
 	} {
 		if KnownPermission(perm) {

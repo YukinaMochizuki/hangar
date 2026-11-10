@@ -77,8 +77,9 @@ Hangar has one host, so only the second shape keeps the host out of it.
   with containers'. It stays in the initramfs, with no root disk to
   switch to; the share is its first data disk, `vdc`, after a blank file
   the node gives it as `vda`, which it never reads, and its boot disk.
-  Its agent answers Ping, Stop and `FileShareServerService.SetExport`,
-  which replaces the whole export, and refuses Exec. Containers carry the
+  Its agent answers Ping, Stop, `FileShareServerService.SetExport`,
+  which replaces the whole export, and `ListDir`, which lists a
+  directory of the share (below), and refuses Exec. Containers carry the
   server's code unused, as they carry `nfsd`.
 - **The wire block size is pinned (1 MiB), never derived from the
   server's memory.** `nfsd` defaults it to a 4096th of RAM, so a 256Mi
@@ -273,6 +274,49 @@ Hangar has one host, so only the second shape keeps the host out of it.
 - Changing a container's shares restarts it, as changing its volumes does;
   changing a VM's changes only the export.
 
+### Browsing a share
+
+- **A share's files can be listed, read-only**: one directory at a
+  time, each entry's name, type, size and modification time, never what
+  a file holds or where a link points. Nothing is read, downloaded,
+  previewed or written, and no directory's size is summed.
+  `FileShareFilesService.ListFiles` asks the share's node
+  (`NodeService.ListFileShareDir`), which asks the server's agent over
+  vsock (`ListDir`); the host still never mounts or reads the zvol.
+- **It needs `storage.fileshares.browse`** in the share's project, which
+  root, owners and editors hold and viewers do not
+  (`tenancy-and-iam.md`): the server lists as root, whatever the files'
+  own modes say, and names can say what a share's settings do not.
+  Settled with the owner, 2026-11.
+- **The server lists beneath its root alone.** A path is a list of
+  names, each neither empty nor `.` nor `..` and holding no `/` or NUL,
+  opened from the share's root in one `openat2` with
+  `RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS`, `RESOLVE_NO_MAGICLINKS` and
+  `RESOLVE_NO_XDEV`: a path through a symbolic link is refused, not
+  followed, so a link a tenant made to `/proc` or `/` shows the server
+  nothing of its own. Each entry is `lstat`ed; a link is listed as a link,
+  with no target and no size.
+- **Names are bytes**, as the filesystem holds them, which need not be
+  UTF-8: the API carries them as bytes, and the console shows each byte
+  that is no part of a UTF-8 character, and each control character, as
+  `\xNN`, marking a name that is not UTF-8.
+- **Sorted by name as bytes, a page at a time**: 500 entries unless asked
+  for fewer, at most 1000, the page token the last name, so a directory
+  changing between pages loses or repeats no entry that stays. Each page
+  reads the whole directory, keeping only the page's names, so a
+  directory of more than 100,000 entries is refused
+  (`ResourceExhausted`). Settled with the owner, 2026-11, over the
+  filesystem's own order, which would list a page without reading the
+  rest but in no order a person can find a name by.
+- **The server lists once at a time**, others waiting their turn, and a
+  node gives a listing 20 s: it runs on the vCPU the share's clients
+  need. A listing is a call to a machine's node, counted against the
+  tenant's `machine_calls` (`node-tunnel.md`).
+- **A server booted before it could list** answers `Unimplemented`
+  until it starts again, as when its share grows or its networks change;
+  there is no action that restarts one alone. A server not running, as
+  while it starts again, is `Unavailable`.
+
 ### Quota
 
 - **A share's size counts toward the tenant's `disk` limit**, and the
@@ -296,6 +340,14 @@ Hangar has one host, so only the second shape keeps the host out of it.
   which changes the container alone but makes it a bridge.
 - Every inline list of machines shows at most two names and the rest
   behind "+N more"; tables show the first rows and "Show all N".
+- **A share's files have a page of their own**
+  (`/file-shares/<name>/files`), opened from "Browse files" on the
+  share's page for whoever holds `storage.fileshares.browse`: the
+  directory's path from the share's root, a table of its entries by
+  name, and "Load more". The directory is in the URL, each name's bytes
+  percent-encoded, so any name links. A server not running, one booted
+  before it could list, and a directory too large each say so in place
+  of the table. Settled with the owner on screenshots.
 
 ## Consequences
 

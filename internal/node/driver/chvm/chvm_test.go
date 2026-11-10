@@ -136,6 +136,9 @@ func (g *fakeGuest) Exec(context.Context, string, driver.ExecSpec) (driver.ExecS
 func (g *fakeGuest) SetIPv6(context.Context, string, []driver.GuestIPv6) error { return nil }
 
 func (g *fakeGuest) SetExport(context.Context, string, driver.ShareExport) error { return nil }
+func (g *fakeGuest) ListDir(context.Context, string, driver.ShareListDir) (driver.ShareDirPage, error) {
+	return driver.ShareDirPage{}, nil
+}
 
 func (g *fakeGuest) RootUsage(context.Context, string) (driver.FSUsage, error) {
 	return driver.FSUsage{}, errors.New("the hypervisor driver never asks a guest's root")

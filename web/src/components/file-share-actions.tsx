@@ -1,9 +1,10 @@
-// A file share's actions, on its page and in its row's menu: Edit networks,
-// Grow, Edit labels and Delete, each shown once TestPermissions holds its
-// permission.
+// A file share's actions, on its page and in its row's menu: Browse files,
+// Edit networks, Grow, Edit labels and Delete, each shown once
+// TestPermissions holds its permission.
 
 import type { FileShare } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
-import { HardDrive, Network as NetworkIcon, Trash2 } from "lucide-react";
+import { FolderOpen, HardDrive, Network as NetworkIcon, Trash2 } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { DeleteShareDialog, EditNetworksDialog, GrowShareDialog, useDeclarations } from "@/components/file-shares";
 import { EditLabelsDialog } from "@/components/labels-dialog";
@@ -18,6 +19,7 @@ import { useAttachments } from "@/lib/network";
  */
 export function useFileShareActions(s: FileShare, can: Can, after?: () => void): ActionSet & { editNetworks: (initial: string[]) => void } {
   const project = s.metadata?.project ?? "";
+  const navigate = useNavigate();
   const [open, setOpen] = useState<"grow" | "delete" | "labels" | null>(null);
   const [editing, setEditing] = useState<string[] | null>(null);
   const canApply = can(sharePerms.apply);
@@ -28,6 +30,10 @@ export function useFileShareActions(s: FileShare, can: Can, after?: () => void):
   const uses = shareUses(s, decls.items);
   const usesKnown = !decls.loading && !decls.error;
   const actions: ObjectAction[] = [];
+  if (can(sharePerms.browse)) {
+    const link = { to: "/projects/$project/file-shares/$name/files", params: { project, name: s.metadata?.name ?? "" } };
+    actions.push({ label: "Browse files", icon: FolderOpen, link, onSelect: () => void navigate(link) });
+  }
   if (canApply) {
     actions.push({ label: "Edit networks", icon: NetworkIcon, onSelect: () => setEditing(networks) });
     actions.push({ label: "Grow", icon: HardDrive, onSelect: () => setOpen("grow") });

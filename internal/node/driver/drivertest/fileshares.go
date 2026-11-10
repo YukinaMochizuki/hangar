@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
@@ -309,6 +311,15 @@ func shareServers(t *testing.T, h Host) {
 	}
 	if err := h.Guest.SetExport(ctx, "srv", driver.ShareExport{AnonUID: 65534, AnonGID: 65534}); err == nil {
 		t.Error("the server took an export with no squash")
+	}
+	// A blank share lists nothing of the server's own, and a path not in it
+	// is the server's NotFound.
+	page, err := h.Guest.ListDir(ctx, "srv", driver.ShareListDir{})
+	if err != nil || len(page.Entries) != 0 || page.More {
+		t.Errorf("a blank share lists %+v, %v", page, err)
+	}
+	if _, err := h.Guest.ListDir(ctx, "srv", driver.ShareListDir{Path: [][]byte{[]byte("absent")}}); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("listing a path not in the share: %v, want NotFound", err)
 	}
 	if err := h.Storage.DeleteShareVolume(ctx, "s1"); err == nil {
 		t.Error("deleted the volume of a running server")

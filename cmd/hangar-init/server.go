@@ -53,8 +53,8 @@ func runServer(cfg *guestv1.BootConfig, logf func(string, ...any), started time.
 }
 
 // serveServerAgent serves a FileShare's server's agent on ln to the host
-// alone: Ping, Stop, which calls stop, and SetExport. It runs nothing else,
-// so Exec is refused (but in a build with the testbed tag,
+// alone: Ping, Stop, which calls stop, SetExport and ListDir. It runs
+// nothing else, so Exec is refused (but in a build with the testbed tag,
 // server_testbed.go), as is SetIPv6. It returns at once.
 func serveServerAgent(ln net.Listener, exports guestv1connect.FileShareServerServiceHandler, stop func(), started time.Time, logf func(string, ...any)) {
 	ln = agent.HostOnly(ln, logf)

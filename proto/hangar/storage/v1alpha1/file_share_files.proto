@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package hangar.storage.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+
+// FileShareFilesService lists what a FileShare holds: its directories'
+// entries, by name, type, size and modification time, never what a file
+// holds or where a link points. The share's server lists them, as root,
+// whatever the files' own modes say, so it needs
+// storage.fileshares.browse in the share's project, which viewers do not
+// hold: names can say what a share's settings do not. It is not a
+// resource's service, so it is written by hand rather than generated. See
+// docs/decisions/file-shares.md.
+service FileShareFilesService {
+  // ListFiles lists one directory of a share, sorted by name as bytes, a
+  // page at a time. A share whose server is not running, as while it
+  // starts or starts again, or whose node is not connected, fails with
+  // Unavailable; a server booted before it could list fails with
+  // Unimplemented until it is started again. A path that does not exist
+  // is NotFound, one that is not a directory or goes through a symbolic
+  // link FailedPrecondition, and a directory of more than 100,000 entries
+  // ResourceExhausted.
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse);
+}
+
+message ListFilesRequest {
+  string project = 1;
+  // The FileShare.
+  string name = 2;
+  // The directory, as names from the share's root, each neither empty nor
+  // "." nor ".." and holding no "/" or NUL, at most 256 of them; empty is
+  // the root.
+  repeated bytes path = 3;
+  // At most this many entries, up to 1000; 0 is 500.
+  int32 page_size = 4;
+  // The next_page_token of the page before, with the same path.
+  string page_token = 5;
+}
+
+message ListFilesResponse {
+  // Sorted by name as bytes.
+  repeated FileShareEntry entries = 1;
+  // Empty on the last page.
+  string next_page_token = 2;
+}
+
+// FileShareEntry is one entry of a share's directory.
+message FileShareEntry {
+  // As the filesystem holds it, which need not be UTF-8.
+  bytes name = 1;
+  FileShareEntryType type = 2;
+  // A regular file's length in bytes; 0 for every other type.
+  int64 size_bytes = 3;
+  google.protobuf.Timestamp modify_time = 4;
+}
+
+// FileShareEntryType is what an entry of a share's directory is.
+enum FileShareEntryType {
+  FILE_SHARE_ENTRY_TYPE_UNSPECIFIED = 0;
+  FILE_SHARE_ENTRY_TYPE_REGULAR = 1;
+  FILE_SHARE_ENTRY_TYPE_DIRECTORY = 2;
+  // Listed, never followed: its target is not said.
+  FILE_SHARE_ENTRY_TYPE_SYMLINK = 3;
+  // A device, FIFO or socket.
+  FILE_SHARE_ENTRY_TYPE_OTHER = 4;
+}
