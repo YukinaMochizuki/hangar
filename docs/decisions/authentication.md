@@ -170,7 +170,8 @@ credentials. The node is a separate root process on the same host.
     image's upload, a `PUT` held as a stream is, it is the right to apply
     the image. That catches the
     RoleBinding that granted access being deleted, and membership
-    being taken away. A watch also judges each event as it comes. A
+    being taken away. A watch also judges each event as it comes, by
+    the grants at its revision (`docs/decisions/tenancy-and-iam.md`). A
     stream that sends something without registering a decision is
     logged as a warning, since only its credential could end it.
 

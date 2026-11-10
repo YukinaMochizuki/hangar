@@ -111,38 +111,53 @@ func (s *Server) authenticated(ctx context.Context) (auth.Principal, error) {
 }
 
 func (b *backend) allowed(p auth.Principal, verb authz.Verb, t authz.Target) bool {
+	allowed, _ := b.allowedAt(p, verb, t, authz.Now)
+	return allowed
+}
+
+// allowedAt is allowed by the grants as they stood at rev; ok is false when
+// the authorization view's history does not reach back to rev
+// (authz.AllowedAt).
+func (b *backend) allowedAt(p auth.Principal, verb authz.Verb, t authz.Target, rev int64) (allowed, ok bool) {
 	if b.hooks.systemManaged && p.Type != auth.System && !readsOrReports(verb) {
-		return false
+		return false, true
 	}
 	if b.hooks.neverDeleted != "" && p.Type != auth.System && verb == authz.Delete {
-		return false
+		return false, true
 	}
 	if b.hooks.hiddenFromNodes && p.Type == auth.Node {
-		return false
+		return false, true
 	}
 	if b.hooks.readableByAll && (verb == authz.Get || verb == authz.List || verb == authz.Watch) {
-		return true
+		return true, true
 	}
-	return b.s.authz.Allowed(p, authz.Permission(b.r, verb), t)
+	return b.s.authz.AllowedAt(p, authz.Permission(b.r, verb), t, rev)
 }
 
 // mayRead reports whether p may act on obj, at key, with verb: as allowed
 // has it at obj's target, and, for get, list and watch alone, also where
 // the kind's readableBy says p may read it.
 func (b *backend) mayRead(p auth.Principal, verb authz.Verb, key resource.Key, obj proto.Message) bool {
+	allowed, _ := b.mayReadAt(p, verb, key, obj, authz.Now)
+	return allowed
+}
+
+// mayReadAt is mayRead by the grants as they stood at rev, with ok as
+// allowedAt has it.
+func (b *backend) mayReadAt(p auth.Principal, verb authz.Verb, key resource.Key, obj proto.Message, rev int64) (allowed, ok bool) {
 	if p.Type == auth.Node && b.hooks.nodeReads != nil && !b.hooks.nodeReads(p.ID, obj) {
-		return false
+		return false, true
 	}
-	if b.allowed(p, verb, b.target(key, obj)) {
-		return true
+	if allowed, ok := b.allowedAt(p, verb, b.target(key, obj), rev); allowed || !ok {
+		return allowed, ok
 	}
 	if b.hooks.readableBy == nil || (verb != authz.Get && verb != authz.List && verb != authz.Watch) {
-		return false
+		return false, true
 	}
 	if b.hooks.hiddenFromNodes && p.Type == auth.Node {
-		return false
+		return false, true
 	}
-	return b.hooks.readableBy(b.s, p, authz.Permission(b.r, verb), obj)
+	return b.hooks.readableBy(b.s, p, authz.Permission(b.r, verb), obj, rev)
 }
 
 // readsOrReports lists the verbs anyone but the system may use on a
@@ -414,13 +429,19 @@ func (b *backend) Watch(ctx context.Context, opts resource.WatchOptions, send fu
 			return err
 		}
 		// Judge each event by the grants as they stood at its revision, so a
-		// binding or project the view has not caught up with yet neither
-		// hides an event nor lets one through.
+		// binding or project the view has not caught up with yet, or has
+		// already seen go, neither hides an event nor lets one through.
 		if err := b.s.authz.WaitFor(ctx, ev.Revision); err != nil {
 			return err
 		}
 		key := resource.Key{Project: ev.Object.Project, Name: ev.Object.Name}
-		if !b.mayRead(p, authz.Watch, key, obj) || !sel.Matches(object.Meta(obj).GetLabels()) {
+		allowed, ok := b.mayReadAt(p, authz.Watch, key, obj, ev.Revision)
+		if !ok {
+			// No grants are known at the event's revision: the client lists
+			// again and watches from there.
+			return fmt.Errorf("no grants known at revision %d: %w", ev.Revision, store.ErrCompacted)
+		}
+		if !allowed || !sel.Matches(object.Meta(obj).GetLabels()) {
 			return nil
 		}
 		b.answer(p, obj)

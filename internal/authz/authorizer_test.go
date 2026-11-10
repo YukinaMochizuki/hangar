@@ -33,20 +33,35 @@ func (s slowWatch) Watch(ctx context.Context, opts store.WatchOptions, send func
 
 func setup(t *testing.T, delay time.Duration) (store.Store, *authz.Authorizer) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hangar.db"))
+	st := openStore(t)
+	return st, follow(t, slowWatch{st, delay})
+}
+
+// openStore opens a store in a fresh directory, closed when t ends.
+func openStore(t *testing.T) store.Store {
+	t.Helper()
+	st, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "hangar.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := authz.New(slowWatch{st, delay}, nil)
+	t.Cleanup(func() { _ = st.Close() })
+	return st
+}
+
+// follow runs an authorizer over st until t ends, keeping the history the
+// apiserver keeps by default.
+func follow(t *testing.T, st store.Store) *authz.Authorizer {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	a := authz.New(st, nil)
+	a.RetainHistory(10000)
 	done := make(chan error, 1)
 	go func() { done <- a.Run(ctx) }()
 	t.Cleanup(func() {
 		cancel()
 		<-done
-		_ = st.Close()
 	})
-	return st, a
+	return a
 }
 
 func put(t *testing.T, st store.Store, r registry.Resource, name string, m proto.Message) {

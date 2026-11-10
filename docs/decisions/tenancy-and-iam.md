@@ -121,6 +121,19 @@ cloud, and some people fund the hardware and should see more of it.
   - Every call brings the authorizer's view up to date with every write
     committed before it, so a role removed or lowered holds from the
     next call on.
+  - A watch judges each event by the grants as they stood at the event's
+    revision, not as they stand when the watch gets to it. So an owner
+    watching their tenant being deleted sees its contents go, though the
+    binding that let them see it goes in the same cascade, and nobody sees
+    anything from the revision that took their access away on. Every
+    event a watch sends is judged this way. For it the authorizer keeps
+    what bindings, projects and Users held over the last `EventRetention`
+    revisions, the window the store keeps for watches to resume from, and
+    none from before it last listed the store, as it does when the
+    apiserver starts. A watch that reaches an event this history does
+    not cover, resumed from before a restart or from past the window, is
+    ended as compacted, as one the store can no longer resume is, and its
+    client lists again.
   - A project's member list holds only the bindings at the project; its
     tenant's members reach it too, and are listed with the tenant.
 - **A tenant always has an owner, and the owner is a person, unless

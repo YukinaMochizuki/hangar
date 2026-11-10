@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"maps"
 	"slices"
 	"sync"
@@ -45,7 +46,9 @@ type subject struct {
 }
 
 // Authorizer answers authorization questions from an in-memory view of
-// RoleBindings, Projects and Users, kept current by watching the store.
+// RoleBindings, Projects and Users, kept current by watching the store. The
+// view also keeps what it held over its recent revisions (RetainHistory,
+// AllowedAt).
 type Authorizer struct {
 	store store.Store
 	// source, when store is nil, is what the view follows instead: the
@@ -62,16 +65,25 @@ type Authorizer struct {
 	extra map[string]Role
 
 	mu sync.RWMutex
-	// bindings maps each binding's key to its subject and grant, so updates
-	// and deletes can replace it.
+	// bindings maps each binding's key to its subject and grant as they
+	// stand, so updates and deletes can find them in grants.
 	bindings map[string]bindingEntry
-	grants   map[subject][]grant
+	// grants holds each subject's grants by binding name.
+	grants map[subject]history[string, grant]
 	// tenantOf maps project names to their tenant.
-	tenantOf map[string]string
+	tenantOf history[string, string]
 	// usernames maps each signed-up person's email to their User's name, and
 	// emails is its inverse, so a deleted User can be dropped by name.
-	usernames map[string]string
-	emails    map[string]string
+	usernames history[string, string]
+	emails    history[string, string]
+	// tombstones are the values that no longer hold, in the order they
+	// stopped.
+	tombstones []tombstone
+	// historyFrom is the earliest revision the history answers for;
+	// AllowedAt answers for none before it.
+	historyFrom int64
+	// retention is how many revisions back the history reaches.
+	retention int64
 	// rev is the store revision the view reflects.
 	rev int64
 	// advanced is closed and replaced whenever rev moves.
@@ -85,18 +97,27 @@ type bindingEntry struct {
 
 // New returns an authorizer over st. Call Run before using it.
 func New(st store.Store, extra map[string]Role) *Authorizer {
-	return &Authorizer{
-		store:     st,
-		extra:     maps.Clone(extra),
-		bindings:  map[string]bindingEntry{},
-		grants:    map[subject][]grant{},
-		tenantOf:  map[string]string{},
-		usernames: map[string]string{},
-		emails:    map[string]string{},
-		advanced:  make(chan struct{}),
-		synced:    make(chan struct{}),
-		changes:   make(chan struct{}, 1),
+	a := &Authorizer{
+		store:    st,
+		extra:    maps.Clone(extra),
+		advanced: make(chan struct{}),
+		synced:   make(chan struct{}),
+		changes:  make(chan struct{}, 1),
 	}
+	a.reset(0)
+	return a
+}
+
+// reset empties the view, whose history then starts at from. Callers hold
+// a.mu, or own a.
+func (a *Authorizer) reset(from int64) {
+	a.bindings = map[string]bindingEntry{}
+	a.grants = map[subject]history[string, grant]{}
+	a.tenantOf = history[string, string]{}
+	a.usernames = history[string, string]{}
+	a.emails = history[string, string]{}
+	a.tombstones = nil
+	a.historyFrom = from
 }
 
 // Source is what an authorizer outside the apiserver follows: the API, as
@@ -168,29 +189,19 @@ func (a *Authorizer) sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	projects, _, err := a.store.List(ctx, store.ListOptions{Kind: registry.Project.Kind})
+	projects, prev, err := a.store.List(ctx, store.ListOptions{Kind: registry.Project.Kind})
 	if err != nil {
 		return err
 	}
-	users, _, err := a.store.List(ctx, store.ListOptions{Kind: registry.User.Kind})
+	users, urev, err := a.store.List(ctx, store.ListOptions{Kind: registry.User.Kind})
 	if err != nil {
 		return err
 	}
 	a.mu.Lock()
-	a.bindings = map[string]bindingEntry{}
-	a.tenantOf = map[string]string{}
-	a.usernames = map[string]string{}
-	a.emails = map[string]string{}
-	for _, o := range bindings {
-		a.putBinding(o)
-	}
-	for _, o := range projects {
-		a.putProject(o)
-	}
-	for _, o := range users {
-		a.putUser(o)
-	}
-	a.rebuildGrants()
+	// The three lists were taken at different revisions, so the view is
+	// exact only from the latest of them on, and its history starts there.
+	a.reset(max(rev, prev, urev))
+	a.load(bindings, projects, users, rev)
 	a.advance(rev)
 	a.mu.Unlock()
 	// Projects and users were listed at or after rev; replaying from rev
@@ -200,8 +211,23 @@ func (a *Authorizer) sync(ctx context.Context) error {
 		defer a.mu.Unlock()
 		a.apply(ev)
 		a.advance(ev.Revision)
+		a.prune()
 		return nil
 	})
+}
+
+// load puts listed objects into an empty view, as holding from rev.
+// Callers hold a.mu.
+func (a *Authorizer) load(bindings, projects, users []store.Object, rev int64) {
+	for _, o := range bindings {
+		a.putBinding(o, rev)
+	}
+	for _, o := range projects {
+		a.putProject(o, rev)
+	}
+	for _, o := range users {
+		a.putUser(o, rev)
+	}
 }
 
 // runSource follows the source until ctx is done, listing again whenever a
@@ -239,20 +265,8 @@ func (a *Authorizer) syncSource(ctx context.Context) error {
 		return err
 	}
 	a.mu.Lock()
-	a.bindings = map[string]bindingEntry{}
-	a.tenantOf = map[string]string{}
-	a.usernames = map[string]string{}
-	a.emails = map[string]string{}
-	for _, o := range bindings {
-		a.putBinding(o)
-	}
-	for _, o := range projects {
-		a.putProject(o)
-	}
-	for _, o := range users {
-		a.putUser(o)
-	}
-	a.rebuildGrants()
+	a.reset(0)
+	a.load(bindings, projects, users, 0)
 	a.mu.Unlock()
 	a.markSynced()
 	a.changed()
@@ -263,6 +277,8 @@ func (a *Authorizer) syncSource(ctx context.Context) error {
 		}
 		a.mu.Lock()
 		a.apply(ev)
+		// No watch is judged here: it answers by the view as it stands.
+		a.pruneBefore(Now)
 		a.mu.Unlock()
 		a.changed()
 		return nil
@@ -271,40 +287,94 @@ func (a *Authorizer) syncSource(ctx context.Context) error {
 
 // apply changes the view by one event. Callers hold a.mu.
 func (a *Authorizer) apply(ev store.Event) {
+	rev := ev.Revision
 	switch ev.Object.Kind {
 	case registry.RoleBinding.Kind:
 		if ev.Type == store.EventDeleted {
-			delete(a.bindings, ev.Object.Name)
+			a.dropBinding(ev.Object.Name, rev)
 		} else {
-			a.putBinding(ev.Object)
+			a.putBinding(ev.Object, rev)
 		}
-		a.rebuildGrants()
 	case registry.Project.Kind:
 		if ev.Type == store.EventDeleted {
-			delete(a.tenantOf, ev.Object.Name)
+			a.unset(a.tenantOf, ev.Object.Name, rev)
 		} else {
-			a.putProject(ev.Object)
+			a.putProject(ev.Object, rev)
 		}
 	case registry.User.Kind:
 		if ev.Type == store.EventDeleted {
-			a.dropUser(ev.Object.Name)
+			a.dropUser(ev.Object.Name, rev)
 		} else {
-			a.putUser(ev.Object)
+			a.putUser(ev.Object, rev)
 		}
 	}
 }
 
-func (a *Authorizer) putBinding(o store.Object) {
+// set makes v the value of k in h from rev on. Callers hold a.mu.
+func (a *Authorizer) set(h history[string, string], k, v string, rev int64) {
+	if cur, ok := h.at(k, Now); ok && cur == v {
+		return
+	}
+	a.unset(h, k, rev)
+	h.put(k, v, rev)
+}
+
+// unset ends the value of k in h at rev. Callers hold a.mu.
+func (a *Authorizer) unset(h history[string, string], k string, rev int64) {
+	if h.close(k, rev) {
+		a.closed(rev, func(before int64) { h.prune(k, before) })
+	}
+}
+
+func (a *Authorizer) putBinding(o store.Object, rev int64) {
 	var rb iamv1alpha1.RoleBinding
 	if err := proto.Unmarshal(o.Data, &rb); err != nil {
 		return
 	}
 	e, ok := a.entryOf(&rb)
 	if !ok {
-		delete(a.bindings, o.Name)
+		a.dropBinding(o.Name, rev)
 		return
 	}
+	if cur, ok := a.bindings[o.Name]; ok && cur.same(e) {
+		return
+	}
+	a.dropBinding(o.Name, rev)
 	a.bindings[o.Name] = e
+	g, ok := a.grants[e.subject]
+	if !ok {
+		g = history[string, grant]{}
+		a.grants[e.subject] = g
+	}
+	g.put(o.Name, e.grant, rev)
+}
+
+// dropBinding ends the binding named name at rev. Callers hold a.mu.
+func (a *Authorizer) dropBinding(name string, rev int64) {
+	cur, ok := a.bindings[name]
+	if !ok {
+		return
+	}
+	delete(a.bindings, name)
+	s := cur.subject
+	g := a.grants[s]
+	if g.close(name, rev) {
+		a.closed(rev, func(before int64) {
+			g := a.grants[s]
+			g.prune(name, before)
+			if len(g) == 0 {
+				delete(a.grants, s)
+			}
+		})
+	} else if len(g) == 0 {
+		delete(a.grants, s)
+	}
+}
+
+// same reports whether e grants what o does.
+func (e bindingEntry) same(o bindingEntry) bool {
+	return e.subject == o.subject && e.grant.name == o.grant.name && e.grant.tenant == o.grant.tenant &&
+		e.grant.project == o.grant.project && e.grant.platform == o.grant.platform
 }
 
 // Role returns the role named name: a built-in one, or one of the
@@ -346,42 +416,49 @@ func (a *Authorizer) entryOf(rb *iamv1alpha1.RoleBinding) (bindingEntry, bool) {
 	return e, true
 }
 
-func (a *Authorizer) putProject(o store.Object) {
+func (a *Authorizer) putProject(o store.Object, rev int64) {
 	var p tenancyv1alpha1.Project
 	if err := proto.Unmarshal(o.Data, &p); err != nil {
 		return
 	}
-	a.tenantOf[o.Name] = p.GetSpec().GetTenant()
+	a.set(a.tenantOf, o.Name, p.GetSpec().GetTenant(), rev)
 }
 
-func (a *Authorizer) putUser(o store.Object) {
+func (a *Authorizer) putUser(o store.Object, rev int64) {
 	var u iamv1alpha1.User
 	if err := proto.Unmarshal(o.Data, &u); err != nil {
 		return
 	}
-	// A User's email never changes, but replace whatever the name had.
-	a.dropUser(o.Name)
 	email := u.GetSpec().GetEmail()
+	if cur, ok := a.emails.at(o.Name, Now); ok && cur == email {
+		return
+	}
+	// A User's email never changes, but replace whatever the name had.
+	a.dropUser(o.Name, rev)
 	if email == "" {
 		return
 	}
-	a.usernames[email] = o.Name
-	a.emails[o.Name] = email
+	a.set(a.usernames, email, o.Name, rev)
+	a.set(a.emails, o.Name, email, rev)
 }
 
-func (a *Authorizer) dropUser(name string) {
-	if email, ok := a.emails[name]; ok {
-		delete(a.emails, name)
-		if a.usernames[email] == name {
-			delete(a.usernames, email)
+func (a *Authorizer) dropUser(name string, rev int64) {
+	if email, ok := a.emails.at(name, Now); ok {
+		a.unset(a.emails, name, rev)
+		if n, _ := a.usernames.at(email, Now); n == name {
+			a.unset(a.usernames, email, rev)
 		}
 	}
 }
 
-func (a *Authorizer) rebuildGrants() {
-	a.grants = map[subject][]grant{}
-	for _, e := range a.bindings {
-		a.grants[e.subject] = append(a.grants[e.subject], e.grant)
+// grantsAt returns the grants s held at rev. Callers hold a.mu.
+func (a *Authorizer) grantsAt(s subject, rev int64) iter.Seq[grant] {
+	return func(yield func(grant) bool) {
+		for name := range a.grants[s] {
+			if g, ok := a.grants[s].at(name, rev); ok && !yield(g) {
+				return
+			}
+		}
 	}
 }
 
@@ -444,46 +521,71 @@ const LocalRootRole = "platform.root"
 
 // Allowed reports whether p holds the permission on the target.
 func (a *Authorizer) Allowed(p auth.Principal, permission string, t Target) bool {
-	return a.allowedBy(p, permission, func(g grant) bool { return a.covers(g, t) })
+	allowed, _ := a.AllowedAt(p, permission, t, Now)
+	return allowed
+}
+
+// AllowedAt is Allowed by the view as it stood at rev, for judging an event
+// of that revision. ok is false, and allowed with it, when the view's
+// history does not reach back to rev: it keeps the number of revisions
+// RetainHistory sets, and none from before it last listed the store. At
+// Now it answers as Allowed.
+func (a *Authorizer) AllowedAt(p auth.Principal, permission string, t Target, rev int64) (allowed, ok bool) {
+	return a.allowedBy(p, permission, rev, func(g grant, rev int64) bool { return a.covers(g, t, rev) })
 }
 
 // AllowedInProjectsOf reports whether p holds permission at some project of
 // tenant, or at the tenant or the platform, which cover them all. It looks
 // only at p's own grants, however many projects the tenant has.
 func (a *Authorizer) AllowedInProjectsOf(p auth.Principal, permission, tenant string) bool {
-	return a.allowedBy(p, permission, func(g grant) bool {
-		return a.covers(g, Target{Tenant: tenant}) || (g.project != "" && a.tenantOf[g.project] == tenant)
+	allowed, _ := a.AllowedInProjectsOfAt(p, permission, tenant, Now)
+	return allowed
+}
+
+// AllowedInProjectsOfAt is AllowedInProjectsOf by the view as it stood at
+// rev, as AllowedAt is Allowed.
+func (a *Authorizer) AllowedInProjectsOfAt(p auth.Principal, permission, tenant string, rev int64) (allowed, ok bool) {
+	return a.allowedBy(p, permission, rev, func(g grant, rev int64) bool {
+		if a.covers(g, Target{Tenant: tenant}, rev) {
+			return true
+		}
+		t, ok := a.tenantOf.at(g.project, rev)
+		return g.project != "" && ok && t == tenant
 	})
 }
 
-// allowedBy is Allowed with the grants that count chosen by covers, which
-// runs under a.mu.
-func (a *Authorizer) allowedBy(p auth.Principal, permission string, covers func(grant) bool) bool {
+// allowedBy is AllowedAt with the grants that count chosen by covers, which
+// runs under a.mu. Principals the view does not decide for are answered
+// at any rev.
+func (a *Authorizer) allowedBy(p auth.Principal, permission string, rev int64, covers func(g grant, rev int64) bool) (allowed, ok bool) {
 	switch p.Type {
 	case auth.System:
-		return true
+		return true, true
 	case auth.Node:
-		return slices.Contains([]Verb{Get, List, Watch, UpdateStatus}, verbOf(permission))
+		return slices.Contains([]Verb{Get, List, Watch, UpdateStatus}, verbOf(permission)), true
 	case auth.Local:
 		// Root on the host holds platform.root whatever the bindings say, so
 		// it can mend them.
-		return Roles[LocalRootRole].Grants(permission)
+		return Roles[LocalRootRole].Grants(permission), true
 	case auth.Edge:
-		return slices.Contains(EdgeReads, permission)
+		return slices.Contains(EdgeReads, permission), true
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
+	if rev < a.historyFrom {
+		return false, false
+	}
 	// A person who is not a platform member may do nothing, whatever else
 	// they have been granted; see docs/decisions/tenancy-and-iam.md.
-	if p.Type == auth.User && !a.member(p) {
-		return false
+	if p.Type == auth.User && !a.member(p, rev) {
+		return false, true
 	}
-	for _, g := range a.grants[subject{p.Type, p.ID}] {
-		if g.role.Grants(permission) && covers(g) {
-			return true
+	for g := range a.grantsAt(subject{p.Type, p.ID}, rev) {
+		if g.role.Grants(permission) && covers(g, rev) {
+			return true, true
 		}
 	}
-	return false
+	return false, true
 }
 
 // TenantOf returns the tenant of a project in the view, if the view has the
@@ -491,7 +593,7 @@ func (a *Authorizer) allowedBy(p auth.Principal, permission string, covers func(
 func (a *Authorizer) TenantOf(project string) (string, bool) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	t, ok := a.tenantOf[project]
+	t, ok := a.tenantOf.at(project, Now)
 	return t, ok
 }
 
@@ -503,7 +605,7 @@ func (a *Authorizer) IsMember(p auth.Principal) bool {
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.member(p)
+	return a.member(p, Now)
 }
 
 // IsInvited reports whether a person holds a platform role, which invites
@@ -515,7 +617,7 @@ func (a *Authorizer) IsInvited(p auth.Principal) bool {
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.invited(p)
+	return a.invited(p, Now)
 }
 
 // PlatformRoles returns the names of the roles bound to p at the platform,
@@ -525,7 +627,7 @@ func (a *Authorizer) PlatformRoles(p auth.Principal) []string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	var names []string
-	for _, g := range a.grants[subject{p.Type, p.ID}] {
+	for g := range a.grantsAt(subject{p.Type, p.ID}, Now) {
 		if g.platform {
 			names = append(names, g.name)
 		}
@@ -541,20 +643,20 @@ func (a *Authorizer) Username(p auth.Principal) (string, bool) {
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	name, ok := a.usernames[p.ID]
+	name, ok := a.usernames.at(p.ID, Now)
 	return name, ok
 }
 
-// member reports platform membership: a platform role and a User. Callers
-// hold a.mu.
-func (a *Authorizer) member(p auth.Principal) bool {
-	_, signedUp := a.usernames[p.ID]
-	return signedUp && a.invited(p)
+// member reports platform membership at rev: a platform role and a User.
+// Callers hold a.mu.
+func (a *Authorizer) member(p auth.Principal, rev int64) bool {
+	_, signedUp := a.usernames.at(p.ID, rev)
+	return signedUp && a.invited(p, rev)
 }
 
-// invited reports whether p holds a platform role. Callers hold a.mu.
-func (a *Authorizer) invited(p auth.Principal) bool {
-	for _, g := range a.grants[subject{p.Type, p.ID}] {
+// invited reports whether p held a platform role at rev. Callers hold a.mu.
+func (a *Authorizer) invited(p auth.Principal, rev int64) bool {
+	for g := range a.grantsAt(subject{p.Type, p.ID}, rev) {
 		if g.platform && g.role.Member {
 			return true
 		}
@@ -562,7 +664,8 @@ func (a *Authorizer) invited(p auth.Principal) bool {
 	return false
 }
 
-func (a *Authorizer) covers(g grant, t Target) bool {
+// covers reports whether g covered t at rev. Callers hold a.mu.
+func (a *Authorizer) covers(g grant, t Target, rev int64) bool {
 	switch {
 	case g.platform:
 		return true
@@ -570,7 +673,8 @@ func (a *Authorizer) covers(g grant, t Target) bool {
 		if t.Tenant == g.tenant {
 			return true
 		}
-		return t.Project != "" && a.tenantOf[t.Project] == g.tenant
+		tenant, ok := a.tenantOf.at(t.Project, rev)
+		return t.Project != "" && ok && tenant == g.tenant
 	case g.project != "":
 		return t.Project == g.project
 	}

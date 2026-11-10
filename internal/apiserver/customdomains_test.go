@@ -525,10 +525,6 @@ func TestProjectRolesReadTheDomainsTheirProjectMayUse(t *testing.T) {
 	project(t, s, user, "blog")
 	bob := otherTenant(t, s)
 	b := s.backend(registry.CustomDomain)
-	since, err := s.store.Revision(system)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := b.Apply(user, customDomain("blog-only", "acme", "blog.org", "blog")); err != nil {
 		t.Fatal(err)
 	}
@@ -572,10 +568,15 @@ func TestProjectRolesReadTheDomainsTheirProjectMayUse(t *testing.T) {
 	}
 
 	// A watch sends what a list would, as the allow-lists stand when each
-	// change is sent: of the two made first, the one the project may use;
-	// then blog-only once it lets web in; and nothing of all once it
-	// leaves web out, not even a deletion. A last change to blog-only fences
-	// the silence: it must come right after.
+	// change is sent: a change to all, which every project may use; then
+	// blog-only once it lets web in; and nothing of all once it leaves web
+	// out, not even a deletion. A last change to blog-only fences the
+	// silence: it must come right after. The watch starts once the viewer
+	// is bound, since nothing from before is theirs to see.
+	since, err := s.store.Revision(system)
+	if err != nil {
+		t.Fatal(err)
+	}
 	viewer := auth.WithPrincipal(system, auth.Principal{Type: auth.User, ID: "project-viewer@example.com"})
 	ctx, cancel := context.WithTimeout(viewer, 10*time.Second)
 	defer cancel()
@@ -606,7 +607,12 @@ func TestProjectRolesReadTheDomainsTheirProjectMayUse(t *testing.T) {
 			t.Fatalf("a project viewer's watch sent nothing for %s", want.name)
 		}
 	}
-	next(seenEvent{metav1.EventType_EVENT_TYPE_ADDED, "all"})
+	labelled := customDomain("all", "acme", "example.com")
+	labelled.Metadata.Labels = map[string]string{"changed": "1"}
+	if _, err := b.Apply(user, labelled); err != nil {
+		t.Fatal(err)
+	}
+	next(seenEvent{metav1.EventType_EVENT_TYPE_MODIFIED, "all"})
 	if _, err := b.Apply(user, customDomain("blog-only", "acme", "blog.org", "blog", "web")); err != nil {
 		t.Fatal(err)
 	}
