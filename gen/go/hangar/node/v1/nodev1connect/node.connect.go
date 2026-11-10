@@ -57,6 +57,9 @@ const (
 	// NodeServiceMachineUsageProcedure is the fully-qualified name of the NodeService's MachineUsage
 	// RPC.
 	NodeServiceMachineUsageProcedure = "/hangar.node.v1.NodeService/MachineUsage"
+	// NodeServiceListFileShareDirProcedure is the fully-qualified name of the NodeService's
+	// ListFileShareDir RPC.
+	NodeServiceListFileShareDirProcedure = "/hangar.node.v1.NodeService/ListFileShareDir"
 )
 
 // NodeServiceClient is a client for the hangar.node.v1.NodeService service.
@@ -105,6 +108,13 @@ type NodeServiceClient interface {
 	// point a minute, and the last sample. A machine with no running VM on
 	// this node is FAILED_PRECONDITION. See docs/decisions/machine-usage.md.
 	MachineUsage(context.Context, *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error)
+	// ListFileShareDir lists a directory of the share a FileShare's server
+	// on this node serves, as the server's ListDir does, and with its codes.
+	// A machine that is no share's server with a running VM on this node is
+	// UNAVAILABLE; a server whose hangar-init has no ListDir, booted
+	// before it had one, is UNIMPLEMENTED until it starts again. See
+	// docs/decisions/file-shares.md.
+	ListFileShareDir(context.Context, *connect.Request[v1.ListFileShareDirRequest]) (*connect.Response[v1.ListFileShareDirResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the hangar.node.v1.NodeService service. By default,
@@ -166,6 +176,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("MachineUsage")),
 			connect.WithClientOptions(opts...),
 		),
+		listFileShareDir: connect.NewClient[v1.ListFileShareDirRequest, v1.ListFileShareDirResponse](
+			httpClient,
+			baseURL+NodeServiceListFileShareDirProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("ListFileShareDir")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -179,6 +195,7 @@ type nodeServiceClient struct {
 	uploadCustomImage    *connect.Client[v1.UploadCustomImageRequest, v1.UploadCustomImageResponse]
 	getCustomImageUpload *connect.Client[v1.GetCustomImageUploadRequest, v1.GetCustomImageUploadResponse]
 	machineUsage         *connect.Client[v1.MachineUsageRequest, v1.MachineUsageResponse]
+	listFileShareDir     *connect.Client[v1.ListFileShareDirRequest, v1.ListFileShareDirResponse]
 }
 
 // Logs calls hangar.node.v1.NodeService.Logs.
@@ -219,6 +236,11 @@ func (c *nodeServiceClient) GetCustomImageUpload(ctx context.Context, req *conne
 // MachineUsage calls hangar.node.v1.NodeService.MachineUsage.
 func (c *nodeServiceClient) MachineUsage(ctx context.Context, req *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error) {
 	return c.machineUsage.CallUnary(ctx, req)
+}
+
+// ListFileShareDir calls hangar.node.v1.NodeService.ListFileShareDir.
+func (c *nodeServiceClient) ListFileShareDir(ctx context.Context, req *connect.Request[v1.ListFileShareDirRequest]) (*connect.Response[v1.ListFileShareDirResponse], error) {
+	return c.listFileShareDir.CallUnary(ctx, req)
 }
 
 // NodeServiceHandler is an implementation of the hangar.node.v1.NodeService service.
@@ -267,6 +289,13 @@ type NodeServiceHandler interface {
 	// point a minute, and the last sample. A machine with no running VM on
 	// this node is FAILED_PRECONDITION. See docs/decisions/machine-usage.md.
 	MachineUsage(context.Context, *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error)
+	// ListFileShareDir lists a directory of the share a FileShare's server
+	// on this node serves, as the server's ListDir does, and with its codes.
+	// A machine that is no share's server with a running VM on this node is
+	// UNAVAILABLE; a server whose hangar-init has no ListDir, booted
+	// before it had one, is UNIMPLEMENTED until it starts again. See
+	// docs/decisions/file-shares.md.
+	ListFileShareDir(context.Context, *connect.Request[v1.ListFileShareDirRequest]) (*connect.Response[v1.ListFileShareDirResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -324,6 +353,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("MachineUsage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceListFileShareDirHandler := connect.NewUnaryHandler(
+		NodeServiceListFileShareDirProcedure,
+		svc.ListFileShareDir,
+		connect.WithSchema(nodeServiceMethods.ByName("ListFileShareDir")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceLogsProcedure:
@@ -342,6 +377,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceGetCustomImageUploadHandler.ServeHTTP(w, r)
 		case NodeServiceMachineUsageProcedure:
 			nodeServiceMachineUsageHandler.ServeHTTP(w, r)
+		case NodeServiceListFileShareDirProcedure:
+			nodeServiceListFileShareDirHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -381,4 +418,8 @@ func (UnimplementedNodeServiceHandler) GetCustomImageUpload(context.Context, *co
 
 func (UnimplementedNodeServiceHandler) MachineUsage(context.Context, *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.MachineUsage is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) ListFileShareDir(context.Context, *connect.Request[v1.ListFileShareDirRequest]) (*connect.Response[v1.ListFileShareDirResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.ListFileShareDir is not implemented"))
 }

@@ -50,6 +50,10 @@ func usage(t *testing.T, h Host) {
 	if mem.Total == 0 || mem.Total > uint64(spec.MemoryMiB)<<20 || mem.Available > mem.Total {
 		t.Errorf("a guest of %d MiB says its memory is %+v", spec.MemoryMiB, mem)
 	}
+	// A container's guest serves no share to list.
+	if _, err := h.Guest.ListDir(ctx, "m1", driver.ShareListDir{}); !errors.Is(err, driver.ErrGuestCannot) {
+		t.Errorf("listing a share of a container's guest: %v, want ErrGuestCannot", err)
+	}
 
 	must(t, h.Hypervisor.Stop(ctx, "m1"))
 	if u, err := h.Hypervisor.Usage(ctx, "m1"); err == nil {

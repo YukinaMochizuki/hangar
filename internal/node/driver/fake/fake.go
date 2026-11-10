@@ -111,7 +111,11 @@ type Host struct {
 	// exportHolds keep SetExport, by machine uid, from answering until
 	// closed or its context ends.
 	exportHolds map[string]chan struct{}
-	held        map[string]chan struct{} // unpacks waiting to be let go, by reference
+	// shareRoots are the directories each share's server lists, by machine
+	// uid; oldListGuests, by machine uid, servers that cannot list.
+	shareRoots    map[string]string
+	oldListGuests map[string]bool
+	held          map[string]chan struct{} // unpacks waiting to be let go, by reference
 
 	// vmBases are disk images' bases' sizes, by digest; diskImages what the
 	// fake image servers serve, by URL, and fetches the fetches of each.
@@ -295,6 +299,7 @@ func New() *Host {
 		volumeUsed: map[string]uint64{}, volumeFilesUsed: map[string]uint64{}, volumeClaims: map[string]driver.FSUsage{}, oldVolumeGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
 		memHeld: map[string]uint64{}, guestMemUsed: map[string]uint64{}, oldMemGuests: map[string]bool{},
+		shareRoots: map[string]string{}, oldListGuests: map[string]bool{},
 	}
 }
 

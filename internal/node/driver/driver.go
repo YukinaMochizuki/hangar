@@ -1330,6 +1330,11 @@ type Guest interface {
 	// SetExport replaces the whole export of a FileShare's server. A server
 	// refusing it keeps the export it had, and the error says why.
 	SetExport(ctx context.Context, machineUID string, export ShareExport) error
+	// ListDir lists a directory of the share a FileShare's server serves,
+	// sorted by name, a page at a time. A server that cannot, as one booted
+	// before it could, fails with ErrGuestCannot; any other refusal is a
+	// connect error with the server's code.
+	ListDir(ctx context.Context, machineUID string, req ShareListDir) (ShareDirPage, error)
 	// SetTailnet has a container's guest join the tailnet as ts says, or
 	// leave it, nil, while it runs; it returns once the guest has taken it,
 	// and TailnetStatus says how it goes. A guest that cannot, as one
@@ -1419,6 +1424,45 @@ type FSUsage struct {
 	Size, Used       uint64
 	Files, FilesUsed uint64
 }
+
+// ShareListDir asks a FileShare's server for one page of a directory.
+type ShareListDir struct {
+	// Path is the directory's names from the share's root; none is the root.
+	Path [][]byte
+	// After lists only the names that sort after it; empty lists from the
+	// first.
+	After []byte
+	// Limit bounds the page; 0 is the server's default.
+	Limit uint32
+}
+
+// ShareDirPage is one page of a share's directory.
+type ShareDirPage struct {
+	Entries []ShareDirEntry
+	// More says names sort after the last entry.
+	More bool
+}
+
+// ShareDirEntry is one entry of a share's directory, as lstat sees it.
+type ShareDirEntry struct {
+	Name []byte
+	Type ShareFileType
+	// Size is a regular file's length in bytes, 0 for every other type.
+	Size    uint64
+	ModTime time.Time
+}
+
+// ShareFileType is what an entry of a share's directory is.
+type ShareFileType int
+
+// The types of a share's entries.
+const (
+	// ShareFileOther is a device, FIFO or socket.
+	ShareFileOther ShareFileType = iota
+	ShareFileRegular
+	ShareFileDirectory
+	ShareFileSymlink
+)
 
 // ErrGuestCannot is a guest asked what it does not know how to do.
 var ErrGuestCannot = errors.New("the guest cannot do this")

@@ -212,6 +212,38 @@ func (g Guest) SetExport(ctx context.Context, machineUID string, export driver.S
 	return err
 }
 
+// ListDir lists a directory of the share a FileShare's server serves.
+func (g Guest) ListDir(ctx context.Context, machineUID string, req driver.ShareListDir) (driver.ShareDirPage, error) {
+	socket := g.Socket(machineUID)
+	tr := transport(func(ctx context.Context) (net.Conn, error) { return Dial(ctx, socket, agent.Port) })
+	defer tr.CloseIdleConnections()
+	c := guestv1connect.NewFileShareServerServiceClient(&http.Client{Transport: tr}, "http://guest", connect.WithReadMaxBytes(agent.MaxMessage))
+	res, err := c.ListDir(ctx, connect.NewRequest(&guestv1.ListDirRequest{Path: req.Path, After: req.After, Limit: req.Limit}))
+	if connect.CodeOf(err) == connect.CodeUnimplemented {
+		return driver.ShareDirPage{}, fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+	}
+	if err != nil {
+		return driver.ShareDirPage{}, err
+	}
+	page := driver.ShareDirPage{More: res.Msg.GetMore()}
+	for _, e := range res.Msg.GetEntries() {
+		page.Entries = append(page.Entries, driver.ShareDirEntry{Name: e.GetName(), Type: shareFileType(e.GetType()), Size: e.GetSize(), ModTime: e.GetModifyTime().AsTime()})
+	}
+	return page, nil
+}
+
+func shareFileType(t guestv1.FileType) driver.ShareFileType {
+	switch t {
+	case guestv1.FileType_FILE_TYPE_REGULAR:
+		return driver.ShareFileRegular
+	case guestv1.FileType_FILE_TYPE_DIRECTORY:
+		return driver.ShareFileDirectory
+	case guestv1.FileType_FILE_TYPE_SYMLINK:
+		return driver.ShareFileSymlink
+	}
+	return driver.ShareFileOther
+}
+
 // ExportOf is export as a share's server takes it, on its boot disk or by
 // SetExport.
 func ExportOf(export driver.ShareExport) *guestv1.FileShareExport {
