@@ -27,6 +27,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1/nodev1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1/storagev1alpha1connect"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
@@ -324,6 +325,7 @@ func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 	servicegen.Mount(mux, func(r registry.Resource) resource.Backend { return s.backend(r) },
 		s.interceptors(chain))
 	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(machineCapabilities{s}, s.interceptors(chain)))
+	mux.Handle(storagev1alpha1connect.NewFileShareFilesServiceHandler(fileShareFiles{s}, s.interceptors(chain)))
 	mux.HandleFunc(execws.Pattern, s.machineSocket(chain))
 	mux.HandleFunc("GET "+uploadPattern, s.customImageUpload(chain))
 	mux.HandleFunc("PUT "+uploadPattern, s.customImageUpload(chain))

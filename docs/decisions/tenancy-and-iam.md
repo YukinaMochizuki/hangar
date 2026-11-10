@@ -46,7 +46,9 @@ cloud, and some people fund the hardware and should see more of it.
     (`port-forward.md`), checked in the project of the machine behind
     the Container or VirtualMachine the caller names. With them goes
     `network.publicendpoints.access`, using a private public endpoint
-    (`public-endpoints.md`). The owner and editor roles and `platform.root`
+    (`public-endpoints.md`), and `storage.fileshares.browse`, listing
+    what a FileShare holds, checked in the share's project
+    (`file-shares.md`). The owner and editor roles and `platform.root`
     hold these reach permissions (`machine-model.md`, `node-tunnel.md`,
     `vm-ssh.md`). Holding them is no write to the Machine, which stays
     system-managed.
@@ -59,8 +61,8 @@ cloud, and some people fund the hardware and should see more of it.
     GCP's basic roles:
     - `tenant.owner` holds everything in the tenant.
     - `tenant.viewer` reads everything in the tenant: get, list and watch,
-      without logs, exec, ssh or endpoint access, since output can hold
-      what the spec does not.
+      without logs, exec, ssh, endpoint access or browsing a share, since
+      output can hold what the spec does not.
     - `project.owner` holds what `tenant.owner` does, in one project,
       including its RoleBindings and deleting the project itself, as a GCP
       project owner may.

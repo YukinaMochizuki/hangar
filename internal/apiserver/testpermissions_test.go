@@ -311,7 +311,7 @@ func TestTestPermissionsChecksItsRequest(t *testing.T) {
 			all = append(all, r.Group+"."+r.Plural+"."+v)
 		}
 	}
-	all = append(all, tcreate, "compute.machines.logs", exec, "compute.machines.ssh", "network.publicendpoints.access", monread)
+	all = append(all, tcreate, "compute.machines.logs", exec, "compute.machines.ssh", "network.publicendpoints.access", "storage.fileshares.browse", monread)
 	for chunk := range slices.Chunk(all, 100) {
 		if _, err := testPermissions(e.as(root), platformScope(), chunk...); err != nil {
 			t.Errorf("asking for known permissions: %v", err)

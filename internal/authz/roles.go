@@ -46,10 +46,14 @@ const (
 	// the edge. It is not Get, which reads the endpoint object, nor Apply,
 	// which edits it.
 	Access Verb = "access"
+	// Browse lists what a FileShare holds: its directories' entries, never
+	// the files' contents. It is not Get, which reads the share's settings:
+	// names can say what settings do not.
+	Browse Verb = "browse"
 )
 
 // verbs lists every Verb, for tests that must see each one.
-var verbs = []Verb{Get, List, Watch, Apply, Delete, UpdateStatus, Create, Logs, Exec, SSH, PortForward, Access}
+var verbs = []Verb{Get, List, Watch, Apply, Delete, UpdateStatus, Create, Logs, Exec, SSH, PortForward, Access, Browse}
 
 // CreateTenant is the permission to open a tenant of one's own.
 const CreateTenant = "tenancy.tenants.create"
@@ -74,6 +78,10 @@ var (
 // PublicEndpointAccess is the permission to use a private PublicEndpoint
 // of a project through the edge.
 var PublicEndpointAccess = Permission(registry.PublicEndpoint, Access)
+
+// FileShareBrowse is the permission to list a FileShare's directories, as
+// its server, root, sees them (docs/decisions/file-shares.md).
+var FileShareBrowse = Permission(registry.FileShare, Browse)
 
 // MonitoringRead is the permission to read the platform's monitoring
 // (MonitoringService). It is on no kind, and held at the platform alone. See
@@ -152,8 +160,9 @@ var readVerbs = []Verb{Get, List, Watch}
 // reachPermissions reach into what a machine holds or says: its output, a
 // process in it, a login to it. Root, owners and editors hold them; viewers
 // do not, since output can hold what the spec does not. Reaching what a
-// private PublicEndpoint serves is of that sort too.
-var reachPermissions = []string{MachineLogs, MachineExec, MachineSSH, MachinePortForward, PublicEndpointAccess}
+// private PublicEndpoint serves is of that sort too, and so is listing what
+// a FileShare holds.
+var reachPermissions = []string{MachineLogs, MachineExec, MachineSSH, MachinePortForward, PublicEndpointAccess, FileShareBrowse}
 
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.
@@ -224,9 +233,9 @@ func KnownPermission(permission string) bool {
 	return ok
 }
 
-// IsReach reports whether a permission reaches into what a machine or an
-// endpoint holds (logs, exec, ssh, port forward, endpoint access), rather
-// than acting on an object of its kind.
+// IsReach reports whether a permission reaches into what a machine, an
+// endpoint or a share holds (logs, exec, ssh, port forward, endpoint
+// access, browsing a share), rather than acting on an object of its kind.
 func IsReach(permission string) bool { return slices.Contains(reachPermissions, permission) }
 
 // readPermissions are the read verbs on the kinds given.
