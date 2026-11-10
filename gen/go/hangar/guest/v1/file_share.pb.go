@@ -13,6 +13,7 @@ package guestv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -24,6 +25,63 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+// FileType is what an entry of a directory is.
+type FileType int32
+
+const (
+	FileType_FILE_TYPE_UNSPECIFIED FileType = 0
+	FileType_FILE_TYPE_REGULAR     FileType = 1
+	FileType_FILE_TYPE_DIRECTORY   FileType = 2
+	FileType_FILE_TYPE_SYMLINK     FileType = 3
+	// A device, FIFO or socket.
+	FileType_FILE_TYPE_OTHER FileType = 4
+)
+
+// Enum value maps for FileType.
+var (
+	FileType_name = map[int32]string{
+		0: "FILE_TYPE_UNSPECIFIED",
+		1: "FILE_TYPE_REGULAR",
+		2: "FILE_TYPE_DIRECTORY",
+		3: "FILE_TYPE_SYMLINK",
+		4: "FILE_TYPE_OTHER",
+	}
+	FileType_value = map[string]int32{
+		"FILE_TYPE_UNSPECIFIED": 0,
+		"FILE_TYPE_REGULAR":     1,
+		"FILE_TYPE_DIRECTORY":   2,
+		"FILE_TYPE_SYMLINK":     3,
+		"FILE_TYPE_OTHER":       4,
+	}
+)
+
+func (x FileType) Enum() *FileType {
+	p := new(FileType)
+	*p = x
+	return p
+}
+
+func (x FileType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FileType) Descriptor() protoreflect.EnumDescriptor {
+	return file_hangar_guest_v1_file_share_proto_enumTypes[0].Descriptor()
+}
+
+func (FileType) Type() protoreflect.EnumType {
+	return &file_hangar_guest_v1_file_share_proto_enumTypes[0]
+}
+
+func (x FileType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FileType.Descriptor instead.
+func (FileType) EnumDescriptor() ([]byte, []int) {
+	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{0}
+}
 
 // FileShareSquash is which users of a client become the anonymous user.
 type FileShareSquash int32
@@ -66,11 +124,11 @@ func (x FileShareSquash) String() string {
 }
 
 func (FileShareSquash) Descriptor() protoreflect.EnumDescriptor {
-	return file_hangar_guest_v1_file_share_proto_enumTypes[0].Descriptor()
+	return file_hangar_guest_v1_file_share_proto_enumTypes[1].Descriptor()
 }
 
 func (FileShareSquash) Type() protoreflect.EnumType {
-	return &file_hangar_guest_v1_file_share_proto_enumTypes[0]
+	return &file_hangar_guest_v1_file_share_proto_enumTypes[1]
 }
 
 func (x FileShareSquash) Number() protoreflect.EnumNumber {
@@ -79,7 +137,197 @@ func (x FileShareSquash) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FileShareSquash.Descriptor instead.
 func (FileShareSquash) EnumDescriptor() ([]byte, []int) {
+	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{1}
+}
+
+type ListDirRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The directory, as names from the share's root, each neither empty nor
+	// "." nor ".." and holding no "/" or NUL; empty is the root.
+	Path [][]byte `protobuf:"bytes,1,rep,name=path,proto3" json:"path,omitempty"`
+	// Lists only the names that sort after this one; empty lists from the
+	// first.
+	After []byte `protobuf:"bytes,2,opt,name=after,proto3" json:"after,omitempty"`
+	// At most this many entries, 1 to 1000; 0 is 500.
+	Limit         uint32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDirRequest) Reset() {
+	*x = ListDirRequest{}
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDirRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDirRequest) ProtoMessage() {}
+
+func (x *ListDirRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDirRequest.ProtoReflect.Descriptor instead.
+func (*ListDirRequest) Descriptor() ([]byte, []int) {
 	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ListDirRequest) GetPath() [][]byte {
+	if x != nil {
+		return x.Path
+	}
+	return nil
+}
+
+func (x *ListDirRequest) GetAfter() []byte {
+	if x != nil {
+		return x.After
+	}
+	return nil
+}
+
+func (x *ListDirRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListDirResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Sorted by name as bytes.
+	Entries []*DirEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	// Whether names sort after the last entry.
+	More          bool `protobuf:"varint,2,opt,name=more,proto3" json:"more,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDirResponse) Reset() {
+	*x = ListDirResponse{}
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDirResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDirResponse) ProtoMessage() {}
+
+func (x *ListDirResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDirResponse.ProtoReflect.Descriptor instead.
+func (*ListDirResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ListDirResponse) GetEntries() []*DirEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *ListDirResponse) GetMore() bool {
+	if x != nil {
+		return x.More
+	}
+	return false
+}
+
+// DirEntry is one entry of a share's directory, as lstat sees it.
+type DirEntry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// As the filesystem holds it, which need not be UTF-8.
+	Name []byte   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type FileType `protobuf:"varint,2,opt,name=type,proto3,enum=hangar.guest.v1.FileType" json:"type,omitempty"`
+	// A regular file's length in bytes; 0 for every other type.
+	Size          uint64                 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	ModifyTime    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=modify_time,json=modifyTime,proto3" json:"modify_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DirEntry) Reset() {
+	*x = DirEntry{}
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DirEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DirEntry) ProtoMessage() {}
+
+func (x *DirEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DirEntry.ProtoReflect.Descriptor instead.
+func (*DirEntry) Descriptor() ([]byte, []int) {
+	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *DirEntry) GetName() []byte {
+	if x != nil {
+		return x.Name
+	}
+	return nil
+}
+
+func (x *DirEntry) GetType() FileType {
+	if x != nil {
+		return x.Type
+	}
+	return FileType_FILE_TYPE_UNSPECIFIED
+}
+
+func (x *DirEntry) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *DirEntry) GetModifyTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ModifyTime
+	}
+	return nil
 }
 
 type SetExportRequest struct {
@@ -91,7 +339,7 @@ type SetExportRequest struct {
 
 func (x *SetExportRequest) Reset() {
 	*x = SetExportRequest{}
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[0]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -103,7 +351,7 @@ func (x *SetExportRequest) String() string {
 func (*SetExportRequest) ProtoMessage() {}
 
 func (x *SetExportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[0]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -116,7 +364,7 @@ func (x *SetExportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetExportRequest.ProtoReflect.Descriptor instead.
 func (*SetExportRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{0}
+	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SetExportRequest) GetExport() *FileShareExport {
@@ -134,7 +382,7 @@ type SetExportResponse struct {
 
 func (x *SetExportResponse) Reset() {
 	*x = SetExportResponse{}
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[1]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -146,7 +394,7 @@ func (x *SetExportResponse) String() string {
 func (*SetExportResponse) ProtoMessage() {}
 
 func (x *SetExportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[1]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -159,7 +407,7 @@ func (x *SetExportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetExportResponse.ProtoReflect.Descriptor instead.
 func (*SetExportResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{1}
+	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{4}
 }
 
 // FileShareServer makes a guest a FileShare's server, which serves the
@@ -178,7 +426,7 @@ type FileShareServer struct {
 
 func (x *FileShareServer) Reset() {
 	*x = FileShareServer{}
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[2]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -190,7 +438,7 @@ func (x *FileShareServer) String() string {
 func (*FileShareServer) ProtoMessage() {}
 
 func (x *FileShareServer) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[2]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -203,7 +451,7 @@ func (x *FileShareServer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileShareServer.ProtoReflect.Descriptor instead.
 func (*FileShareServer) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{2}
+	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *FileShareServer) GetExport() *FileShareExport {
@@ -231,7 +479,7 @@ type FileShareExport struct {
 
 func (x *FileShareExport) Reset() {
 	*x = FileShareExport{}
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[3]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -243,7 +491,7 @@ func (x *FileShareExport) String() string {
 func (*FileShareExport) ProtoMessage() {}
 
 func (x *FileShareExport) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[3]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -256,7 +504,7 @@ func (x *FileShareExport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileShareExport.ProtoReflect.Descriptor instead.
 func (*FileShareExport) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{3}
+	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *FileShareExport) GetClients() []*FileShareClient {
@@ -300,7 +548,7 @@ type FileShareClient struct {
 
 func (x *FileShareClient) Reset() {
 	*x = FileShareClient{}
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[4]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -312,7 +560,7 @@ func (x *FileShareClient) String() string {
 func (*FileShareClient) ProtoMessage() {}
 
 func (x *FileShareClient) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[4]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -325,7 +573,7 @@ func (x *FileShareClient) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileShareClient.ProtoReflect.Descriptor instead.
 func (*FileShareClient) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{4}
+	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *FileShareClient) GetAddress() string {
@@ -355,7 +603,7 @@ type FileShareMount struct {
 
 func (x *FileShareMount) Reset() {
 	*x = FileShareMount{}
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[5]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -367,7 +615,7 @@ func (x *FileShareMount) String() string {
 func (*FileShareMount) ProtoMessage() {}
 
 func (x *FileShareMount) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[5]
+	mi := &file_hangar_guest_v1_file_share_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -380,7 +628,7 @@ func (x *FileShareMount) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileShareMount.ProtoReflect.Descriptor instead.
 func (*FileShareMount) Descriptor() ([]byte, []int) {
-	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{5}
+	return file_hangar_guest_v1_file_share_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *FileShareMount) GetAddress() string {
@@ -394,7 +642,20 @@ var File_hangar_guest_v1_file_share_proto protoreflect.FileDescriptor
 
 const file_hangar_guest_v1_file_share_proto_rawDesc = "" +
 	"\n" +
-	" hangar/guest/v1/file_share.proto\x12\x0fhangar.guest.v1\"L\n" +
+	" hangar/guest/v1/file_share.proto\x12\x0fhangar.guest.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"P\n" +
+	"\x0eListDirRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x03(\fR\x04path\x12\x14\n" +
+	"\x05after\x18\x02 \x01(\fR\x05after\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\rR\x05limit\"Z\n" +
+	"\x0fListDirResponse\x123\n" +
+	"\aentries\x18\x01 \x03(\v2\x19.hangar.guest.v1.DirEntryR\aentries\x12\x12\n" +
+	"\x04more\x18\x02 \x01(\bR\x04more\"\x9e\x01\n" +
+	"\bDirEntry\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\fR\x04name\x12-\n" +
+	"\x04type\x18\x02 \x01(\x0e2\x19.hangar.guest.v1.FileTypeR\x04type\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x04R\x04size\x12;\n" +
+	"\vmodify_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"modifyTime\"L\n" +
 	"\x10SetExportRequest\x128\n" +
 	"\x06export\x18\x01 \x01(\v2 .hangar.guest.v1.FileShareExportR\x06export\"\x13\n" +
 	"\x11SetExportResponse\"K\n" +
@@ -409,14 +670,21 @@ const file_hangar_guest_v1_file_share_proto_rawDesc = "" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x1b\n" +
 	"\tread_only\x18\x02 \x01(\bR\breadOnly\"*\n" +
 	"\x0eFileShareMount\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\tR\aaddress*\x87\x01\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress*\x81\x01\n" +
+	"\bFileType\x12\x19\n" +
+	"\x15FILE_TYPE_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11FILE_TYPE_REGULAR\x10\x01\x12\x17\n" +
+	"\x13FILE_TYPE_DIRECTORY\x10\x02\x12\x15\n" +
+	"\x11FILE_TYPE_SYMLINK\x10\x03\x12\x13\n" +
+	"\x0fFILE_TYPE_OTHER\x10\x04*\x87\x01\n" +
 	"\x0fFileShareSquash\x12!\n" +
 	"\x1dFILE_SHARE_SQUASH_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16FILE_SHARE_SQUASH_NONE\x10\x01\x12\x1a\n" +
 	"\x16FILE_SHARE_SQUASH_ROOT\x10\x02\x12\x19\n" +
-	"\x15FILE_SHARE_SQUASH_ALL\x10\x032l\n" +
+	"\x15FILE_SHARE_SQUASH_ALL\x10\x032\xba\x01\n" +
 	"\x16FileShareServerService\x12R\n" +
-	"\tSetExport\x12!.hangar.guest.v1.SetExportRequest\x1a\".hangar.guest.v1.SetExportResponseB\xc5\x01\n" +
+	"\tSetExport\x12!.hangar.guest.v1.SetExportRequest\x1a\".hangar.guest.v1.SetExportResponse\x12L\n" +
+	"\aListDir\x12\x1f.hangar.guest.v1.ListDirRequest\x1a .hangar.guest.v1.ListDirResponseB\xc5\x01\n" +
 	"\x13com.hangar.guest.v1B\x0eFileShareProtoP\x01Z@github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1;guestv1\xa2\x02\x03HGX\xaa\x02\x0fHangar.Guest.V1\xca\x02\x0fHangar\\Guest\\V1\xe2\x02\x1bHangar\\Guest\\V1\\GPBMetadata\xea\x02\x11Hangar::Guest::V1b\x06proto3"
 
 var (
@@ -431,29 +699,39 @@ func file_hangar_guest_v1_file_share_proto_rawDescGZIP() []byte {
 	return file_hangar_guest_v1_file_share_proto_rawDescData
 }
 
-var file_hangar_guest_v1_file_share_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_guest_v1_file_share_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_hangar_guest_v1_file_share_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_hangar_guest_v1_file_share_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_hangar_guest_v1_file_share_proto_goTypes = []any{
-	(FileShareSquash)(0),      // 0: hangar.guest.v1.FileShareSquash
-	(*SetExportRequest)(nil),  // 1: hangar.guest.v1.SetExportRequest
-	(*SetExportResponse)(nil), // 2: hangar.guest.v1.SetExportResponse
-	(*FileShareServer)(nil),   // 3: hangar.guest.v1.FileShareServer
-	(*FileShareExport)(nil),   // 4: hangar.guest.v1.FileShareExport
-	(*FileShareClient)(nil),   // 5: hangar.guest.v1.FileShareClient
-	(*FileShareMount)(nil),    // 6: hangar.guest.v1.FileShareMount
+	(FileType)(0),                 // 0: hangar.guest.v1.FileType
+	(FileShareSquash)(0),          // 1: hangar.guest.v1.FileShareSquash
+	(*ListDirRequest)(nil),        // 2: hangar.guest.v1.ListDirRequest
+	(*ListDirResponse)(nil),       // 3: hangar.guest.v1.ListDirResponse
+	(*DirEntry)(nil),              // 4: hangar.guest.v1.DirEntry
+	(*SetExportRequest)(nil),      // 5: hangar.guest.v1.SetExportRequest
+	(*SetExportResponse)(nil),     // 6: hangar.guest.v1.SetExportResponse
+	(*FileShareServer)(nil),       // 7: hangar.guest.v1.FileShareServer
+	(*FileShareExport)(nil),       // 8: hangar.guest.v1.FileShareExport
+	(*FileShareClient)(nil),       // 9: hangar.guest.v1.FileShareClient
+	(*FileShareMount)(nil),        // 10: hangar.guest.v1.FileShareMount
+	(*timestamppb.Timestamp)(nil), // 11: google.protobuf.Timestamp
 }
 var file_hangar_guest_v1_file_share_proto_depIdxs = []int32{
-	4, // 0: hangar.guest.v1.SetExportRequest.export:type_name -> hangar.guest.v1.FileShareExport
-	4, // 1: hangar.guest.v1.FileShareServer.export:type_name -> hangar.guest.v1.FileShareExport
-	5, // 2: hangar.guest.v1.FileShareExport.clients:type_name -> hangar.guest.v1.FileShareClient
-	0, // 3: hangar.guest.v1.FileShareExport.squash:type_name -> hangar.guest.v1.FileShareSquash
-	1, // 4: hangar.guest.v1.FileShareServerService.SetExport:input_type -> hangar.guest.v1.SetExportRequest
-	2, // 5: hangar.guest.v1.FileShareServerService.SetExport:output_type -> hangar.guest.v1.SetExportResponse
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	4,  // 0: hangar.guest.v1.ListDirResponse.entries:type_name -> hangar.guest.v1.DirEntry
+	0,  // 1: hangar.guest.v1.DirEntry.type:type_name -> hangar.guest.v1.FileType
+	11, // 2: hangar.guest.v1.DirEntry.modify_time:type_name -> google.protobuf.Timestamp
+	8,  // 3: hangar.guest.v1.SetExportRequest.export:type_name -> hangar.guest.v1.FileShareExport
+	8,  // 4: hangar.guest.v1.FileShareServer.export:type_name -> hangar.guest.v1.FileShareExport
+	9,  // 5: hangar.guest.v1.FileShareExport.clients:type_name -> hangar.guest.v1.FileShareClient
+	1,  // 6: hangar.guest.v1.FileShareExport.squash:type_name -> hangar.guest.v1.FileShareSquash
+	5,  // 7: hangar.guest.v1.FileShareServerService.SetExport:input_type -> hangar.guest.v1.SetExportRequest
+	2,  // 8: hangar.guest.v1.FileShareServerService.ListDir:input_type -> hangar.guest.v1.ListDirRequest
+	6,  // 9: hangar.guest.v1.FileShareServerService.SetExport:output_type -> hangar.guest.v1.SetExportResponse
+	3,  // 10: hangar.guest.v1.FileShareServerService.ListDir:output_type -> hangar.guest.v1.ListDirResponse
+	9,  // [9:11] is the sub-list for method output_type
+	7,  // [7:9] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_hangar_guest_v1_file_share_proto_init() }
@@ -466,8 +744,8 @@ func file_hangar_guest_v1_file_share_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_guest_v1_file_share_proto_rawDesc), len(file_hangar_guest_v1_file_share_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   6,
+			NumEnums:      2,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

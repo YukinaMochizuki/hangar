@@ -77,8 +77,9 @@ Hangar has one host, so only the second shape keeps the host out of it.
   with containers'. It stays in the initramfs, with no root disk to
   switch to; the share is its first data disk, `vdc`, after a blank file
   the node gives it as `vda`, which it never reads, and its boot disk.
-  Its agent answers Ping, Stop and `FileShareServerService.SetExport`,
-  which replaces the whole export, and refuses Exec. Containers carry the
+  Its agent answers Ping, Stop, `FileShareServerService.SetExport`,
+  which replaces the whole export, and `ListDir`, which lists a
+  directory of the share (below), and refuses Exec. Containers carry the
   server's code unused, as they carry `nfsd`.
 - **The wire block size is pinned (1 MiB), never derived from the
   server's memory.** `nfsd` defaults it to a 4096th of RAM, so a 256Mi

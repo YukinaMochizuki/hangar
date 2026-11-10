@@ -77,6 +77,9 @@ type Server struct {
 	stopped bool
 
 	tracker *tracker
+
+	// dirs lists the share's directories; Boot sets it.
+	dirs *Dirs
 }
 
 var _ guestv1connect.FileShareServerServiceHandler = (*Server)(nil)
@@ -99,7 +102,7 @@ func Boot(dev string, logf func(string, ...any)) (*Server, error) {
 		}
 	}
 	t := newTracker(xattrStore{Root}, logf)
-	s := &Server{logf: logf, ctl: writeCtl, flush: flushCache, uptime: uptime, sleep: time.Sleep, reply: writeReply, mu: &sync.Mutex{}, tracker: t}
+	s := &Server{logf: logf, ctl: writeCtl, flush: flushCache, uptime: uptime, sleep: time.Sleep, reply: writeReply, mu: &sync.Mutex{}, tracker: t, dirs: NewDirs(Root)}
 	chans := map[int]string{}
 	for _, c := range upcallCaches {
 		fd, err := unix.Open(filepath.Join(rpcDir, c, "channel"), unix.O_RDWR|unix.O_CLOEXEC, 0)
@@ -245,6 +248,10 @@ func (s *Server) Stop() error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 	s.stopped = true
+	// No listing may hold the share open as it is unmounted.
+	if s.dirs != nil {
+		s.dirs.Close()
+	}
 	var err error
 	if s.started {
 		err = s.ctl("threads", "0")

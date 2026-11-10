@@ -5,6 +5,8 @@ syntax = "proto3";
 // docs/decisions/file-shares.md.
 package hangar.guest.v1;
 
+import "google/protobuf/timestamp.proto";
+
 // FileShareServerService is served by hangar-init in a FileShare's server,
 // beside GuestAgentService, on the same vsock port and to the host alone.
 service FileShareServerService {
@@ -14,6 +16,52 @@ service FileShareServerService {
   // included. The first export a server has, from its boot disk or from
   // this call, starts nfsd.
   rpc SetExport(SetExportRequest) returns (SetExportResponse);
+  // ListDir lists one directory of the share, sorted by name as bytes, a
+  // page at a time: names, types, sizes and modification times, never what
+  // a file holds or where a link points. The path is resolved beneath the
+  // share's root and through no symbolic link. A path that does not exist
+  // is NOT_FOUND, one that is not a directory FAILED_PRECONDITION, and a
+  // directory of more than 100,000 entries RESOURCE_EXHAUSTED. See
+  // docs/decisions/file-shares.md.
+  rpc ListDir(ListDirRequest) returns (ListDirResponse);
+}
+
+message ListDirRequest {
+  // The directory, as names from the share's root, each neither empty nor
+  // "." nor ".." and holding no "/" or NUL; empty is the root.
+  repeated bytes path = 1;
+  // Lists only the names that sort after this one; empty lists from the
+  // first.
+  bytes after = 2;
+  // At most this many entries, 1 to 1000; 0 is 500.
+  uint32 limit = 3;
+}
+
+message ListDirResponse {
+  // Sorted by name as bytes.
+  repeated DirEntry entries = 1;
+  // Whether names sort after the last entry.
+  bool more = 2;
+}
+
+// DirEntry is one entry of a share's directory, as lstat sees it.
+message DirEntry {
+  // As the filesystem holds it, which need not be UTF-8.
+  bytes name = 1;
+  FileType type = 2;
+  // A regular file's length in bytes; 0 for every other type.
+  uint64 size = 3;
+  google.protobuf.Timestamp modify_time = 4;
+}
+
+// FileType is what an entry of a directory is.
+enum FileType {
+  FILE_TYPE_UNSPECIFIED = 0;
+  FILE_TYPE_REGULAR = 1;
+  FILE_TYPE_DIRECTORY = 2;
+  FILE_TYPE_SYMLINK = 3;
+  // A device, FIFO or socket.
+  FILE_TYPE_OTHER = 4;
 }
 
 message SetExportRequest {

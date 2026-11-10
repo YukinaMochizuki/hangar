@@ -8,13 +8,114 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file hangar/guest/v1/file_share.proto.
  */
 export const file_hangar_guest_v1_file_share: GenFile = /*@__PURE__*/
-  fileDesc("CiBoYW5nYXIvZ3Vlc3QvdjEvZmlsZV9zaGFyZS5wcm90bxIPaGFuZ2FyLmd1ZXN0LnYxIkQKEFNldEV4cG9ydFJlcXVlc3QSMAoGZXhwb3J0GAEgASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZUV4cG9ydCITChFTZXRFeHBvcnRSZXNwb25zZSJDCg9GaWxlU2hhcmVTZXJ2ZXISMAoGZXhwb3J0GAEgASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZUV4cG9ydCKaAQoPRmlsZVNoYXJlRXhwb3J0EjEKB2NsaWVudHMYASADKAsyIC5oYW5nYXIuZ3Vlc3QudjEuRmlsZVNoYXJlQ2xpZW50EjAKBnNxdWFzaBgCIAEoDjIgLmhhbmdhci5ndWVzdC52MS5GaWxlU2hhcmVTcXVhc2gSEAoIYW5vbl91aWQYAyABKA0SEAoIYW5vbl9naWQYBCABKA0iNQoPRmlsZVNoYXJlQ2xpZW50Eg8KB2FkZHJlc3MYASABKAkSEQoJcmVhZF9vbmx5GAIgASgIIiEKDkZpbGVTaGFyZU1vdW50Eg8KB2FkZHJlc3MYASABKAkqhwEKD0ZpbGVTaGFyZVNxdWFzaBIhCh1GSUxFX1NIQVJFX1NRVUFTSF9VTlNQRUNJRklFRBAAEhoKFkZJTEVfU0hBUkVfU1FVQVNIX05PTkUQARIaChZGSUxFX1NIQVJFX1NRVUFTSF9ST09UEAISGQoVRklMRV9TSEFSRV9TUVVBU0hfQUxMEAMybAoWRmlsZVNoYXJlU2VydmVyU2VydmljZRJSCglTZXRFeHBvcnQSIS5oYW5nYXIuZ3Vlc3QudjEuU2V0RXhwb3J0UmVxdWVzdBoiLmhhbmdhci5ndWVzdC52MS5TZXRFeHBvcnRSZXNwb25zZULFAQoTY29tLmhhbmdhci5ndWVzdC52MUIORmlsZVNoYXJlUHJvdG9QAVpAZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvZ3Vlc3QvdjE7Z3Vlc3R2MaICA0hHWKoCD0hhbmdhci5HdWVzdC5WMcoCD0hhbmdhclxHdWVzdFxWMeICG0hhbmdhclxHdWVzdFxWMVxHUEJNZXRhZGF0YeoCEUhhbmdhcjo6R3Vlc3Q6OlYxYgZwcm90bzM");
+  fileDesc("CiBoYW5nYXIvZ3Vlc3QvdjEvZmlsZV9zaGFyZS5wcm90bxIPaGFuZ2FyLmd1ZXN0LnYxIjwKDkxpc3REaXJSZXF1ZXN0EgwKBHBhdGgYASADKAwSDQoFYWZ0ZXIYAiABKAwSDQoFbGltaXQYAyABKA0iSwoPTGlzdERpclJlc3BvbnNlEioKB2VudHJpZXMYASADKAsyGS5oYW5nYXIuZ3Vlc3QudjEuRGlyRW50cnkSDAoEbW9yZRgCIAEoCCKAAQoIRGlyRW50cnkSDAoEbmFtZRgBIAEoDBInCgR0eXBlGAIgASgOMhkuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVUeXBlEgwKBHNpemUYAyABKAQSLwoLbW9kaWZ5X3RpbWUYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkQKEFNldEV4cG9ydFJlcXVlc3QSMAoGZXhwb3J0GAEgASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZUV4cG9ydCITChFTZXRFeHBvcnRSZXNwb25zZSJDCg9GaWxlU2hhcmVTZXJ2ZXISMAoGZXhwb3J0GAEgASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZUV4cG9ydCKaAQoPRmlsZVNoYXJlRXhwb3J0EjEKB2NsaWVudHMYASADKAsyIC5oYW5nYXIuZ3Vlc3QudjEuRmlsZVNoYXJlQ2xpZW50EjAKBnNxdWFzaBgCIAEoDjIgLmhhbmdhci5ndWVzdC52MS5GaWxlU2hhcmVTcXVhc2gSEAoIYW5vbl91aWQYAyABKA0SEAoIYW5vbl9naWQYBCABKA0iNQoPRmlsZVNoYXJlQ2xpZW50Eg8KB2FkZHJlc3MYASABKAkSEQoJcmVhZF9vbmx5GAIgASgIIiEKDkZpbGVTaGFyZU1vdW50Eg8KB2FkZHJlc3MYASABKAkqgQEKCEZpbGVUeXBlEhkKFUZJTEVfVFlQRV9VTlNQRUNJRklFRBAAEhUKEUZJTEVfVFlQRV9SRUdVTEFSEAESFwoTRklMRV9UWVBFX0RJUkVDVE9SWRACEhUKEUZJTEVfVFlQRV9TWU1MSU5LEAMSEwoPRklMRV9UWVBFX09USEVSEAQqhwEKD0ZpbGVTaGFyZVNxdWFzaBIhCh1GSUxFX1NIQVJFX1NRVUFTSF9VTlNQRUNJRklFRBAAEhoKFkZJTEVfU0hBUkVfU1FVQVNIX05PTkUQARIaChZGSUxFX1NIQVJFX1NRVUFTSF9ST09UEAISGQoVRklMRV9TSEFSRV9TUVVBU0hfQUxMEAMyugEKFkZpbGVTaGFyZVNlcnZlclNlcnZpY2USUgoJU2V0RXhwb3J0EiEuaGFuZ2FyLmd1ZXN0LnYxLlNldEV4cG9ydFJlcXVlc3QaIi5oYW5nYXIuZ3Vlc3QudjEuU2V0RXhwb3J0UmVzcG9uc2USTAoHTGlzdERpchIfLmhhbmdhci5ndWVzdC52MS5MaXN0RGlyUmVxdWVzdBogLmhhbmdhci5ndWVzdC52MS5MaXN0RGlyUmVzcG9uc2VCxQEKE2NvbS5oYW5nYXIuZ3Vlc3QudjFCDkZpbGVTaGFyZVByb3RvUAFaQGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2d1ZXN0L3YxO2d1ZXN0djGiAgNIR1iqAg9IYW5nYXIuR3Vlc3QuVjHKAg9IYW5nYXJcR3Vlc3RcVjHiAhtIYW5nYXJcR3Vlc3RcVjFcR1BCTWV0YWRhdGHqAhFIYW5nYXI6Okd1ZXN0OjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
+
+/**
+ * @generated from message hangar.guest.v1.ListDirRequest
+ */
+export type ListDirRequest = Message<"hangar.guest.v1.ListDirRequest"> & {
+  /**
+   * The directory, as names from the share's root, each neither empty nor
+   * "." nor ".." and holding no "/" or NUL; empty is the root.
+   *
+   * @generated from field: repeated bytes path = 1;
+   */
+  path: Uint8Array[];
+
+  /**
+   * Lists only the names that sort after this one; empty lists from the
+   * first.
+   *
+   * @generated from field: bytes after = 2;
+   */
+  after: Uint8Array;
+
+  /**
+   * At most this many entries, 1 to 1000; 0 is 500.
+   *
+   * @generated from field: uint32 limit = 3;
+   */
+  limit: number;
+};
+
+/**
+ * Describes the message hangar.guest.v1.ListDirRequest.
+ * Use `create(ListDirRequestSchema)` to create a new message.
+ */
+export const ListDirRequestSchema: GenMessage<ListDirRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_file_share, 0);
+
+/**
+ * @generated from message hangar.guest.v1.ListDirResponse
+ */
+export type ListDirResponse = Message<"hangar.guest.v1.ListDirResponse"> & {
+  /**
+   * Sorted by name as bytes.
+   *
+   * @generated from field: repeated hangar.guest.v1.DirEntry entries = 1;
+   */
+  entries: DirEntry[];
+
+  /**
+   * Whether names sort after the last entry.
+   *
+   * @generated from field: bool more = 2;
+   */
+  more: boolean;
+};
+
+/**
+ * Describes the message hangar.guest.v1.ListDirResponse.
+ * Use `create(ListDirResponseSchema)` to create a new message.
+ */
+export const ListDirResponseSchema: GenMessage<ListDirResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_file_share, 1);
+
+/**
+ * DirEntry is one entry of a share's directory, as lstat sees it.
+ *
+ * @generated from message hangar.guest.v1.DirEntry
+ */
+export type DirEntry = Message<"hangar.guest.v1.DirEntry"> & {
+  /**
+   * As the filesystem holds it, which need not be UTF-8.
+   *
+   * @generated from field: bytes name = 1;
+   */
+  name: Uint8Array;
+
+  /**
+   * @generated from field: hangar.guest.v1.FileType type = 2;
+   */
+  type: FileType;
+
+  /**
+   * A regular file's length in bytes; 0 for every other type.
+   *
+   * @generated from field: uint64 size = 3;
+   */
+  size: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp modify_time = 4;
+   */
+  modifyTime?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message hangar.guest.v1.DirEntry.
+ * Use `create(DirEntrySchema)` to create a new message.
+ */
+export const DirEntrySchema: GenMessage<DirEntry> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_file_share, 2);
 
 /**
  * @generated from message hangar.guest.v1.SetExportRequest
@@ -31,7 +132,7 @@ export type SetExportRequest = Message<"hangar.guest.v1.SetExportRequest"> & {
  * Use `create(SetExportRequestSchema)` to create a new message.
  */
 export const SetExportRequestSchema: GenMessage<SetExportRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_file_share, 0);
+  messageDesc(file_hangar_guest_v1_file_share, 3);
 
 /**
  * @generated from message hangar.guest.v1.SetExportResponse
@@ -44,7 +145,7 @@ export type SetExportResponse = Message<"hangar.guest.v1.SetExportResponse"> & {
  * Use `create(SetExportResponseSchema)` to create a new message.
  */
 export const SetExportResponseSchema: GenMessage<SetExportResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_file_share, 1);
+  messageDesc(file_hangar_guest_v1_file_share, 4);
 
 /**
  * FileShareServer makes a guest a FileShare's server, which serves the
@@ -70,7 +171,7 @@ export type FileShareServer = Message<"hangar.guest.v1.FileShareServer"> & {
  * Use `create(FileShareServerSchema)` to create a new message.
  */
 export const FileShareServerSchema: GenMessage<FileShareServer> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_file_share, 2);
+  messageDesc(file_hangar_guest_v1_file_share, 5);
 
 /**
  * FileShareExport is who may mount a share, and how. It is the share's
@@ -111,7 +212,7 @@ export type FileShareExport = Message<"hangar.guest.v1.FileShareExport"> & {
  * Use `create(FileShareExportSchema)` to create a new message.
  */
 export const FileShareExportSchema: GenMessage<FileShareExport> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_file_share, 3);
+  messageDesc(file_hangar_guest_v1_file_share, 6);
 
 /**
  * FileShareClient is one machine allowed to mount the share.
@@ -139,7 +240,7 @@ export type FileShareClient = Message<"hangar.guest.v1.FileShareClient"> & {
  * Use `create(FileShareClientSchema)` to create a new message.
  */
 export const FileShareClientSchema: GenMessage<FileShareClient> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_file_share, 4);
+  messageDesc(file_hangar_guest_v1_file_share, 7);
 
 /**
  * FileShareMount is a FileShare a container mounts as a volume, over
@@ -162,7 +263,47 @@ export type FileShareMount = Message<"hangar.guest.v1.FileShareMount"> & {
  * Use `create(FileShareMountSchema)` to create a new message.
  */
 export const FileShareMountSchema: GenMessage<FileShareMount> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_file_share, 5);
+  messageDesc(file_hangar_guest_v1_file_share, 8);
+
+/**
+ * FileType is what an entry of a directory is.
+ *
+ * @generated from enum hangar.guest.v1.FileType
+ */
+export enum FileType {
+  /**
+   * @generated from enum value: FILE_TYPE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FILE_TYPE_REGULAR = 1;
+   */
+  REGULAR = 1,
+
+  /**
+   * @generated from enum value: FILE_TYPE_DIRECTORY = 2;
+   */
+  DIRECTORY = 2,
+
+  /**
+   * @generated from enum value: FILE_TYPE_SYMLINK = 3;
+   */
+  SYMLINK = 3,
+
+  /**
+   * A device, FIFO or socket.
+   *
+   * @generated from enum value: FILE_TYPE_OTHER = 4;
+   */
+  OTHER = 4,
+}
+
+/**
+ * Describes the enum hangar.guest.v1.FileType.
+ */
+export const FileTypeSchema: GenEnum<FileType> = /*@__PURE__*/
+  enumDesc(file_hangar_guest_v1_file_share, 0);
 
 /**
  * FileShareSquash is which users of a client become the anonymous user.
@@ -203,7 +344,7 @@ export enum FileShareSquash {
  * Describes the enum hangar.guest.v1.FileShareSquash.
  */
 export const FileShareSquashSchema: GenEnum<FileShareSquash> = /*@__PURE__*/
-  enumDesc(file_hangar_guest_v1_file_share, 0);
+  enumDesc(file_hangar_guest_v1_file_share, 1);
 
 /**
  * FileShareServerService is served by hangar-init in a FileShare's server,
@@ -225,6 +366,22 @@ export const FileShareServerService: GenService<{
     methodKind: "unary";
     input: typeof SetExportRequestSchema;
     output: typeof SetExportResponseSchema;
+  },
+  /**
+   * ListDir lists one directory of the share, sorted by name as bytes, a
+   * page at a time: names, types, sizes and modification times, never what
+   * a file holds or where a link points. The path is resolved beneath the
+   * share's root and through no symbolic link. A path that does not exist
+   * is NOT_FOUND, one that is not a directory FAILED_PRECONDITION, and a
+   * directory of more than 100,000 entries RESOURCE_EXHAUSTED. See
+   * docs/decisions/file-shares.md.
+   *
+   * @generated from rpc hangar.guest.v1.FileShareServerService.ListDir
+   */
+  listDir: {
+    methodKind: "unary";
+    input: typeof ListDirRequestSchema;
+    output: typeof ListDirResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_guest_v1_file_share, 0);
