@@ -340,6 +340,14 @@ Hangar has one host, so only the second shape keeps the host out of it.
   which changes the container alone but makes it a bridge.
 - Every inline list of machines shows at most two names and the rest
   behind "+N more"; tables show the first rows and "Show all N".
+- **A share's files have a page of their own**
+  (`/file-shares/<name>/files`), opened from "Browse files" on the
+  share's page for whoever holds `storage.fileshares.browse`: the
+  directory's path from the share's root, a table of its entries by
+  name, and "Load more". The directory is in the URL, each name's bytes
+  percent-encoded, so any name links. A server not running, one booted
+  before it could list, and a directory too large each say so in place
+  of the table. Settled with the owner on screenshots.
 
 ## Consequences
 

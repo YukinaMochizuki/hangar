@@ -22,7 +22,7 @@ import { toYaml } from "@/lib/manifest";
 import { quantityGiB } from "@/lib/quantity";
 import { staleGrow, type GrowRequest, type Listing } from "@/lib/storage";
 
-export const sharePerms = { apply: "storage.fileshares.apply", delete: "storage.fileshares.delete" } as const;
+export const sharePerms = { apply: "storage.fileshares.apply", delete: "storage.fileshares.delete", browse: "storage.fileshares.browse" } as const;
 
 // The API's largest page: a project holds far fewer shares than this.
 const pageSize = 1000;

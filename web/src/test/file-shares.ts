@@ -3,7 +3,7 @@
 // Machines, and what the New machine page reads, answering which
 // permissions the caller holds.
 
-import { clone, create } from "@bufbuild/protobuf";
+import { clone, create, type MessageInitShape } from "@bufbuild/protobuf";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { ContainerSchema, ContainerService, type ApplyContainerRequest, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { MachineSchema, MachineService, type Machine } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
@@ -23,6 +23,7 @@ import {
   type DeleteFileShareRequest,
   type FileShare,
 } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
+import { FileShareFilesService, type ListFilesRequest, type ListFilesResponseSchema } from "@hangar/api/hangar/storage/v1alpha1/file_share_files_pb";
 import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
@@ -125,6 +126,8 @@ export type Fake = {
   applyContainer?: (req: ApplyContainerRequest) => void;
   /** Makes ListMachines fail with this. */
   machinesFail?: ConnectError;
+  /** Answers ListFiles; unset, every directory is empty. */
+  files?: (req: ListFilesRequest) => MessageInitShape<typeof ListFilesResponseSchema> | Promise<MessageInitShape<typeof ListFilesResponseSchema>>;
 };
 
 /**
@@ -195,5 +198,6 @@ export function sharesApi(f: Fake = {}) {
       listProjects: () => ({ items: [] }),
     });
     r.service(TenantService, { listTenants: () => ({ items: [] }) });
+    r.service(FileShareFilesService, { listFiles: async (req) => (f.files ? await f.files(req) : {}) });
   });
 }
