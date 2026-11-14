@@ -29,6 +29,9 @@ export function otherTiles(limits: Limits | undefined, usage: Usage | undefined,
     { key: "publicEndpoints", label: "Public endpoints", used: usage?.publicEndpoints ?? 0, limit: limits?.publicEndpoints },
     { key: "portForwards", label: "Port forwards", used: usage?.portForwards ?? 0, limit: limits?.portForwards },
     { key: "serviceTokens", label: "Service tokens", used: usage?.serviceTokens ?? 0, limit: limits?.serviceTokens },
+    { key: "fileShares", label: "File shares", used: usage?.fileShares ?? 0, limit: limits?.fileShares },
+    { key: "customImages", label: "Custom images", used: usage?.customImages ?? 0, limit: limits?.customImages },
+    { key: "networkEndpoints", label: "Network endpoints", used: usage?.networkEndpoints ?? 0, limit: limits?.networkEndpoints },
     ...(withProjects ? [{ key: "domains", label: "Domains", used: usage?.domains ?? 0, limit: limits?.domains }] : []),
   ];
 }

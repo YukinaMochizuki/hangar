@@ -31,7 +31,7 @@ afterEach(cleanup);
 
 const projects = [
   { metadata: { name: "acme-web" }, spec: { tenant: "acme", displayName: "Web" }, status: { usage: { machines: 2, cpu: "4", memory: "4Gi", disk: "20Gi" } } },
-  { metadata: { name: "acme-agents" }, spec: { tenant: "acme", displayName: "Agents" }, status: { usage: { machines: 1, cpu: "1", memory: "1Gi", disk: "10Gi" } } },
+  { metadata: { name: "acme-agents" }, spec: { tenant: "acme", displayName: "Agents", limits: { cpu: "2", memory: "4Gi" } }, status: { usage: { machines: 1, cpu: "1", memory: "1Gi", disk: "10Gi" } } },
   { metadata: { name: "zeta-lab" }, spec: { tenant: "zeta", displayName: "Research" } },
 ];
 const create = "tenancy.projects.apply";
@@ -163,6 +163,29 @@ describe("TenantOverview", () => {
     cleanup();
     show();
     expect(await screen.findByRole("button", { name: /New project/ })).toBeTruthy();
+  });
+
+  it("shows a project's own limit after what it uses, and none for a project that follows the plan", async () => {
+    show();
+    const row = (await screen.findByText("Agents")).closest("tr")!;
+    const cells = [...row.querySelectorAll("td")].map((td) => td.textContent);
+    expect(cells.slice(1, 5)).toEqual(["1", "1 / 2", "1 / 4 GiB", "10 GiB"]);
+    const web = [...screen.getByText("Web").closest("tr")!.querySelectorAll("td")].map((td) => td.textContent);
+    expect(web.slice(1, 5)).toEqual(["2", "4", "4 GiB", "20 GiB"]);
+    expect(screen.getByText(/A number after a slash is the project's own limit/)).toBeTruthy();
+  });
+
+  it("offers Edit limits in a project's menu only to who may change the tenant's projects", async () => {
+    const a = show({ creatableIn: [] });
+    await waitFor(() => expect(a.calls).toContain("TestPermissions"));
+    await screen.findByText("Web");
+    expect(screen.queryByRole("button", { name: "Actions for acme-agents" })).toBeNull();
+    cleanup();
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for acme-agents" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Edit limits/ }));
+    expect(await screen.findByText("Limits of Agents")).toBeTruthy();
+    expect((screen.getByLabelText("vCPU") as HTMLInputElement).value).toBe("2");
   });
 });
 

@@ -223,14 +223,14 @@ func (a *app) memberRemoveCmd(tenant *string) *cobra.Command {
 	}
 }
 
-// projectCmd is "project": the projects the caller reaches, and which one
-// the context uses.
+// projectCmd is "project": the projects the caller reaches, which one the
+// context uses, and a project's own limits (projectlimits.go).
 func (a *app) projectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
-		Short: "List the projects you reach, and switch the context's project",
+		Short: "List the projects you reach, switch the context's project, and set a project's own limits",
 	}
-	cmd.AddCommand(a.projectListCmd(), a.projectUseCmd())
+	cmd.AddCommand(a.projectListCmd(), a.projectUseCmd(), a.projectLimitsCmd(), a.projectSetLimitsCmd())
 	return cmd
 }
 
