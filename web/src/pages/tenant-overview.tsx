@@ -4,24 +4,54 @@
 
 import { useQuery } from "@connectrpc/connect-query";
 import { Link } from "@tanstack/react-router";
+import type { Project } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
+import { RowMenu } from "@/components/menu";
+import { ProjectLimitsDialog, useMaySetLimits } from "@/components/project-limits-dialog";
+import { limitDims, limitValue, ownLimitCount, type LimitKey } from "@/lib/project-limits";
 import { OtherLimits, computeTiles, otherTiles, QuotaTiles } from "@/components/quota";
 import { Topbar, useTenantName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
 import { Button, Card, CardHeader, CopyButton } from "@/components/ui";
 import { createProject, NewProjectDialog } from "@/components/project-picker";
 import { useCan } from "@/lib/permissions";
-import { Plus } from "lucide-react";
+import { Gauge, Plus } from "lucide-react";
 import { useState } from "react";
 import { isNotFound, isPermissionDenied } from "@/lib/api";
 import { projectLabel, useProjects } from "@/lib/projects";
-import { formatNumber, quantityCPU, quantityGiB } from "@/lib/quantity";
+import { formatNumber } from "@/lib/quantity";
+
+/** What the project uses of a limit that sizes machines, with its own limit after a slash when it sets one. */
+function UsageCell({ p, dim }: { p: Project; dim: LimitKey }) {
+  const d = limitDims.find((x) => x.key === dim)!;
+  const used = limitValue(d, p.status?.usage) ?? 0;
+  const own = limitValue(d, p.spec?.limits);
+  const unit = d.unit ? ` ${d.unit}` : "";
+  return (
+    <td className="px-4 py-2.5 text-right font-mono tabular">
+      {formatNumber(used)}
+      {own === undefined ? unit : <span className="text-subtle">{` / ${formatNumber(own)}${unit}`}</span>}
+    </td>
+  );
+}
+
+/** A project's actions: Edit limits, where the caller may change them; the cell stays, empty, where it may not. */
+function ProjectRowMenu({ p, may }: { p: Project; may: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!may) return <span className="block size-8" />;
+  return (
+    <RowMenu label={`Actions for ${p.metadata?.name}`} actions={[{ label: "Edit limits", icon: Gauge, onSelect: () => setOpen(true) }]}>
+      {() => open && <ProjectLimitsDialog project={p} onClose={() => setOpen(false)} />}
+    </RowMenu>
+  );
+}
 
 function Projects({ tenant }: { tenant: string }) {
   const { projects, loading, error, refetch } = useProjects();
   const own = projects.filter((p) => p.spec?.tenant === tenant);
   const [creating, setCreating] = useState(false);
   const mayCreate = useCan({ level: "tenant", name: tenant }, [createProject]).can(createProject);
+  const maySetLimits = useMaySetLimits(tenant);
   return (
     <Card className="overflow-x-auto">
       <CardHeader
@@ -43,7 +73,7 @@ function Projects({ tenant }: { tenant: string }) {
       {error ? (
         <ErrorNotice error={error} title="The projects did not load" onRetry={() => void refetch()} />
       ) : (
-        <table className="w-full min-w-[560px] text-[13px]">
+        <table className="w-full min-w-[600px] text-[13px]">
           <thead>
             <tr className="border-b bg-surface-2/60 text-left text-[11.5px] text-subtle">
               <th className="px-4 py-2 font-medium">Project</th>
@@ -51,12 +81,12 @@ function Projects({ tenant }: { tenant: string }) {
               <th className="px-4 py-2 text-right font-medium">vCPU</th>
               <th className="px-4 py-2 text-right font-medium">Memory</th>
               <th className="px-4 py-2 text-right font-medium">Disk</th>
+              <th className="w-12 px-2 py-2" aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
             {own.map((p) => {
               const name = p.metadata?.name ?? "";
-              const u = p.status?.usage;
               return (
                 <tr key={name} className="group border-b last:border-0 hover:bg-surface-2/60">
                   <td className="px-4 py-2.5">
@@ -65,22 +95,30 @@ function Projects({ tenant }: { tenant: string }) {
                       <span className="block truncate font-mono text-[11.5px] text-subtle">{name}</span>
                     </Link>
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono tabular">{u?.machines ?? 0}</td>
-                  <td className="px-4 py-2.5 text-right font-mono tabular">{formatNumber(quantityCPU(u?.cpu || "0"))}</td>
-                  <td className="px-4 py-2.5 text-right font-mono tabular">{formatNumber(quantityGiB(u?.memory || "0"))} GiB</td>
-                  <td className="px-4 py-2.5 text-right font-mono tabular">{formatNumber(quantityGiB(u?.disk || "0"))} GiB</td>
+                  <UsageCell p={p} dim="machines" />
+                  <UsageCell p={p} dim="cpu" />
+                  <UsageCell p={p} dim="memory" />
+                  <UsageCell p={p} dim="disk" />
+                  <td className="px-2 py-1.5">
+                    <ProjectRowMenu p={p} may={maySetLimits} />
+                  </td>
                 </tr>
               );
             })}
             {!loading && own.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={6} className="px-4 py-8 text-center text-muted">
                   No projects
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      )}
+      {own.some((p) => ownLimitCount(p) > 0) && (
+        <div className="border-t px-4 py-2 text-[11.5px] text-subtle">
+          A number after a slash is the project's own limit, inside the plan's; Edit limits in a project's menu changes them.
+        </div>
       )}
     </Card>
   );

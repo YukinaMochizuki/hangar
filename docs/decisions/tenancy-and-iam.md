@@ -354,7 +354,10 @@ tenant's: what all its projects together hold, against its Plan.
   tenant's limits, and the limits that hold for a project are the smaller of
   the two. Changing it needs apply on projects at the tenant (a grant on the
   tenant or the platform), so a role held on the project alone cannot raise
-  its own budget, however broad.
+  its own budget, however broad. `hangar project limits` shows a project's
+  own limits beside the plan's, those in effect and its usage, and
+  `hangar project set-limits` sets or unsets some of them, keeping the rest;
+  the console's Edit limits does the same (`console-design.md`).
 - Containers and VMs count alike, as the machines they become, with the
   defaults and the rounding their controllers apply: what the node is asked
   for. cpu and memory count only machines asked to run; a stopped machine

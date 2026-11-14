@@ -222,6 +222,24 @@ it shows the project's usage against its limits.
   project is drawn only when there is one. When the tenant
   already holds as many projects as its plan allows, that is stated above
   the button, which is disabled.
+- **A project's own limits** (`tenancy-and-iam.md`) are changed in Edit
+  limits, a dialog opened from the project's Overview and from the project's
+  row menu on its tenant's Overview, drawn only where TestPermissions holds
+  `tenancy.projects.apply` at the tenant, the grant the API requires
+  (`web/src/components/project-limits-dialog.tsx`,
+  `web/src/lib/project-limits.ts`). One field a limit the project may set,
+  each beside what the project uses and the plan's limit; an empty field is
+  no limit of its own, so the plan's holds. A value above the plan's is
+  stated and not sent. The dialog shows the `hangar project set-limits`
+  command for its changes, and applies the project as it opened, at its
+  resource version. The usage controller writes a project's status whenever
+  what its tenant holds changes, which moves that version, so on Aborted the
+  dialog reads the project again and, when its own limits are as they were,
+  makes the change on it; when they changed, it says so and Reload starts it
+  again from them. The tenant's Projects table shows a project's own limit
+  after what it uses, as `1 / 2`, for the four that size machines. Settled
+  with the owner on screenshots: a column of limits in words beside an Edit
+  button in every row read as clutter.
 
 ### Members
 

@@ -10,6 +10,7 @@ import { ArrowRight, Plus } from "lucide-react";
 import { ChassisArt } from "@/components/chassis-art";
 import { CliSetupCard } from "@/components/cli-setup";
 import { PageBanner } from "@/components/notice";
+import { EditLimitsButton } from "@/components/project-limits-dialog";
 import { computeTiles, OtherLimits, otherTiles, QuotaTiles } from "@/components/quota";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
@@ -271,7 +272,10 @@ export function Overview() {
             <CopyButton text={project} />
           </div>
         </div>
-        <NewMachineLink project={project} />
+        <div className="flex shrink-0 items-center gap-2">
+          <EditLimitsButton project={p} />
+          <NewMachineLink project={project} />
+        </div>
       </div>
       <div className="space-y-5 px-4 pb-10 md:px-8">
         <QuotaTiles tiles={computeTiles(p?.status?.limits, p?.status?.usage)} loading={q.isPending} />
