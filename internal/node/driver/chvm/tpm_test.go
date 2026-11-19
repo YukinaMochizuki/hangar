@@ -334,7 +334,7 @@ func TestStartWritesATPMVM(t *testing.T) {
 	for name, want := range map[string]any{
 		"LimitNOFILE":     uint64(1048576),
 		"LimitNOFILESoft": uint64(unitNoFileSoft),
-		"TasksMax":        unitTasks(bare) + tpmTasks,
+		"TasksMax":        unitTasks(bare, len(spec.Disks)) + tpmTasks,
 		"MemoryMax":       vmMemoryMax(spec.MemoryMiB) + tpmMemory,
 		"TimeoutStopUSec": usec(stopTimeout(testGrace, testSlack, bare) + killGrace),
 	} {

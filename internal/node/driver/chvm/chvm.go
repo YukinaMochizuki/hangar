@@ -295,7 +295,41 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 		h.sd.close()
 		return nil, fmt.Errorf("clearing what converter VMs left: %w", err)
 	}
+	if err := h.raiseTasks(ctx); err != nil {
+		h.sd.close()
+		return nil, fmt.Errorf("raising running VMs' TasksMax: %w", err)
+	}
 	return h, nil
+}
+
+// raiseTasks raises each running confined VM unit's TasksMax to what its
+// launch has now, never lowering one (docs/decisions/node-agent.md). A unit
+// gone meanwhile, or whose launch cannot be read, is left to VMs.
+func (h *Hypervisor) raiseTasks(ctx context.Context) error {
+	units, err := h.sd.list(ctx)
+	if err != nil {
+		return err
+	}
+	for _, u := range units {
+		uid, ok := uidOfUnit(u.Name)
+		if !ok || !running(u) {
+			continue
+		}
+		ln, err := readLaunch(h.dir(uid))
+		// A launcher running Cloud Hypervisor as root has no TasksMax.
+		if err != nil || ln.VMUser == 0 {
+			continue
+		}
+		want := unitTasks(ln.Spec, diskCount(ln))
+		have, err := h.sd.tasksMax(ctx, u.Name)
+		if err == nil && have < want {
+			err = h.sd.setProps(ctx, u.Name, tasksProps(want))
+		}
+		if err != nil && !notLoaded(err) {
+			return fmt.Errorf("%s: %w", u.Name, err)
+		}
+	}
+	return nil
 }
 
 // Close releases the connection to systemd. The VMs run on.
@@ -566,6 +600,7 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 		ln.Initramfs = h.cfg.ConverterInitramfs
 		sb.Binds = []string{h.cfg.Launcher[0], h.cfg.CloudHypervisor, h.cfg.Kernel, h.cfg.ConverterInitramfs, c.File}
 	}
+	sb.Disks = diskCount(ln)
 	user, err := h.writeLaunch(dir, ln)
 	if err != nil {
 		return err

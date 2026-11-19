@@ -319,7 +319,7 @@ only as a socket, never through a link Cloud Hypervisor put in its place.
 | `PrivateNetwork`, `IPAddressDeny=any`, `RestrictAddressFamilies=AF_UNIX AF_NETLINK` | Any network but its taps' fds, and the host's abstract sockets |
 | `ProtectProc=invisible`, `ProcSubset=pid` | Seeing the host's other processes and its kernel settings |
 | `ProtectKernel*`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `LockPersonality`, `MemoryDenyWriteExecute`, `RestrictRealtime`, `RestrictSUIDSGID`, `RestrictNamespaces=net`, a system call deny list, `LimitCORE=0`, `KeyringMode=private` | Changing the kernel, the clock or the hostname; keys a later VM of the same uid could read; a core holding the guest's memory |
-| `MemoryMax` (the guest's memory, 256 MiB, and 2% of the guest's, 16 MiB more for a TPM VM's swtpm), `TasksMax` (64 and two a vCPU, 16 more for a firmware VM's console helper, 8 more for swtpm) | Taking the host's memory or tasks |
+| `MemoryMax` (the guest's memory, 256 MiB, and 2% of the guest's, 16 MiB more for a TPM VM's swtpm), `TasksMax` (64 and two a vCPU, 128 a disk Cloud Hypervisor serves for its io_uring's workers, 16 more for a firmware VM's console helper, 8 more for swtpm) | Taking the host's memory or tasks |
 
 `MemoryMax` was measured (2026-10, `TestMemoryOverhead` in
 `test/testbed/vms`) with guests of 1, 4 and 16 GiB filling half their
@@ -329,6 +329,31 @@ tables, which grow with the guest; a guest that barely ran peaked at 113,
 239 and 463 MiB, its kernel touching its memory map. 256 MiB and 2% (584
 MiB past a 16 GiB guest) leave room for that many times over, and for the
 unit's page cache, which is reclaimed before the limit kills anything.
+
+`TasksMax` has room for every disk's I/O workers. Cloud Hypervisor serves
+each disk from one queue, an io_uring as deep as the queue (128), and a
+zvol takes no I/O without blocking, so the kernel hands each request to an
+io-wq worker, a thread of Cloud Hypervisor's in the unit, up to
+`min(ring depth, 4 × host CPUs)` of them per ring. A ring without a worker
+that cannot make one within `TasksMax` fails every request queued on it
+with `ECANCELED`, which the guest reads as an I/O error. In 2026-11, under
+a limit of 64 and two a vCPU, a container's `/workspace` failed so for 5 s
+and ext4 went read-only (hangar#259); 22 of the host's 26 VM units had
+reached their limit. A probe on kernel 6.8, filling one ring's workers to
+the limit and then queueing on another, saw every request of the second
+fail so; with room for both rings' workers, none did. A starting agent
+gives each running confined VM unit the `TasksMax` its launch has now, at
+runtime, so a VM started under a smaller limit takes the new one without
+restarting.
+
+A VM's task ceiling therefore grows with its disks, which its owner
+chooses: a container mounts at most 8 volumes (`MaxVolumes`), so it has at
+most 11 disks and about 1,500 tasks; a VM's disks have no count limit, and
+nothing caps the tasks of `hangar.slice` as a whole. Each worker's kernel
+stack (16 KiB) and task are charged to the unit's memory: about 4 MiB a
+disk, 44 MiB for an 11-disk container, computed rather than measured
+(`TestMemoryOverhead` ran under the old limit), within `MemoryMax`'s 256
+MiB.
 
 Every VM has a balloon that is never inflated, `--balloon
 size=0,free_page_reporting=on`: the guest reports the pages it frees and

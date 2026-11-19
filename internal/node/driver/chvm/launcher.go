@@ -747,10 +747,7 @@ func unmountNetns() error {
 // ExecMain, which runs it as that user with the KVM device's group if it
 // needs one; with none, Cloud Hypervisor itself, as root.
 func (l *Launcher) command(ln launch, dir string, taps int) (*exec.Cmd, error) {
-	args := chArgs(ln, dir, taps)
-	if ln.Spec.Firmware {
-		args = firmwareArgs(ln, dir, taps)
-	}
+	args := vmArgs(ln, dir, taps)
 	if ln.VMUser == 0 {
 		return exec.Command(ln.CloudHypervisor, args...), nil
 	}
@@ -776,6 +773,33 @@ func kvmGroups(kvm string) (string, error) {
 		return fmt.Sprint(st.Gid), nil
 	}
 	return "", fmt.Errorf("%s is open to neither its group nor everyone", kvm)
+}
+
+// vmArgs is Cloud Hypervisor's command line for the launch, a firmware VM's
+// or a direct-boot one's.
+func vmArgs(ln launch, dir string, taps int) []string {
+	if ln.Spec.Firmware {
+		return firmwareArgs(ln, dir, taps)
+	}
+	return chArgs(ln, dir, taps)
+}
+
+// diskCount is how many disks Cloud Hypervisor serves for the launch: what
+// follows its --disk.
+func diskCount(ln launch) int {
+	args := vmArgs(ln, "", 0)
+	i := slices.Index(args, "--disk")
+	if i < 0 {
+		return 0
+	}
+	n := 0
+	for _, a := range args[i+1:] {
+		if strings.HasPrefix(a, "--") {
+			break
+		}
+		n++
+	}
+	return n
 }
 
 // freePageReporting is the balloon every VM has: never inflated, it only

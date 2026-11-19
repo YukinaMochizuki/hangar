@@ -22,6 +22,10 @@ type systemd interface {
 	// slice makes a transient slice with a description and props, or sets
 	// props on the one loaded already.
 	slice(ctx context.Context, name, description string, props []sd.Property) error
+	// setProps sets props on a loaded unit until it stops.
+	setProps(ctx context.Context, name string, props []sd.Property) error
+	// tasksMax is a loaded service's TasksMax.
+	tasksMax(ctx context.Context, name string) (uint64, error)
 	// stop stops a unit and waits for its job; stopping what is not
 	// loaded is not an error.
 	stop(ctx context.Context, name string) error
@@ -115,19 +119,28 @@ type sandbox struct {
 	// RLIMIT_NOFILE its unit has, which vmm-exec gives swtpm.
 	TPMKey string
 	NoFile uint64
+	// Disks is how many disks Cloud Hypervisor serves.
+	Disks int
 }
 
-// vmTasks are the unit's tasks past two per vCPU; helperTasks, a firmware
-// VM's console helper's past those: a Go runtime that cannot make a thread
-// within TasksMax dies.
+// vmTasks are the unit's tasks past two per vCPU and its disks' I/O
+// workers; helperTasks, a firmware VM's console helper's past those: a Go
+// runtime that cannot make a thread within TasksMax dies. diskTasks are one
+// disk's io_uring workers, at most its one queue's depth, Cloud
+// Hypervisor's default of 128 (docs/decisions/node-agent.md).
 const (
 	vmTasks     = 64
 	helperTasks = 16
+	diskTasks   = 128
 )
 
-// unitTasks is the unit's TasksMax.
-func unitTasks(spec driver.VMSpec) uint64 {
-	n := uint64(vmTasks + 2*spec.VCPUs)
+// tasksProps sets a unit's TasksMax to n.
+func tasksProps(n uint64) []sd.Property { return []sd.Property{property("TasksMax", n)} }
+
+// unitTasks is the unit's TasksMax, for a VM whose Cloud Hypervisor serves
+// disks disks.
+func unitTasks(spec driver.VMSpec, disks int) uint64 {
+	n := uint64(vmTasks+2*spec.VCPUs) + uint64(diskTasks*disks)
 	if spec.Firmware {
 		n += helperTasks
 	}
@@ -265,7 +278,7 @@ func (sb sandbox) props(spec driver.VMSpec) []sd.Property {
 		// A core of Cloud Hypervisor would hold the guest's memory.
 		property("LimitCORE", uint64(0)),
 		property("MemoryMax", memory),
-		property("TasksMax", unitTasks(spec)),
+		property("TasksMax", unitTasks(spec, sb.Disks)),
 	}
 	if spec.TPM {
 		props = append(props,
@@ -469,6 +482,30 @@ func (s *dbusSystemd) slice(ctx context.Context, name, description string, props
 		return err
 	}
 	return job(ctx, name, results)
+}
+
+func (s *dbusSystemd) setProps(ctx context.Context, name string, props []sd.Property) error {
+	c, err := s.connect(ctx)
+	if err != nil {
+		return err
+	}
+	return c.SetUnitPropertiesContext(ctx, name, true, props...)
+}
+
+func (s *dbusSystemd) tasksMax(ctx context.Context, name string) (uint64, error) {
+	c, err := s.connect(ctx)
+	if err != nil {
+		return 0, err
+	}
+	p, err := c.GetServicePropertyContext(ctx, name, "TasksMax")
+	if err != nil {
+		return 0, err
+	}
+	n, ok := p.Value.Value().(uint64)
+	if !ok {
+		return 0, fmt.Errorf("%s's TasksMax is %s", name, p.Value)
+	}
+	return n, nil
 }
 
 // notLoaded reports systemd's error for a unit it does not have.
