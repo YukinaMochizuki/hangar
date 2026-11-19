@@ -1,6 +1,7 @@
 package chvm
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -448,7 +449,7 @@ func TestStartConfinesTheUnit(t *testing.T) {
 	for name, want := range map[string]any{
 		"DevicePolicy": "closed", "NoNewPrivileges": true, "PrivateNetwork": true, "ProtectProc": "invisible",
 		"MountAPIVFS": true, "AmbientCapabilities": uint64(0), "LimitCORE": uint64(0),
-		"MemoryMax": vmMemoryMax(512), "TasksMax": uint64(vmTasks + 4),
+		"MemoryMax": vmMemoryMax(512), "TasksMax": uint64(vmTasks + 4 + 2*diskTasks),
 	} {
 		if got := prop(props, name); got != want {
 			t.Errorf("%s=%v, want %v", name, got, want)
@@ -463,6 +464,103 @@ func TestStartConfinesTheUnit(t *testing.T) {
 	for _, p := range props {
 		if p.Name == "ProtectSystem" || p.Name == "PrivateTmp" || p.Name == "ProtectHome" {
 			t.Errorf("%s would bind the host's root, a writable directory, or nothing of /home into the empty one", p.Name)
+		}
+	}
+}
+
+// TestTasksMaxHoldsEveryDisksWorkers: a VM's unit has 128 tasks for each
+// disk Cloud Hypervisor serves, none of which sets its queues
+// (docs/decisions/node-agent.md).
+func TestTasksMaxHoldsEveryDisksWorkers(t *testing.T) {
+	img := filepath.Join(t.TempDir(), "tailscale.img")
+	if err := os.WriteFile(img, []byte("ext4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fw := filepath.Join(t.TempDir(), "CLOUDHV.fd")
+	if err := os.WriteFile(fw, []byte("fw"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newFakeSystemd()
+	h := newDriverWith(t, shortDir(t), s, &fakeGuest{}, func(c *Config) { c.TailscaleDisk, c.Firmware = img, fw })
+	container := testSpec("m1", driver.RestartAlways)
+	container.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/a"}, {DiskUID: "d2", Path: "/dev/zvol/b"}}
+	firmware := driver.VMSpec{MachineUID: "m2", Machine: "proj/vm", VCPUs: 4, MemoryMiB: 256, Firmware: true, Disks: []driver.Volume{{DiskUID: "d3", Path: "/dev/zvol/c"}}}
+	for _, c := range []struct {
+		spec  driver.VMSpec
+		disks int
+		extra uint64
+	}{
+		// The root, the boot disk, two volumes and the tailscale disk.
+		{container, 5, 0},
+		{firmware, 1, helperTasks},
+	} {
+		if err := h.Start(t.Context(), c.spec); err != nil {
+			t.Fatal(err)
+		}
+		ln, err := readLaunch(h.dir(c.spec.MachineUID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := diskCount(ln); got != c.disks {
+			t.Errorf("%s: Cloud Hypervisor serves %d disks, want %d", c.spec.MachineUID, got, c.disks)
+		}
+		want := uint64(vmTasks+2*c.spec.VCPUs) + uint64(c.disks*128) + c.extra
+		if got := prop(s.props[unitName(c.spec.MachineUID)], "TasksMax"); got != want {
+			t.Errorf("%s: TasksMax=%v, want %d", c.spec.MachineUID, got, want)
+		}
+		args := vmArgs(ln, h.dir(c.spec.MachineUID), 0)
+		for _, a := range args[slices.Index(args, "--disk")+1:] {
+			if strings.HasPrefix(a, "--") {
+				break
+			}
+			if strings.Contains(a, "num_queues=") || strings.Contains(a, "queue_size=") {
+				t.Errorf("%s: disk %q sets its queues: 128 tasks a disk no longer hold its workers", c.spec.MachineUID, a)
+			}
+		}
+	}
+}
+
+// TestAStartingDriverRaisesRunningUnitsTasks: a starting driver raises a
+// running confined unit's smaller TasksMax, and leaves a root-launched,
+// hand-raised, stopped or unreadable one as it is.
+func TestAStartingDriverRaisesRunningUnitsTasks(t *testing.T) {
+	s := newFakeSystemd()
+	dir := shortDir(t)
+	h := newDriver(t, dir, s, &fakeGuest{})
+	left := map[string]uint64{"root": 68, "hand": 5000, "failed": 68, "unreadable": 68}
+	for _, uid := range []string{"old", "root", "hand", "failed", "unreadable"} {
+		if err := h.Start(t.Context(), testSpec(uid, driver.RestartAlways)); err != nil {
+			t.Fatal(err)
+		}
+		// As an agent from before hangar#259 left it, or an operator.
+		if err := s.setProps(t.Context(), unitName(uid), tasksProps(cmp.Or(left[uid], 68))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root, err := readLaunch(h.dir("root"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root.VMUser = 0
+	b, err := json.Marshal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for uid, content := range map[string][]byte{"root": b, "unreadable": []byte("{")} {
+		if err := writeAtomic(filepath.Join(h.dir(uid), specFile), content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.mu.Lock()
+	s.units[unitName("failed")].Active = "failed"
+	s.mu.Unlock()
+	newDriver(t, dir, s, &fakeGuest{})
+	if got, want := prop(s.props[unitName("old")], "TasksMax"), unitTasks(testSpec("old", driver.RestartAlways), 2); got != want {
+		t.Errorf("old: TasksMax=%v, want %d", got, want)
+	}
+	for uid, want := range left {
+		if got := prop(s.props[unitName(uid)], "TasksMax"); got != want {
+			t.Errorf("%s: TasksMax=%v, want it left at %d", uid, got, want)
 		}
 	}
 }

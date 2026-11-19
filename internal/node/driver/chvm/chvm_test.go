@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -51,6 +52,37 @@ func (f *fakeSystemd) start(_ context.Context, name string, props []sd.Property)
 	f.units[name] = &unitState{Name: name, Active: "active", Started: time.Now().Truncate(time.Microsecond)}
 	f.props[name] = props
 	return nil
+}
+
+func (f *fakeSystemd) setProps(_ context.Context, name string, props []sd.Property) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.units[name]; !ok {
+		return fmt.Errorf("unit %s not loaded", name)
+	}
+	for _, p := range props {
+		i := slices.IndexFunc(f.props[name], func(q sd.Property) bool { return q.Name == p.Name })
+		if i < 0 {
+			f.props[name] = append(f.props[name], p)
+		} else {
+			f.props[name][i] = p
+		}
+	}
+	return nil
+}
+
+func (f *fakeSystemd) tasksMax(_ context.Context, name string) (uint64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.units[name]; !ok {
+		return 0, fmt.Errorf("unit %s not loaded", name)
+	}
+	for _, p := range f.props[name] {
+		if p.Name == "TasksMax" {
+			return p.Value.Value().(uint64), nil
+		}
+	}
+	return math.MaxUint64, nil
 }
 
 func (f *fakeSystemd) slice(_ context.Context, name, _ string, props []sd.Property) error {
