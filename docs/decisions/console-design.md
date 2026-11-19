@@ -22,6 +22,17 @@ the front door (`front-door.md`) from the same release as the binaries.
   the repo. Fonts (Geist, Geist Mono) come from npm and are served with the
   console's files: nothing is loaded from another origin.
 - `pnpm --dir web typecheck`, `lint` and `build` are what CI runs on it.
+- **The build targets Baseline widely available** (`build.target` in
+  `web/vite.config.ts`, the list Vite 7 uses by default), not Vite 6's
+  ES2020-era default. For an older target esbuild lowers newer syntax while
+  it minifies, and esbuild 0.25's lowering of a logical assignment (`||=`)
+  in xterm.js's DECRQM handler assigned to an undeclared variable: the first
+  `CSI ? Ps $ p` a program sent (vim 9.1 sends one as it starts) threw in
+  the parser and the terminal drew nothing more.
+  `web/src/components/xterm-build.test.ts` builds the console and asks the
+  emitted xterm chunk a mode. The list is what the build lowers to, not the
+  browsers the console supports: Tailwind 4's CSS already needs newer ones
+  (Safari 16.4, Chrome 111, Firefox 128).
 
 ### Look
 

@@ -47,11 +47,16 @@ const consoleHeaders = {
 // port is forwarded (docs/runbook/dev-env.md).
 const host = process.env.HANGAR_DEV_HOST || "127.0.0.1";
 
+// What the build lowers to: Baseline widely available, as esbuild's lowering
+// for older targets breaks xterm (docs/decisions/console-design.md).
+const buildTarget = ["chrome107", "edge107", "firefox104", "safari16"];
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
+  build: { target: buildTarget },
   server: { host, port: 5173, proxy: apiPaths },
   preview: { host, port: 4173, proxy: apiPaths, headers: consoleHeaders },
   // Components' tests ask for jsdom in their first line.
