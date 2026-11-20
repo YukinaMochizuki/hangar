@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	sd "github.com/coreos/go-systemd/v22/dbus"
 	"golang.org/x/sys/unix"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -449,7 +450,7 @@ func TestStartConfinesTheUnit(t *testing.T) {
 	for name, want := range map[string]any{
 		"DevicePolicy": "closed", "NoNewPrivileges": true, "PrivateNetwork": true, "ProtectProc": "invisible",
 		"MountAPIVFS": true, "AmbientCapabilities": uint64(0), "LimitCORE": uint64(0),
-		"MemoryMax": vmMemoryMax(512), "TasksMax": uint64(vmTasks + 4 + 2*diskTasks),
+		"MemoryMax": vmMemoryMax(512), "MemorySwapMax": uint64(0), "TasksMax": uint64(vmTasks + 4 + 2*diskTasks),
 	} {
 		if got := prop(props, name); got != want {
 			t.Errorf("%s=%v, want %v", name, got, want)
@@ -561,6 +562,122 @@ func TestAStartingDriverRaisesRunningUnitsTasks(t *testing.T) {
 	for uid, want := range left {
 		if got := prop(s.props[unitName(uid)], "TasksMax"); got != want {
 			t.Errorf("%s: TasksMax=%v, want it left at %d", uid, got, want)
+		}
+	}
+}
+
+// TestEveryZvolIsOpenedDirect: Cloud Hypervisor opens every zvol it serves,
+// a container's root and volumes and a firmware VM's disks, with O_DIRECT,
+// so the guest's I/O puts none of the host's page cache in the VM's unit,
+// and the files it reads, the boot and tailscale disks, buffered
+// (docs/decisions/node-agent.md).
+func TestEveryZvolIsOpenedDirect(t *testing.T) {
+	img := filepath.Join(t.TempDir(), "tailscale.img")
+	if err := os.WriteFile(img, []byte("ext4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fw := filepath.Join(t.TempDir(), "CLOUDHV.fd")
+	if err := os.WriteFile(fw, []byte("fw"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newFakeSystemd()
+	h := newDriverWith(t, shortDir(t), s, &fakeGuest{}, func(c *Config) { c.TailscaleDisk, c.Firmware = img, fw })
+	container := testSpec("m1", driver.RestartAlways)
+	container.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/a"}, {DiskUID: "d2", Path: "/dev/zvol/b"}}
+	container.Tailscale = &driver.TailscaleSpec{Hostname: "box"}
+	firmware := driver.VMSpec{MachineUID: "m2", Machine: "proj/vm", VCPUs: 1, MemoryMiB: 256, Firmware: true,
+		Disks: []driver.Volume{{DiskUID: "d3", Path: "/dev/zvol/c", Serial: "root"}, {DiskUID: "d4", Path: "/dev/zvol/d"}}}
+	for _, c := range []struct {
+		spec  driver.VMSpec
+		zvols []string
+		files int
+	}{
+		{container, []string{diskNode, volumeNode(0), volumeNode(1)}, 2},
+		{firmware, []string{volumeNode(0), volumeNode(1)}, 0},
+	} {
+		uid := c.spec.MachineUID
+		if err := h.Start(t.Context(), c.spec); err != nil {
+			t.Fatal(err)
+		}
+		ln, err := readLaunch(h.dir(uid))
+		if err != nil {
+			t.Fatal(err)
+		}
+		args := vmArgs(ln, h.dir(uid), 0)
+		opts := map[string]string{}
+		for _, a := range args[slices.Index(args, "--disk")+1:] {
+			if strings.HasPrefix(a, "--") {
+				break
+			}
+			path, _, _ := strings.Cut(strings.TrimPrefix(a, "path="), ",")
+			opts[path] = a
+		}
+		for _, node := range c.zvols {
+			a, ok := opts[filepath.Join(h.dir(uid), node)]
+			if !ok {
+				t.Errorf("%s: no disk at %s in %q", uid, node, args)
+				continue
+			}
+			if !slices.Contains(strings.Split(a, ","), "direct=on") {
+				t.Errorf("%s: zvol %s opened as %q, without direct=on", uid, node, a)
+			}
+			delete(opts, filepath.Join(h.dir(uid), node))
+		}
+		if len(opts) != c.files {
+			t.Errorf("%s: files %q, want %d", uid, opts, c.files)
+		}
+		for _, a := range opts {
+			if slices.Contains(strings.Split(a, ","), "direct=on") {
+				t.Errorf("%s: file opened as %q, want it buffered", uid, a)
+			}
+		}
+	}
+}
+
+// TestAVMsUnitNeverSwaps: a VM's unit has MemorySwapMax=0, and a starting
+// driver gives it to a running confined unit started without it, leaving a
+// root-launched, stopped or unreadable one as it is.
+func TestAVMsUnitNeverSwaps(t *testing.T) {
+	s := newFakeSystemd()
+	dir := shortDir(t)
+	h := newDriver(t, dir, s, &fakeGuest{})
+	uids := []string{"old", "root", "failed", "unreadable"}
+	for _, uid := range uids {
+		if err := h.Start(t.Context(), testSpec(uid, driver.RestartAlways)); err != nil {
+			t.Fatal(err)
+		}
+		if got := prop(s.props[unitName(uid)], "MemorySwapMax"); got != uint64(0) {
+			t.Errorf("%s started with MemorySwapMax=%v, want 0", uid, got)
+		}
+		// As an agent from before it left the unit.
+		s.mu.Lock()
+		s.props[unitName(uid)] = slices.DeleteFunc(s.props[unitName(uid)], func(p sd.Property) bool { return p.Name == "MemorySwapMax" })
+		s.mu.Unlock()
+	}
+	root, err := readLaunch(h.dir("root"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root.VMUser = 0
+	b, err := json.Marshal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for uid, content := range map[string][]byte{"root": b, "unreadable": []byte("{")} {
+		if err := writeAtomic(filepath.Join(h.dir(uid), specFile), content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.mu.Lock()
+	s.units[unitName("failed")].Active = "failed"
+	s.mu.Unlock()
+	newDriver(t, dir, s, &fakeGuest{})
+	if got := prop(s.props[unitName("old")], "MemorySwapMax"); got != uint64(0) {
+		t.Errorf("old: MemorySwapMax=%v after the driver started, want 0", got)
+	}
+	for _, uid := range uids[1:] {
+		if got := prop(s.props[unitName(uid)], "MemorySwapMax"); got != nil {
+			t.Errorf("%s: MemorySwapMax=%v, want it left unset", uid, got)
 		}
 	}
 }

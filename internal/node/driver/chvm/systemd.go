@@ -137,6 +137,11 @@ const (
 // tasksProps sets a unit's TasksMax to n.
 func tasksProps(n uint64) []sd.Property { return []sd.Property{property("TasksMax", n)} }
 
+// noSwap keeps a unit's memory, the guest's, out of the host's swap: at its
+// MemoryMax the kernel reclaims the unit's page cache alone, and a guest
+// never stalls on memory the host swapped out (docs/decisions/node-agent.md).
+func noSwap() sd.Property { return property("MemorySwapMax", uint64(0)) }
+
 // unitTasks is the unit's TasksMax, for a VM whose Cloud Hypervisor serves
 // disks disks.
 func unitTasks(spec driver.VMSpec, disks int) uint64 {
@@ -278,6 +283,7 @@ func (sb sandbox) props(spec driver.VMSpec) []sd.Property {
 		// A core of Cloud Hypervisor would hold the guest's memory.
 		property("LimitCORE", uint64(0)),
 		property("MemoryMax", memory),
+		noSwap(),
 		property("TasksMax", unitTasks(spec, sb.Disks)),
 	}
 	if spec.TPM {

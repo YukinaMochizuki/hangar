@@ -319,7 +319,7 @@ only as a socket, never through a link Cloud Hypervisor put in its place.
 | `PrivateNetwork`, `IPAddressDeny=any`, `RestrictAddressFamilies=AF_UNIX AF_NETLINK` | Any network but its taps' fds, and the host's abstract sockets |
 | `ProtectProc=invisible`, `ProcSubset=pid` | Seeing the host's other processes and its kernel settings |
 | `ProtectKernel*`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `LockPersonality`, `MemoryDenyWriteExecute`, `RestrictRealtime`, `RestrictSUIDSGID`, `RestrictNamespaces=net`, a system call deny list, `LimitCORE=0`, `KeyringMode=private` | Changing the kernel, the clock or the hostname; keys a later VM of the same uid could read; a core holding the guest's memory |
-| `MemoryMax` (the guest's memory, 256 MiB, and 2% of the guest's, 16 MiB more for a TPM VM's swtpm), `TasksMax` (64 and two a vCPU, 128 a disk Cloud Hypervisor serves for its io_uring's workers, 16 more for a firmware VM's console helper, 8 more for swtpm) | Taking the host's memory or tasks |
+| `MemoryMax` (the guest's memory, 256 MiB, and 2% of the guest's, 16 MiB more for a TPM VM's swtpm), `MemorySwapMax=0`, `TasksMax` (64 and two a vCPU, 128 a disk Cloud Hypervisor serves for its io_uring's workers, 16 more for a firmware VM's console helper, 8 more for swtpm) | Taking the host's memory or tasks |
 
 `MemoryMax` was measured (2026-10, `TestMemoryOverhead` in
 `test/testbed/vms`) with guests of 1, 4 and 16 GiB filling half their
@@ -327,8 +327,50 @@ memory: past what the guest used and what its kernel keeps out of its
 `MemTotal`, the unit took at most 13, 9 and 36 MiB, mostly KVM's page
 tables, which grow with the guest; a guest that barely ran peaked at 113,
 239 and 463 MiB, its kernel touching its memory map. 256 MiB and 2% (584
-MiB past a 16 GiB guest) leave room for that many times over, and for the
-unit's page cache, which is reclaimed before the limit kills anything.
+MiB past a 16 GiB guest) leave room for that many times over.
+
+That room holds no page cache of the guest's disks. Cloud Hypervisor opens
+every zvol with `direct=on` (O_DIRECT); opened buffered, the guest's I/O
+went through the host's page cache of the zvol, which is charged to the
+VM's unit, and the guest's memory once touched leaves the cache no room
+but past the limit. At `MemoryMax` the kernel reclaimed the guest's memory
+with the cache, into the host's swap: in 2026-11, 18 of the host's 28 VM
+units sat at their limit, the host's swap was 5.6 of 8 GiB, nearly all of
+it `hangar.slice`'s, and 767 GiB had been swapped in over 16 days, each
+page a stall of the guest's. On a testbed (kernel 6.8, OpenZFS 2.3.9),
+`TestAGuestsDiskStaysOutOfItsUnitsMemory` in `test/testbed/vms`, a 2 GiB
+guest with 1.5 GiB of its memory in use reading 2 GiB from its disk for a
+minute, saw its unit's page cache reach 1287 MiB and 1014 MiB of its
+memory swapped out with the zvols opened buffered; with `direct=on` and
+`MemorySwapMax=0`, the cache stayed at 23 MiB at most, nothing swapped and
+the unit stayed under its limit. A first experiment of the same kind
+(OpenZFS 2.2.2, a 3 GiB file read for three minutes) swapped out 1 GiB
+under the multi-generational LRU and under the classic one alike. The
+cache bought nothing: the ARC caches the zvol already, and OpenZFS 2.3's
+Direct I/O does not apply to zvols, so O_DIRECT reads still hit the ARC
+(no ARC miss in the runs below). Measured with fio on the testbed, on a
+zvol made as the host makes them (16K blocks, lz4, OpenZFS 2.3.9,
+io_uring, the ARC warm) but in a pool on a loop file in a nested VM, not
+the host's NVMe mirror, O_DIRECT against buffered: 1 MiB reads 9.1
+against 3.7 GiB/s, 4 KiB random reads at depth 32 349k against 232k IOPS,
+1 MiB writes 657 against 540 MiB/s but their p99 latency 426 against 80
+ms, 16 KiB random reads and writes 33k against 29k IOPS each, and 4 KiB
+random writes at depth 32 38k against 49k IOPS: the page cache no longer
+gathers small writes, or absorbs bursts of large ones, before the zvol
+takes them. The files a VM reads, its boot disk, a converter's file and
+the tailscale disk, stay buffered: they are read-only, small but for a
+converter's file, and their cache is reclaimed without swapping.
+
+`MemorySwapMax=0` keeps the guest's memory out of the host's swap
+whatever else fills the unit: at its limit the kernel reclaims the unit's
+page cache alone, and what cannot be reclaimed is an OOM kill of the VM
+rather than a guest stalling on memory the host swapped out. What the unit
+holds past the guest's memory was measured above, far under the room it
+has. A starting agent gives each running confined VM unit
+`MemorySwapMax=0` at runtime, as it does `TasksMax` below; what such a unit
+had swapped out comes back as the guest touches it, and a VM whose
+launcher started it without `direct=on` keeps its zvols buffered until it
+is started again.
 
 `TasksMax` has room for every disk's I/O workers. Cloud Hypervisor serves
 each disk from one queue, an io_uring as deep as the queue (128), and a

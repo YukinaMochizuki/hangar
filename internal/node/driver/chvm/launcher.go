@@ -808,6 +808,13 @@ func diskCount(ln launch) int {
 // on the host until the VM stops (docs/decisions/node-agent.md).
 const freePageReporting = "size=0,free_page_reporting=on"
 
+// zvolDisk is the --disk option of the zvol at node, opened with O_DIRECT:
+// its page cache would be charged to the VM's unit and, at its MemoryMax,
+// push the guest's memory into swap (docs/decisions/node-agent.md).
+func zvolDisk(node string) string {
+	return "path=" + node + ",image_type=raw,direct=on"
+}
+
 // chArgs is Cloud Hypervisor's command line for the launch: the root disk,
 // by rootDiskID, or a blank file, the boot disk and the volumes, the
 // server's share, or a converter's file, read-only and raw whatever it
@@ -817,7 +824,7 @@ const freePageReporting = "size=0,free_page_reporting=on"
 // passes them, and its API socket.
 func chArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
-	vda := "path=" + filepath.Join(dir, diskNode) + ",image_type=raw,id=" + rootDiskID
+	vda := zvolDisk(filepath.Join(dir, diskNode)) + ",id=" + rootDiskID
 	if blankVDA(s) {
 		vda = "path=" + filepath.Join(dir, blankFile) + ",image_type=raw,readonly=on"
 	}
@@ -838,7 +845,7 @@ func chArgs(ln launch, dir string, taps int) []string {
 		args = append(args, "path="+c.File+",image_type=raw,readonly=on")
 	}
 	for n := range dataDisks(s) {
-		disk := "path=" + filepath.Join(dir, volumeNode(n)) + ",image_type=raw"
+		disk := zvolDisk(filepath.Join(dir, volumeNode(n)))
 		if ln.VolumeIDs && s.FileShareServer == nil && s.Converter == nil {
 			disk += ",id=" + volumeNode(n)
 		}
