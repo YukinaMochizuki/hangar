@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	sd "github.com/coreos/go-systemd/v22/dbus"
 	"golang.org/x/sys/unix"
 
 	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
@@ -295,17 +296,18 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 		h.sd.close()
 		return nil, fmt.Errorf("clearing what converter VMs left: %w", err)
 	}
-	if err := h.raiseTasks(ctx); err != nil {
+	if err := h.updateRunning(ctx); err != nil {
 		h.sd.close()
-		return nil, fmt.Errorf("raising running VMs' TasksMax: %w", err)
+		return nil, fmt.Errorf("updating running VMs' limits: %w", err)
 	}
 	return h, nil
 }
 
-// raiseTasks raises each running confined VM unit's TasksMax to what its
-// launch has now, never lowering one (docs/decisions/node-agent.md). A unit
-// gone meanwhile, or whose launch cannot be read, is left to VMs.
-func (h *Hypervisor) raiseTasks(ctx context.Context) error {
+// updateRunning gives each running confined VM unit the limits a unit
+// started now has: its TasksMax raised to what its launch has now, never
+// lowered, and no swap (docs/decisions/node-agent.md). A unit gone
+// meanwhile, or whose launch cannot be read, is left to VMs.
+func (h *Hypervisor) updateRunning(ctx context.Context) error {
 	units, err := h.sd.list(ctx)
 	if err != nil {
 		return err
@@ -316,14 +318,18 @@ func (h *Hypervisor) raiseTasks(ctx context.Context) error {
 			continue
 		}
 		ln, err := readLaunch(h.dir(uid))
-		// A launcher running Cloud Hypervisor as root has no TasksMax.
+		// A launcher running Cloud Hypervisor as root has no limits.
 		if err != nil || ln.VMUser == 0 {
 			continue
 		}
 		want := unitTasks(ln.Spec, diskCount(ln))
 		have, err := h.sd.tasksMax(ctx, u.Name)
-		if err == nil && have < want {
-			err = h.sd.setProps(ctx, u.Name, tasksProps(want))
+		if err == nil {
+			props := []sd.Property{noSwap()}
+			if have < want {
+				props = append(props, tasksProps(want)...)
+			}
+			err = h.sd.setProps(ctx, u.Name, props)
 		}
 		if err != nil && !notLoaded(err) {
 			return fmt.Errorf("%s: %w", u.Name, err)

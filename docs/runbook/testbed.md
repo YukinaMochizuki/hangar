@@ -135,6 +135,13 @@ much memory their units take; it needs a testbed of 24 GiB
 `TestFreedMemoryReturns`, which runs every time, has a 2 GiB guest fill
 and free 1 GiB and fails unless its unit gives most of it back to the host
 within 30 s, through free page reporting; it takes about two minutes.
+`TestAGuestsDiskStaysOutOfItsUnitsMemory`, which runs every time, has a
+2 GiB guest with 1.5 GiB of its memory filled read 2 GiB from its root
+disk again and again for a minute, and fails if its unit's page cache
+reaches 64 MiB, it reaches its `MemoryMax` (`memory.events` `max`), its
+`MemorySwapMax` is not 0 or it swaps at all; that
+last check means something only on a testbed with swap (a swap file will
+do). It takes about two minutes.
 `hangar-testbed-reset` does not know them yet: after a run killed outright,
 the next run's sweep, or `systemctl stop 'hangar-vm-*'`, removes them.
 

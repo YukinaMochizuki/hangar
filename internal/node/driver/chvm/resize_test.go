@@ -214,7 +214,7 @@ func TestAContainersVolumesHaveIDs(t *testing.T) {
 	spec.Disks = []driver.Volume{{DiskUID: "d1"}, {DiskUID: "d2"}}
 	with := strings.Join(chArgs(launch{Spec: spec, VolumeIDs: true}, "/d", 0), " ")
 	for n := range spec.Disks {
-		if want := "path=/d/" + volumeNode(n) + ",image_type=raw,id=" + volumeNode(n); !strings.Contains(with, want) {
+		if want := "path=/d/" + volumeNode(n) + ",image_type=raw,direct=on,id=" + volumeNode(n); !strings.Contains(with, want) {
 			t.Errorf("Cloud Hypervisor's arguments %q lack %q", with, want)
 		}
 	}

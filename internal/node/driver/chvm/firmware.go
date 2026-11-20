@@ -80,7 +80,7 @@ func firmwareArgs(ln launch, dir string, taps int) []string {
 		"--disk",
 	}
 	for n, v := range s.Disks {
-		disk := "path=" + filepath.Join(dir, volumeNode(n)) + ",image_type=raw"
+		disk := zvolDisk(filepath.Join(dir, volumeNode(n)))
 		if v.Serial != "" {
 			disk += ",serial=" + v.Serial
 		}

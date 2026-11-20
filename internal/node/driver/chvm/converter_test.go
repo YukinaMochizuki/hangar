@@ -113,7 +113,7 @@ func TestAConverterVMStarts(t *testing.T) {
 	}
 	args := strings.Join(chArgs(ln, h.dir(uid), 0), " ")
 	disks := "--disk path=" + filepath.Join(h.dir(uid), blankFile) + ",image_type=raw,readonly=on path=" + filepath.Join(h.dir(uid), bootFile) +
-		",image_type=raw,readonly=on path=" + file + ",image_type=raw,readonly=on path=" + filepath.Join(h.dir(uid), volumeNode(0)) + ",image_type=raw"
+		",image_type=raw,readonly=on path=" + file + ",image_type=raw,readonly=on path=" + filepath.Join(h.dir(uid), volumeNode(0)) + ",image_type=raw,direct=on"
 	if !strings.Contains(args, disks) || strings.Contains(args, "--net") {
 		t.Errorf("Cloud Hypervisor runs with %q; want the disks %q and no network", args, disks)
 	}

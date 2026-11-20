@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -129,6 +130,99 @@ func TestFreedMemoryReturns(t *testing.T) {
 
 	if filled-freed < 768 {
 		t.Errorf("freeing 1 GiB in the guest gave back %d MiB to the host, want 768 or more", filled-freed)
+	}
+}
+
+// diskScript fills 1536 MiB of the guest's /dev/shm, guest memory its unit
+// holds as Cloud Hypervisor's, writes 2 GiB to its root disk, and then
+// reads it back again and again, dropping its own cache before each pass,
+// so each pass reaches the zvol.
+const diskScript = `dd if=/dev/zero of=/dev/shm/fill bs=1M count=1536 2>/dev/null
+dd if=/dev/urandom of=/big bs=1M count=2048 2>/dev/null && sync
+echo written
+while :; do echo 3 >/proc/sys/vm/drop_caches; cat /big >/dev/null; done`
+
+// TestAGuestsDiskStaysOutOfItsUnitsMemory: a guest reading and writing its
+// root disk puts no host page cache in its unit, which never swaps nor
+// reaches its MemoryMax (docs/decisions/node-agent.md). A 2 GiB guest with
+// most of its memory in use reads 2 GiB from its disk over and over for a
+// minute: its unit's page cache must stay under 64 MiB, its swap at 0 and
+// its memory.events max where it was.
+func TestAGuestsDiskStaysOutOfItsUnitsMemory(t *testing.T) {
+	h := newHost(t)
+	const uid = "mem-disk"
+	ctx := context.Background()
+	spec := h.machine(t, uid, driver.RestartNever, diskScript)
+	root, err := h.storage.EnsureRoot(ctx, uid, spec.Root.Digest, 4<<30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.Root, spec.MemoryMiB, spec.VCPUs = root, 2048, 2
+	if err := h.hv.Start(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h.hv.Stop(context.Background(), uid) })
+	cg := "/sys/fs/cgroup/hangar.slice/hangar-vm-" + uid + ".service"
+	read := func(f string) string {
+		b, err := os.ReadFile(filepath.Join(cg, f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(b))
+	}
+	number := func(s string) uint64 {
+		n, _ := strconv.ParseUint(s, 10, 64)
+		return n
+	}
+	file := func() uint64 {
+		for _, l := range strings.Split(read("memory.stat"), "\n") {
+			if v, ok := strings.CutPrefix(l, "file "); ok {
+				return number(v)
+			}
+		}
+		t.Fatal("memory.stat has no file")
+		return 0
+	}
+	if got := read("memory.swap.max"); got != "0" {
+		t.Errorf("memory.swap.max is %s, want 0", got)
+	}
+	deadline := time.Now().Add(4 * time.Minute)
+	for !strings.Contains(stdoutOf(t, uid), "written\n") {
+		if time.Now().After(deadline) || !unitActive(uid) {
+			dump(t, uid)
+			t.Fatalf("%s never wrote its disk", uid)
+		}
+		time.Sleep(time.Second)
+	}
+	atMax := func() uint64 {
+		for _, l := range strings.Split(read("memory.events"), "\n") {
+			if v, ok := strings.CutPrefix(l, "max "); ok {
+				return number(v)
+			}
+		}
+		t.Fatal("memory.events has no max")
+		return 0
+	}
+	before := atMax()
+	var most, swap uint64
+	for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(5 * time.Second) {
+		most, swap = max(most, file()), max(swap, number(read("memory.swap.current")))
+	}
+	limited := atMax() - before
+	t.Logf("reading its disk for a minute: page cache at most %d MiB, swap at most %d MiB, at its limit %d times, memory %s of %s",
+		most>>20, swap>>20, limited, read("memory.current"), read("memory.max"))
+	if limited != 0 {
+		t.Errorf("the unit reached its MemoryMax %d times, want none", limited)
+	}
+	if most >= 64<<20 {
+		t.Errorf("the unit's page cache reached %d MiB, want under 64", most>>20)
+	}
+	if swap != 0 {
+		t.Errorf("the unit swapped %d MiB of its memory, want none", swap>>20)
+	}
+	if !unitActive(uid) {
+		dump(t, uid)
+		t.Errorf("%s stopped", uid)
 	}
 }
 

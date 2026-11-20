@@ -194,7 +194,7 @@ func TestTheLauncherAttachesAShare(t *testing.T) {
 	want := []string{
 		"path=" + filepath.Join(dir, blankFile) + ",image_type=raw,readonly=on",
 		"path=" + filepath.Join(dir, bootFile) + ",image_type=raw,readonly=on",
-		"path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw",
+		"path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw,direct=on",
 	}
 	if i < 0 || len(ch.Args) < i+1+len(want) || !slices.Equal(ch.Args[i+1:i+1+len(want)], want) {
 		t.Errorf("Cloud Hypervisor's arguments %q, want --disk %q", ch.Args, want)
