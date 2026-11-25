@@ -183,7 +183,13 @@ type BillingAccountSpec struct {
 	AnchorTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=anchor_time,json=anchorTime,proto3" json:"anchor_time,omitempty"`
 	// The IANA time zone periods are cut in, such as "Asia/Taipei"; empty is
 	// UTC.
-	TimeZone      string `protobuf:"bytes,7,opt,name=time_zone,json=timeZone,proto3" json:"time_zone,omitempty"`
+	TimeZone string `protobuf:"bytes,7,opt,name=time_zone,json=timeZone,proto3" json:"time_zone,omitempty"`
+	// Discounts on what is billed for the time before each one's until_time,
+	// such as a trial's. Each takes its percent of what that part of a period
+	// comes to, on a line of its own; together they never take more than the
+	// period comes to. They are read as a period is billed, so a change
+	// reaches every period not billed yet.
+	Promotions    []*Promotion `protobuf:"bytes,8,rep,name=promotions,proto3" json:"promotions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -260,6 +266,77 @@ func (x *BillingAccountSpec) GetTimeZone() string {
 	return ""
 }
 
+func (x *BillingAccountSpec) GetPromotions() []*Promotion {
+	if x != nil {
+		return x.Promotions
+	}
+	return nil
+}
+
+// Promotion is a discount on what an account is billed until a time.
+type Promotion struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What a statement calls it, such as "Early access": 1 to 40 characters.
+	Label string `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	// How much it takes off, from 1 to 100 percent.
+	Percent int32 `protobuf:"varint,2,opt,name=percent,proto3" json:"percent,omitempty"`
+	// It discounts what is billed for the time before this, on a whole minute.
+	UntilTime     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=until_time,json=untilTime,proto3" json:"until_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Promotion) Reset() {
+	*x = Promotion{}
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Promotion) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Promotion) ProtoMessage() {}
+
+func (x *Promotion) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Promotion.ProtoReflect.Descriptor instead.
+func (*Promotion) Descriptor() ([]byte, []int) {
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Promotion) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *Promotion) GetPercent() int32 {
+	if x != nil {
+		return x.Percent
+	}
+	return 0
+}
+
+func (x *Promotion) GetUntilTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UntilTime
+	}
+	return nil
+}
+
 // BillingAccountStatus is the period open and what it has come to.
 type BillingAccountStatus struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -299,13 +376,16 @@ type BillingAccountStatus struct {
 	// The resource version of the price list accrued and metered were rated
 	// at; a new one rates them again.
 	PriceListVersion int64 `protobuf:"varint,17,opt,name=price_list_version,json=priceListVersion,proto3" json:"price_list_version,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// What the open period's promotions take off accrued, which is after
+	// them; accrued and this together are what it comes to before them.
+	Discount      string `protobuf:"bytes,18,opt,name=discount,proto3" json:"discount,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BillingAccountStatus) Reset() {
 	*x = BillingAccountStatus{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[2]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -317,7 +397,7 @@ func (x *BillingAccountStatus) String() string {
 func (*BillingAccountStatus) ProtoMessage() {}
 
 func (x *BillingAccountStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[2]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -330,7 +410,7 @@ func (x *BillingAccountStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BillingAccountStatus.ProtoReflect.Descriptor instead.
 func (*BillingAccountStatus) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{2}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *BillingAccountStatus) GetObservedGeneration() int64 {
@@ -452,6 +532,13 @@ func (x *BillingAccountStatus) GetPriceListVersion() int64 {
 	return 0
 }
 
+func (x *BillingAccountStatus) GetDiscount() string {
+	if x != nil {
+		return x.Discount
+	}
+	return ""
+}
+
 type GetBillingAccountRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -461,7 +548,7 @@ type GetBillingAccountRequest struct {
 
 func (x *GetBillingAccountRequest) Reset() {
 	*x = GetBillingAccountRequest{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[3]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +560,7 @@ func (x *GetBillingAccountRequest) String() string {
 func (*GetBillingAccountRequest) ProtoMessage() {}
 
 func (x *GetBillingAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[3]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,7 +573,7 @@ func (x *GetBillingAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBillingAccountRequest.ProtoReflect.Descriptor instead.
 func (*GetBillingAccountRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{3}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetBillingAccountRequest) GetName() string {
@@ -505,7 +592,7 @@ type GetBillingAccountResponse struct {
 
 func (x *GetBillingAccountResponse) Reset() {
 	*x = GetBillingAccountResponse{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[4]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -517,7 +604,7 @@ func (x *GetBillingAccountResponse) String() string {
 func (*GetBillingAccountResponse) ProtoMessage() {}
 
 func (x *GetBillingAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[4]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -530,7 +617,7 @@ func (x *GetBillingAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBillingAccountResponse.ProtoReflect.Descriptor instead.
 func (*GetBillingAccountResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{4}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetBillingAccountResponse) GetBillingAccount() *BillingAccount {
@@ -551,7 +638,7 @@ type ListBillingAccountsRequest struct {
 
 func (x *ListBillingAccountsRequest) Reset() {
 	*x = ListBillingAccountsRequest{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[5]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -563,7 +650,7 @@ func (x *ListBillingAccountsRequest) String() string {
 func (*ListBillingAccountsRequest) ProtoMessage() {}
 
 func (x *ListBillingAccountsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[5]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -576,7 +663,7 @@ func (x *ListBillingAccountsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBillingAccountsRequest.ProtoReflect.Descriptor instead.
 func (*ListBillingAccountsRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{5}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListBillingAccountsRequest) GetLabelSelector() string {
@@ -611,7 +698,7 @@ type ListBillingAccountsResponse struct {
 
 func (x *ListBillingAccountsResponse) Reset() {
 	*x = ListBillingAccountsResponse{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[6]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -623,7 +710,7 @@ func (x *ListBillingAccountsResponse) String() string {
 func (*ListBillingAccountsResponse) ProtoMessage() {}
 
 func (x *ListBillingAccountsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[6]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -636,7 +723,7 @@ func (x *ListBillingAccountsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBillingAccountsResponse.ProtoReflect.Descriptor instead.
 func (*ListBillingAccountsResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{6}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListBillingAccountsResponse) GetItems() []*BillingAccount {
@@ -670,7 +757,7 @@ type WatchBillingAccountsRequest struct {
 
 func (x *WatchBillingAccountsRequest) Reset() {
 	*x = WatchBillingAccountsRequest{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[7]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -682,7 +769,7 @@ func (x *WatchBillingAccountsRequest) String() string {
 func (*WatchBillingAccountsRequest) ProtoMessage() {}
 
 func (x *WatchBillingAccountsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[7]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -695,7 +782,7 @@ func (x *WatchBillingAccountsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchBillingAccountsRequest.ProtoReflect.Descriptor instead.
 func (*WatchBillingAccountsRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{7}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *WatchBillingAccountsRequest) GetLabelSelector() string {
@@ -723,7 +810,7 @@ type WatchBillingAccountsResponse struct {
 
 func (x *WatchBillingAccountsResponse) Reset() {
 	*x = WatchBillingAccountsResponse{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[8]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -735,7 +822,7 @@ func (x *WatchBillingAccountsResponse) String() string {
 func (*WatchBillingAccountsResponse) ProtoMessage() {}
 
 func (x *WatchBillingAccountsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[8]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -748,7 +835,7 @@ func (x *WatchBillingAccountsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchBillingAccountsResponse.ProtoReflect.Descriptor instead.
 func (*WatchBillingAccountsResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{8}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *WatchBillingAccountsResponse) GetType() v1.EventType {
@@ -783,7 +870,7 @@ type ApplyBillingAccountRequest struct {
 
 func (x *ApplyBillingAccountRequest) Reset() {
 	*x = ApplyBillingAccountRequest{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[9]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +882,7 @@ func (x *ApplyBillingAccountRequest) String() string {
 func (*ApplyBillingAccountRequest) ProtoMessage() {}
 
 func (x *ApplyBillingAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[9]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +895,7 @@ func (x *ApplyBillingAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyBillingAccountRequest.ProtoReflect.Descriptor instead.
 func (*ApplyBillingAccountRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{9}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ApplyBillingAccountRequest) GetBillingAccount() *BillingAccount {
@@ -836,7 +923,7 @@ type ApplyBillingAccountResponse struct {
 
 func (x *ApplyBillingAccountResponse) Reset() {
 	*x = ApplyBillingAccountResponse{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[10]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -848,7 +935,7 @@ func (x *ApplyBillingAccountResponse) String() string {
 func (*ApplyBillingAccountResponse) ProtoMessage() {}
 
 func (x *ApplyBillingAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[10]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -861,7 +948,7 @@ func (x *ApplyBillingAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyBillingAccountResponse.ProtoReflect.Descriptor instead.
 func (*ApplyBillingAccountResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{10}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ApplyBillingAccountResponse) GetBillingAccount() *BillingAccount {
@@ -895,7 +982,7 @@ type DeleteBillingAccountRequest struct {
 
 func (x *DeleteBillingAccountRequest) Reset() {
 	*x = DeleteBillingAccountRequest{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[11]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -907,7 +994,7 @@ func (x *DeleteBillingAccountRequest) String() string {
 func (*DeleteBillingAccountRequest) ProtoMessage() {}
 
 func (x *DeleteBillingAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[11]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -920,7 +1007,7 @@ func (x *DeleteBillingAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBillingAccountRequest.ProtoReflect.Descriptor instead.
 func (*DeleteBillingAccountRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{11}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeleteBillingAccountRequest) GetName() string {
@@ -946,7 +1033,7 @@ type DeleteBillingAccountResponse struct {
 
 func (x *DeleteBillingAccountResponse) Reset() {
 	*x = DeleteBillingAccountResponse{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[12]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -958,7 +1045,7 @@ func (x *DeleteBillingAccountResponse) String() string {
 func (*DeleteBillingAccountResponse) ProtoMessage() {}
 
 func (x *DeleteBillingAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[12]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -971,7 +1058,7 @@ func (x *DeleteBillingAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBillingAccountResponse.ProtoReflect.Descriptor instead.
 func (*DeleteBillingAccountResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{12}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DeleteBillingAccountResponse) GetBillingAccount() *BillingAccount {
@@ -992,7 +1079,7 @@ type UpdateBillingAccountStatusRequest struct {
 
 func (x *UpdateBillingAccountStatusRequest) Reset() {
 	*x = UpdateBillingAccountStatusRequest{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[13]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1004,7 +1091,7 @@ func (x *UpdateBillingAccountStatusRequest) String() string {
 func (*UpdateBillingAccountStatusRequest) ProtoMessage() {}
 
 func (x *UpdateBillingAccountStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[13]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1017,7 +1104,7 @@ func (x *UpdateBillingAccountStatusRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use UpdateBillingAccountStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBillingAccountStatusRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{13}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UpdateBillingAccountStatusRequest) GetName() string {
@@ -1050,7 +1137,7 @@ type UpdateBillingAccountStatusResponse struct {
 
 func (x *UpdateBillingAccountStatusResponse) Reset() {
 	*x = UpdateBillingAccountStatusResponse{}
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[14]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1062,7 +1149,7 @@ func (x *UpdateBillingAccountStatusResponse) String() string {
 func (*UpdateBillingAccountStatusResponse) ProtoMessage() {}
 
 func (x *UpdateBillingAccountStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[14]
+	mi := &file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1075,7 +1162,7 @@ func (x *UpdateBillingAccountStatusResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use UpdateBillingAccountStatusResponse.ProtoReflect.Descriptor instead.
 func (*UpdateBillingAccountStatusResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{14}
+	return file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UpdateBillingAccountStatusResponse) GetBillingAccount() *BillingAccount {
@@ -1097,7 +1184,7 @@ const file_hangar_billing_v1alpha1_billing_account_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x12?\n" +
 	"\x04spec\x18\x04 \x01(\v2+.hangar.billing.v1alpha1.BillingAccountSpecR\x04spec\x12E\n" +
 	"\x06status\x18\x05 \x01(\v2-.hangar.billing.v1alpha1.BillingAccountStatusR\x06status:+\x8a\xb5\x18'\n" +
-	"\x0eBillingAccount\x12\x0fbillingaccounts\x1a\x02ba \x02\"\xb3\x02\n" +
+	"\x0eBillingAccount\x12\x0fbillingaccounts\x1a\x02ba \x02\"\xf7\x02\n" +
 	"\x12BillingAccountSpec\x128\n" +
 	"\x04type\x18\x01 \x01(\x0e2$.hangar.billing.v1alpha1.BillingTypeR\x04type\x12\"\n" +
 	"\bcurrency\x18\x02 \x01(\tB\x06\x8a\xb5\x18\x02\b\x01R\bcurrency\x12\x1d\n" +
@@ -1106,7 +1193,15 @@ const file_hangar_billing_v1alpha1_billing_account_proto_rawDesc = "" +
 	"\rperiod_months\x18\x05 \x01(\x05R\fperiodMonths\x12C\n" +
 	"\vanchor_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampB\x06\x8a\xb5\x18\x02\b\x01R\n" +
 	"anchorTime\x12#\n" +
-	"\ttime_zone\x18\a \x01(\tB\x06\x8a\xb5\x18\x02\b\x01R\btimeZoneJ\x04\b\x03\x10\x04R\vmonthly_fee\"\x9f\a\n" +
+	"\ttime_zone\x18\a \x01(\tB\x06\x8a\xb5\x18\x02\b\x01R\btimeZone\x12B\n" +
+	"\n" +
+	"promotions\x18\b \x03(\v2\".hangar.billing.v1alpha1.PromotionR\n" +
+	"promotionsJ\x04\b\x03\x10\x04R\vmonthly_fee\"v\n" +
+	"\tPromotion\x12\x14\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\x12\x18\n" +
+	"\apercent\x18\x02 \x01(\x05R\apercent\x129\n" +
+	"\n" +
+	"until_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tuntilTime\"\xbb\a\n" +
 	"\x14BillingAccountStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
@@ -1130,7 +1225,8 @@ const file_hangar_billing_v1alpha1_billing_account_proto_rawDesc = "" +
 	"periodPlan\x12B\n" +
 	"\x0fperiod_cut_time\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\rperiodCutTime\x120\n" +
 	"\x14period_offset_months\x18\x10 \x01(\x05R\x12periodOffsetMonths\x12,\n" +
-	"\x12price_list_version\x18\x11 \x01(\x03R\x10priceListVersion\".\n" +
+	"\x12price_list_version\x18\x11 \x01(\x03R\x10priceListVersion\x12\x1a\n" +
+	"\bdiscount\x18\x12 \x01(\tR\bdiscount\".\n" +
 	"\x18GetBillingAccountRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"m\n" +
 	"\x19GetBillingAccountResponse\x12P\n" +
@@ -1198,70 +1294,73 @@ func file_hangar_billing_v1alpha1_billing_account_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_billing_v1alpha1_billing_account_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_billing_v1alpha1_billing_account_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_hangar_billing_v1alpha1_billing_account_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_hangar_billing_v1alpha1_billing_account_proto_goTypes = []any{
 	(BillingType)(0),                           // 0: hangar.billing.v1alpha1.BillingType
 	(*BillingAccount)(nil),                     // 1: hangar.billing.v1alpha1.BillingAccount
 	(*BillingAccountSpec)(nil),                 // 2: hangar.billing.v1alpha1.BillingAccountSpec
-	(*BillingAccountStatus)(nil),               // 3: hangar.billing.v1alpha1.BillingAccountStatus
-	(*GetBillingAccountRequest)(nil),           // 4: hangar.billing.v1alpha1.GetBillingAccountRequest
-	(*GetBillingAccountResponse)(nil),          // 5: hangar.billing.v1alpha1.GetBillingAccountResponse
-	(*ListBillingAccountsRequest)(nil),         // 6: hangar.billing.v1alpha1.ListBillingAccountsRequest
-	(*ListBillingAccountsResponse)(nil),        // 7: hangar.billing.v1alpha1.ListBillingAccountsResponse
-	(*WatchBillingAccountsRequest)(nil),        // 8: hangar.billing.v1alpha1.WatchBillingAccountsRequest
-	(*WatchBillingAccountsResponse)(nil),       // 9: hangar.billing.v1alpha1.WatchBillingAccountsResponse
-	(*ApplyBillingAccountRequest)(nil),         // 10: hangar.billing.v1alpha1.ApplyBillingAccountRequest
-	(*ApplyBillingAccountResponse)(nil),        // 11: hangar.billing.v1alpha1.ApplyBillingAccountResponse
-	(*DeleteBillingAccountRequest)(nil),        // 12: hangar.billing.v1alpha1.DeleteBillingAccountRequest
-	(*DeleteBillingAccountResponse)(nil),       // 13: hangar.billing.v1alpha1.DeleteBillingAccountResponse
-	(*UpdateBillingAccountStatusRequest)(nil),  // 14: hangar.billing.v1alpha1.UpdateBillingAccountStatusRequest
-	(*UpdateBillingAccountStatusResponse)(nil), // 15: hangar.billing.v1alpha1.UpdateBillingAccountStatusResponse
-	(*v1.ObjectMeta)(nil),                      // 16: hangar.meta.v1.ObjectMeta
-	(*timestamppb.Timestamp)(nil),              // 17: google.protobuf.Timestamp
-	(*v1.Condition)(nil),                       // 18: hangar.meta.v1.Condition
-	(*StatementLine)(nil),                      // 19: hangar.billing.v1alpha1.StatementLine
-	(v1.EventType)(0),                          // 20: hangar.meta.v1.EventType
+	(*Promotion)(nil),                          // 3: hangar.billing.v1alpha1.Promotion
+	(*BillingAccountStatus)(nil),               // 4: hangar.billing.v1alpha1.BillingAccountStatus
+	(*GetBillingAccountRequest)(nil),           // 5: hangar.billing.v1alpha1.GetBillingAccountRequest
+	(*GetBillingAccountResponse)(nil),          // 6: hangar.billing.v1alpha1.GetBillingAccountResponse
+	(*ListBillingAccountsRequest)(nil),         // 7: hangar.billing.v1alpha1.ListBillingAccountsRequest
+	(*ListBillingAccountsResponse)(nil),        // 8: hangar.billing.v1alpha1.ListBillingAccountsResponse
+	(*WatchBillingAccountsRequest)(nil),        // 9: hangar.billing.v1alpha1.WatchBillingAccountsRequest
+	(*WatchBillingAccountsResponse)(nil),       // 10: hangar.billing.v1alpha1.WatchBillingAccountsResponse
+	(*ApplyBillingAccountRequest)(nil),         // 11: hangar.billing.v1alpha1.ApplyBillingAccountRequest
+	(*ApplyBillingAccountResponse)(nil),        // 12: hangar.billing.v1alpha1.ApplyBillingAccountResponse
+	(*DeleteBillingAccountRequest)(nil),        // 13: hangar.billing.v1alpha1.DeleteBillingAccountRequest
+	(*DeleteBillingAccountResponse)(nil),       // 14: hangar.billing.v1alpha1.DeleteBillingAccountResponse
+	(*UpdateBillingAccountStatusRequest)(nil),  // 15: hangar.billing.v1alpha1.UpdateBillingAccountStatusRequest
+	(*UpdateBillingAccountStatusResponse)(nil), // 16: hangar.billing.v1alpha1.UpdateBillingAccountStatusResponse
+	(*v1.ObjectMeta)(nil),                      // 17: hangar.meta.v1.ObjectMeta
+	(*timestamppb.Timestamp)(nil),              // 18: google.protobuf.Timestamp
+	(*v1.Condition)(nil),                       // 19: hangar.meta.v1.Condition
+	(*StatementLine)(nil),                      // 20: hangar.billing.v1alpha1.StatementLine
+	(v1.EventType)(0),                          // 21: hangar.meta.v1.EventType
 }
 var file_hangar_billing_v1alpha1_billing_account_proto_depIdxs = []int32{
-	16, // 0: hangar.billing.v1alpha1.BillingAccount.metadata:type_name -> hangar.meta.v1.ObjectMeta
+	17, // 0: hangar.billing.v1alpha1.BillingAccount.metadata:type_name -> hangar.meta.v1.ObjectMeta
 	2,  // 1: hangar.billing.v1alpha1.BillingAccount.spec:type_name -> hangar.billing.v1alpha1.BillingAccountSpec
-	3,  // 2: hangar.billing.v1alpha1.BillingAccount.status:type_name -> hangar.billing.v1alpha1.BillingAccountStatus
+	4,  // 2: hangar.billing.v1alpha1.BillingAccount.status:type_name -> hangar.billing.v1alpha1.BillingAccountStatus
 	0,  // 3: hangar.billing.v1alpha1.BillingAccountSpec.type:type_name -> hangar.billing.v1alpha1.BillingType
-	17, // 4: hangar.billing.v1alpha1.BillingAccountSpec.anchor_time:type_name -> google.protobuf.Timestamp
-	18, // 5: hangar.billing.v1alpha1.BillingAccountStatus.conditions:type_name -> hangar.meta.v1.Condition
-	17, // 6: hangar.billing.v1alpha1.BillingAccountStatus.period_anchor_time:type_name -> google.protobuf.Timestamp
-	17, // 7: hangar.billing.v1alpha1.BillingAccountStatus.period_start_time:type_name -> google.protobuf.Timestamp
-	17, // 8: hangar.billing.v1alpha1.BillingAccountStatus.period_end_time:type_name -> google.protobuf.Timestamp
-	17, // 9: hangar.billing.v1alpha1.BillingAccountStatus.accrued_time:type_name -> google.protobuf.Timestamp
-	0,  // 10: hangar.billing.v1alpha1.BillingAccountStatus.period_type:type_name -> hangar.billing.v1alpha1.BillingType
-	19, // 11: hangar.billing.v1alpha1.BillingAccountStatus.usage_lines:type_name -> hangar.billing.v1alpha1.StatementLine
-	17, // 12: hangar.billing.v1alpha1.BillingAccountStatus.period_cut_time:type_name -> google.protobuf.Timestamp
-	1,  // 13: hangar.billing.v1alpha1.GetBillingAccountResponse.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
-	1,  // 14: hangar.billing.v1alpha1.ListBillingAccountsResponse.items:type_name -> hangar.billing.v1alpha1.BillingAccount
-	20, // 15: hangar.billing.v1alpha1.WatchBillingAccountsResponse.type:type_name -> hangar.meta.v1.EventType
-	1,  // 16: hangar.billing.v1alpha1.WatchBillingAccountsResponse.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
-	1,  // 17: hangar.billing.v1alpha1.ApplyBillingAccountRequest.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
-	1,  // 18: hangar.billing.v1alpha1.ApplyBillingAccountResponse.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
-	1,  // 19: hangar.billing.v1alpha1.DeleteBillingAccountResponse.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
-	3,  // 20: hangar.billing.v1alpha1.UpdateBillingAccountStatusRequest.status:type_name -> hangar.billing.v1alpha1.BillingAccountStatus
-	1,  // 21: hangar.billing.v1alpha1.UpdateBillingAccountStatusResponse.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
-	4,  // 22: hangar.billing.v1alpha1.BillingAccountService.GetBillingAccount:input_type -> hangar.billing.v1alpha1.GetBillingAccountRequest
-	6,  // 23: hangar.billing.v1alpha1.BillingAccountService.ListBillingAccounts:input_type -> hangar.billing.v1alpha1.ListBillingAccountsRequest
-	8,  // 24: hangar.billing.v1alpha1.BillingAccountService.WatchBillingAccounts:input_type -> hangar.billing.v1alpha1.WatchBillingAccountsRequest
-	10, // 25: hangar.billing.v1alpha1.BillingAccountService.ApplyBillingAccount:input_type -> hangar.billing.v1alpha1.ApplyBillingAccountRequest
-	12, // 26: hangar.billing.v1alpha1.BillingAccountService.DeleteBillingAccount:input_type -> hangar.billing.v1alpha1.DeleteBillingAccountRequest
-	14, // 27: hangar.billing.v1alpha1.BillingAccountService.UpdateBillingAccountStatus:input_type -> hangar.billing.v1alpha1.UpdateBillingAccountStatusRequest
-	5,  // 28: hangar.billing.v1alpha1.BillingAccountService.GetBillingAccount:output_type -> hangar.billing.v1alpha1.GetBillingAccountResponse
-	7,  // 29: hangar.billing.v1alpha1.BillingAccountService.ListBillingAccounts:output_type -> hangar.billing.v1alpha1.ListBillingAccountsResponse
-	9,  // 30: hangar.billing.v1alpha1.BillingAccountService.WatchBillingAccounts:output_type -> hangar.billing.v1alpha1.WatchBillingAccountsResponse
-	11, // 31: hangar.billing.v1alpha1.BillingAccountService.ApplyBillingAccount:output_type -> hangar.billing.v1alpha1.ApplyBillingAccountResponse
-	13, // 32: hangar.billing.v1alpha1.BillingAccountService.DeleteBillingAccount:output_type -> hangar.billing.v1alpha1.DeleteBillingAccountResponse
-	15, // 33: hangar.billing.v1alpha1.BillingAccountService.UpdateBillingAccountStatus:output_type -> hangar.billing.v1alpha1.UpdateBillingAccountStatusResponse
-	28, // [28:34] is the sub-list for method output_type
-	22, // [22:28] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	18, // 4: hangar.billing.v1alpha1.BillingAccountSpec.anchor_time:type_name -> google.protobuf.Timestamp
+	3,  // 5: hangar.billing.v1alpha1.BillingAccountSpec.promotions:type_name -> hangar.billing.v1alpha1.Promotion
+	18, // 6: hangar.billing.v1alpha1.Promotion.until_time:type_name -> google.protobuf.Timestamp
+	19, // 7: hangar.billing.v1alpha1.BillingAccountStatus.conditions:type_name -> hangar.meta.v1.Condition
+	18, // 8: hangar.billing.v1alpha1.BillingAccountStatus.period_anchor_time:type_name -> google.protobuf.Timestamp
+	18, // 9: hangar.billing.v1alpha1.BillingAccountStatus.period_start_time:type_name -> google.protobuf.Timestamp
+	18, // 10: hangar.billing.v1alpha1.BillingAccountStatus.period_end_time:type_name -> google.protobuf.Timestamp
+	18, // 11: hangar.billing.v1alpha1.BillingAccountStatus.accrued_time:type_name -> google.protobuf.Timestamp
+	0,  // 12: hangar.billing.v1alpha1.BillingAccountStatus.period_type:type_name -> hangar.billing.v1alpha1.BillingType
+	20, // 13: hangar.billing.v1alpha1.BillingAccountStatus.usage_lines:type_name -> hangar.billing.v1alpha1.StatementLine
+	18, // 14: hangar.billing.v1alpha1.BillingAccountStatus.period_cut_time:type_name -> google.protobuf.Timestamp
+	1,  // 15: hangar.billing.v1alpha1.GetBillingAccountResponse.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
+	1,  // 16: hangar.billing.v1alpha1.ListBillingAccountsResponse.items:type_name -> hangar.billing.v1alpha1.BillingAccount
+	21, // 17: hangar.billing.v1alpha1.WatchBillingAccountsResponse.type:type_name -> hangar.meta.v1.EventType
+	1,  // 18: hangar.billing.v1alpha1.WatchBillingAccountsResponse.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
+	1,  // 19: hangar.billing.v1alpha1.ApplyBillingAccountRequest.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
+	1,  // 20: hangar.billing.v1alpha1.ApplyBillingAccountResponse.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
+	1,  // 21: hangar.billing.v1alpha1.DeleteBillingAccountResponse.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
+	4,  // 22: hangar.billing.v1alpha1.UpdateBillingAccountStatusRequest.status:type_name -> hangar.billing.v1alpha1.BillingAccountStatus
+	1,  // 23: hangar.billing.v1alpha1.UpdateBillingAccountStatusResponse.billing_account:type_name -> hangar.billing.v1alpha1.BillingAccount
+	5,  // 24: hangar.billing.v1alpha1.BillingAccountService.GetBillingAccount:input_type -> hangar.billing.v1alpha1.GetBillingAccountRequest
+	7,  // 25: hangar.billing.v1alpha1.BillingAccountService.ListBillingAccounts:input_type -> hangar.billing.v1alpha1.ListBillingAccountsRequest
+	9,  // 26: hangar.billing.v1alpha1.BillingAccountService.WatchBillingAccounts:input_type -> hangar.billing.v1alpha1.WatchBillingAccountsRequest
+	11, // 27: hangar.billing.v1alpha1.BillingAccountService.ApplyBillingAccount:input_type -> hangar.billing.v1alpha1.ApplyBillingAccountRequest
+	13, // 28: hangar.billing.v1alpha1.BillingAccountService.DeleteBillingAccount:input_type -> hangar.billing.v1alpha1.DeleteBillingAccountRequest
+	15, // 29: hangar.billing.v1alpha1.BillingAccountService.UpdateBillingAccountStatus:input_type -> hangar.billing.v1alpha1.UpdateBillingAccountStatusRequest
+	6,  // 30: hangar.billing.v1alpha1.BillingAccountService.GetBillingAccount:output_type -> hangar.billing.v1alpha1.GetBillingAccountResponse
+	8,  // 31: hangar.billing.v1alpha1.BillingAccountService.ListBillingAccounts:output_type -> hangar.billing.v1alpha1.ListBillingAccountsResponse
+	10, // 32: hangar.billing.v1alpha1.BillingAccountService.WatchBillingAccounts:output_type -> hangar.billing.v1alpha1.WatchBillingAccountsResponse
+	12, // 33: hangar.billing.v1alpha1.BillingAccountService.ApplyBillingAccount:output_type -> hangar.billing.v1alpha1.ApplyBillingAccountResponse
+	14, // 34: hangar.billing.v1alpha1.BillingAccountService.DeleteBillingAccount:output_type -> hangar.billing.v1alpha1.DeleteBillingAccountResponse
+	16, // 35: hangar.billing.v1alpha1.BillingAccountService.UpdateBillingAccountStatus:output_type -> hangar.billing.v1alpha1.UpdateBillingAccountStatusResponse
+	30, // [30:36] is the sub-list for method output_type
+	24, // [24:30] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_hangar_billing_v1alpha1_billing_account_proto_init() }
@@ -1270,15 +1369,15 @@ func file_hangar_billing_v1alpha1_billing_account_proto_init() {
 		return
 	}
 	file_hangar_billing_v1alpha1_line_proto_init()
-	file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[11].OneofWrappers = []any{}
-	file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[13].OneofWrappers = []any{}
+	file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[12].OneofWrappers = []any{}
+	file_hangar_billing_v1alpha1_billing_account_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_billing_v1alpha1_billing_account_proto_rawDesc), len(file_hangar_billing_v1alpha1_billing_account_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

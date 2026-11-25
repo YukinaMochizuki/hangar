@@ -79,6 +79,23 @@ new account starts no earlier than the tenant's last Statement ends.
 | The plan's `price` | From the tenant's next period |
 | `priceList`, `periodMonths` | From the next period |
 
+## Give a promotion
+
+A promotion takes a percent off what an account is billed until a time; a
+trial is 100% until it ends. Statements list the price and the promotion
+on its own line:
+
+```yaml
+spec:
+  # the rest of the account as it is
+  promotions:
+    - {label: Early access, percent: 100, untilTime: "2027-01-01T00:00:00+08:00"}
+```
+
+Apply the account with it. A promotion changed or removed reaches every
+period not billed yet, the open one included; a billed statement keeps
+what it said.
+
 ## Read what is owed
 
 ```sh

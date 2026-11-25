@@ -1144,6 +1144,11 @@ after a first layout of one figure and a table read as too flat
   platform's sidebar and the palette only where TestPermissions holds
   `billing.billingaccounts.list` at the platform, and states a refusal
   otherwise.
+- **A promotion is shown as given, not as a lower price.** One not ended
+  yet is a line in the ok tone above the figures ("Early access — 100% off
+  what is billed until Jan 1, 2027"), the open period's figure says what it
+  comes to before promotions under it, and a statement lists each
+  promotion after the items, its amount negative, in the ok tone.
 - **Periods are written in the account's time zone**, by days when both
   ends are at midnight there ("Sep 1, 2026 – Nov 30, 2026", the last day
   included), to the minute when not. Amounts carry the currency's minor

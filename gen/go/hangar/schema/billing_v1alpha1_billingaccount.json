@@ -22,6 +22,13 @@
           "description": "Name of the PriceList that rates what the tenant holds. Required for PAY_AS_YOU_GO; on a FIXED account it is optional, and only values what the tenant holds for the platform's administrators, apart from what it pays.",
           "type": "string"
         },
+        "promotions": {
+          "description": "Discounts on what is billed for the time before each one's until_time, such as a trial's. Each takes its percent of what that part of a period comes to, on a line of its own; together they never take more than the period comes to. They are read as a period is billed, so a change reaches every period not billed yet.",
+          "items": {
+            "$ref": "#/$defs/hangar.billing.v1alpha1.Promotion"
+          },
+          "type": "array"
+        },
         "timeZone": {
           "description": "The IANA time zone periods are cut in, such as \"Asia/Taipei\"; empty is UTC.",
           "type": "string"
@@ -54,6 +61,10 @@
             "$ref": "#/$defs/hangar.meta.v1.Condition"
           },
           "type": "array"
+        },
+        "discount": {
+          "description": "What the open period's promotions take off accrued, which is after them; accrued and this together are what it comes to before them.",
+          "type": "string"
         },
         "metered": {
           "description": "What the open period's holdings come to at price_list's prices, for an account that names one; for a PAY_AS_YOU_GO account, it is accrued.",
@@ -131,6 +142,27 @@
       },
       "type": "object"
     },
+    "hangar.billing.v1alpha1.Promotion": {
+      "additionalProperties": false,
+      "description": "Promotion is a discount on what an account is billed until a time.",
+      "properties": {
+        "label": {
+          "description": "What a statement calls it, such as \"Early access\": 1 to 40 characters.",
+          "type": "string"
+        },
+        "percent": {
+          "description": "How much it takes off, from 1 to 100 percent.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "untilTime": {
+          "description": "It discounts what is billed for the time before this, on a whole minute.",
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "hangar.billing.v1alpha1.StatementLine": {
       "additionalProperties": false,
       "description": "StatementLine is one thing billed.",
@@ -139,8 +171,12 @@
           "description": "quantity times unit_price, with six decimals.",
           "type": "string"
         },
+        "description": {
+          "description": "A promotion's label, on its line, whose item is \"promotion\" and whose amount is negative.",
+          "type": "string"
+        },
         "item": {
-          "description": "What it is: \"monthly_fee\", or a Prices field, such as \"cpu\".",
+          "description": "What it is: \"monthly_fee\", a Prices field, such as \"cpu\", or \"promotion\".",
           "type": "string"
         },
         "priceEffectiveTime": {

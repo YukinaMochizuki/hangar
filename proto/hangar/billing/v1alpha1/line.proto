@@ -6,7 +6,8 @@ import "google/protobuf/timestamp.proto";
 
 // StatementLine is one thing billed.
 message StatementLine {
-  // What it is: "monthly_fee", or a Prices field, such as "cpu".
+  // What it is: "monthly_fee", a Prices field, such as "cpu", or
+  // "promotion".
   string item = 1;
   // How much of it, in unit-hours with up to six decimals, such as
   // "1440.5" vCPU-hours; "1" for a whole month's fee, a fraction for part.
@@ -19,4 +20,7 @@ message StatementLine {
   string amount = 5;
   // When the price took effect, for a PAY_AS_YOU_GO line.
   google.protobuf.Timestamp price_effective_time = 6;
+  // A promotion's label, on its line, whose item is "promotion" and whose
+  // amount is negative.
+  string description = 7;
 }

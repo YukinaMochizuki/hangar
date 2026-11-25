@@ -233,7 +233,7 @@ func (s *Server) reconcileBilling(ctx context.Context, k controller.Key) error {
 		t.into(st)
 		_, _, next, _ := periodsOf().At(from)
 		st.PeriodStartTime, st.PeriodEndTime = timestamppb.New(from), timestamppb.New(next)
-		st.Accrued, st.Metered, st.AccruedTime, st.UsageLines, st.PriceListVersion = "", "", nil, nil, 0
+		st.Accrued, st.Metered, st.AccruedTime, st.UsageLines, st.PriceListVersion, st.Discount = "", "", nil, nil, 0, ""
 	}
 	// A cut recorded before is billed where it was recorded.
 	if cut := st.GetPeriodCutTime(); cut != nil {
@@ -289,7 +289,9 @@ func (s *Server) reconcileBilling(ctx context.Context, k controller.Key) error {
 	if err != nil {
 		return err
 	}
-	if st.GetAccruedTime() == nil || !now.Before(st.GetAccruedTime().AsTime().Add(accrualEvery)) || version != st.GetPriceListVersion() {
+	// A new price, or a spec changed, as by a promotion, rates it again.
+	respec := a.GetStatus().GetObservedGeneration() != a.GetMetadata().GetGeneration()
+	if st.GetAccruedTime() == nil || !now.Before(st.GetAccruedTime().AsTime().Add(accrualEvery)) || version != st.GetPriceListVersion() || respec {
 		// The minute it is now is read already, and counts. A fixed fee is
 		// the whole period's unless the period is cut.
 		bill, err := b.rate(ctx, statusTerms(st), start, minTime(now.Add(time.Minute), end), end.Sub(start), end.Sub(start))
@@ -297,6 +299,10 @@ func (s *Server) reconcileBilling(ctx context.Context, k controller.Key) error {
 			return err
 		}
 		st.Accrued, st.Metered, st.AccruedTime, st.PriceListVersion = bill.total.String(), bill.metered.String(), timestamppb.New(now), version
+		st.Discount = ""
+		if bill.discount != 0 {
+			st.Discount = billing.RoundToMinor(bill.discount, b.account.GetSpec().GetCurrency()).String()
+		}
 		st.UsageLines = nil
 		for _, l := range bill.usage {
 			st.UsageLines = append(st.UsageLines, l.Proto())
@@ -331,16 +337,19 @@ type rated struct {
 	// line, and metered its total.
 	usage   []billing.Line
 	metered billing.Micros
+	// discount is what the promotions take off, before total is rounded.
+	discount billing.Micros
 }
 
 // rate is what the part of a period from start to end comes to under t:
 // for a pay-as-you-go account, what the tenant held then at the price
 // list's prices in each minute; for a fixed one, the fee, in the share
 // passed is of whole. metered is what the tenant held then at the price
-// list's prices, if t names one.
+// list's prices, if t names one. The account's promotions take their
+// part off, each on a line after the rest.
 func (b *billRun) rate(ctx context.Context, t terms, start, end time.Time, passed, whole time.Duration) (rated, error) {
 	currency := b.account.GetSpec().GetCurrency()
-	var usage []billing.Line
+	var entries []billing.Entry
 	if t.priceList != "" {
 		obj, err := b.s.get(ctx, registry.PriceList, resource.Key{Name: t.priceList})
 		if err != nil {
@@ -350,20 +359,33 @@ func (b *billRun) rate(ctx context.Context, t terms, start, end time.Time, passe
 			return rated{}, fmt.Errorf("%w: price list %q, which billing account %q is rated by, does not exist",
 				controller.ErrWaiting, t.priceList, b.account.GetMetadata().GetName())
 		}
-		entries, err := billing.ParseEntries(obj.(*billingv1alpha1.PriceList).GetSpec().GetEntries())
-		if err != nil {
+		if entries, err = billing.ParseEntries(obj.(*billingv1alpha1.PriceList).GetSpec().GetEntries()); err != nil {
 			return rated{}, err
 		}
-		for _, span := range billing.Spans(entries, start, end) {
+	}
+	// usageOf is what the tenant held from from to to at the list's prices.
+	usageOf := func(from, to time.Time) ([]billing.Line, error) {
+		var lines []billing.Line
+		if t.priceList == "" {
+			return nil, nil
+		}
+		for _, span := range billing.Spans(entries, from, to) {
 			held, err := b.s.meterHeld(ctx, b.account.GetMetadata().GetName(), span.From, span.To)
 			if err != nil {
-				return rated{}, err
+				return nil, err
 			}
-			usage = append(usage, billing.Rate(span, held)...)
+			lines = append(lines, billing.Rate(span, held)...)
 		}
+		return lines, nil
+	}
+	usage, err := usageOf(start, end)
+	if err != nil {
+		return rated{}, err
 	}
 	var out rated
 	out.usage, out.metered = usage, billing.Total(usage, currency)
+	// before is what the part of the period before until comes to.
+	var before func(until time.Time) (billing.Micros, error)
 	switch t.typ {
 	case billingv1alpha1.BillingType_BILLING_TYPE_FIXED:
 		fee, err := billing.ParseMoney(t.fee)
@@ -371,11 +393,48 @@ func (b *billRun) rate(ctx context.Context, t terms, start, end time.Time, passe
 			return rated{}, err
 		}
 		out.lines = []billing.Line{billing.FeeLine(fee, passed, whole)}
+		before = func(until time.Time) (billing.Micros, error) {
+			return billing.FeeLine(fee, min(max(until.Sub(start), 0), passed), whole).Amount, nil
+		}
 	default:
 		out.lines = usage
+		before = func(until time.Time) (billing.Micros, error) {
+			if !until.After(start) {
+				return 0, nil
+			}
+			if !until.Before(end) {
+				return sumOf(usage), nil
+			}
+			part, err := usageOf(start, until)
+			return sumOf(part), err
+		}
 	}
+	var promotions []billing.Promotion
+	for _, p := range b.account.GetSpec().GetPromotions() {
+		promotions = append(promotions, billing.Promotion{Label: p.GetLabel(), Percent: int64(p.GetPercent()), Until: p.GetUntilTime().AsTime()})
+	}
+	befores := map[time.Time]billing.Micros{}
+	for _, p := range promotions {
+		if _, ok := befores[p.Until]; !ok {
+			if befores[p.Until], err = before(p.Until); err != nil {
+				return rated{}, err
+			}
+		}
+	}
+	off := billing.PromotionLines(promotions, sumOf(out.lines), func(until time.Time) billing.Micros { return befores[until] })
+	out.discount = -sumOf(off)
+	out.lines = append(out.lines, off...)
 	out.total = billing.Total(out.lines, currency)
 	return out, nil
+}
+
+// sumOf is what lines come to, unrounded.
+func sumOf(lines []billing.Line) billing.Micros {
+	var sum billing.Micros
+	for _, l := range lines {
+		sum += l.Amount
+	}
+	return sum
 }
 
 // bill makes the Statement of a period from start to end, which would have

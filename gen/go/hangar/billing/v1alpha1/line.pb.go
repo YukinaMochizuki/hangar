@@ -25,7 +25,8 @@ const (
 // StatementLine is one thing billed.
 type StatementLine struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// What it is: "monthly_fee", or a Prices field, such as "cpu".
+	// What it is: "monthly_fee", a Prices field, such as "cpu", or
+	// "promotion".
 	Item string `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
 	// How much of it, in unit-hours with up to six decimals, such as
 	// "1440.5" vCPU-hours; "1" for a whole month's fee, a fraction for part.
@@ -38,8 +39,11 @@ type StatementLine struct {
 	Amount string `protobuf:"bytes,5,opt,name=amount,proto3" json:"amount,omitempty"`
 	// When the price took effect, for a PAY_AS_YOU_GO line.
 	PriceEffectiveTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=price_effective_time,json=priceEffectiveTime,proto3" json:"price_effective_time,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// A promotion's label, on its line, whose item is "promotion" and whose
+	// amount is negative.
+	Description   string `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StatementLine) Reset() {
@@ -114,11 +118,18 @@ func (x *StatementLine) GetPriceEffectiveTime() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *StatementLine) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
 var File_hangar_billing_v1alpha1_line_proto protoreflect.FileDescriptor
 
 const file_hangar_billing_v1alpha1_line_proto_rawDesc = "" +
 	"\n" +
-	"\"hangar/billing/v1alpha1/line.proto\x12\x17hangar.billing.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd8\x01\n" +
+	"\"hangar/billing/v1alpha1/line.proto\x12\x17hangar.billing.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfa\x01\n" +
 	"\rStatementLine\x12\x12\n" +
 	"\x04item\x18\x01 \x01(\tR\x04item\x12\x1a\n" +
 	"\bquantity\x18\x02 \x01(\tR\bquantity\x12\x12\n" +
@@ -126,7 +137,8 @@ const file_hangar_billing_v1alpha1_line_proto_rawDesc = "" +
 	"\n" +
 	"unit_price\x18\x04 \x01(\tR\tunitPrice\x12\x16\n" +
 	"\x06amount\x18\x05 \x01(\tR\x06amount\x12L\n" +
-	"\x14price_effective_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x12priceEffectiveTimeB\xf8\x01\n" +
+	"\x14price_effective_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x12priceEffectiveTime\x12 \n" +
+	"\vdescription\x18\a \x01(\tR\vdescriptionB\xf8\x01\n" +
 	"\x1bcom.hangar.billing.v1alpha1B\tLineProtoP\x01ZPgithub.com/YukinaMochizuki/hangar/gen/go/hangar/billing/v1alpha1;billingv1alpha1\xa2\x02\x03HBX\xaa\x02\x17Hangar.Billing.V1alpha1\xca\x02\x17Hangar\\Billing\\V1alpha1\xe2\x02#Hangar\\Billing\\V1alpha1\\GPBMetadata\xea\x02\x19Hangar::Billing::V1alpha1b\x06proto3"
 
 var (

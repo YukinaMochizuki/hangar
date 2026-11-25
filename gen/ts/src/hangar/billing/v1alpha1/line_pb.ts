@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/billing/v1alpha1/line.proto.
  */
 export const file_hangar_billing_v1alpha1_line: GenFile = /*@__PURE__*/
-  fileDesc("CiJoYW5nYXIvYmlsbGluZy92MWFscGhhMS9saW5lLnByb3RvEhdoYW5nYXIuYmlsbGluZy52MWFscGhhMSKbAQoNU3RhdGVtZW50TGluZRIMCgRpdGVtGAEgASgJEhAKCHF1YW50aXR5GAIgASgJEgwKBHVuaXQYAyABKAkSEgoKdW5pdF9wcmljZRgEIAEoCRIOCgZhbW91bnQYBSABKAkSOAoUcHJpY2VfZWZmZWN0aXZlX3RpbWUYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQvgBChtjb20uaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTFCCUxpbmVQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9iaWxsaW5nL3YxYWxwaGExO2JpbGxpbmd2MWFscGhhMaICA0hCWKoCF0hhbmdhci5CaWxsaW5nLlYxYWxwaGExygIXSGFuZ2FyXEJpbGxpbmdcVjFhbHBoYTHiAiNIYW5nYXJcQmlsbGluZ1xWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6QmlsbGluZzo6VjFhbHBoYTFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("CiJoYW5nYXIvYmlsbGluZy92MWFscGhhMS9saW5lLnByb3RvEhdoYW5nYXIuYmlsbGluZy52MWFscGhhMSKwAQoNU3RhdGVtZW50TGluZRIMCgRpdGVtGAEgASgJEhAKCHF1YW50aXR5GAIgASgJEgwKBHVuaXQYAyABKAkSEgoKdW5pdF9wcmljZRgEIAEoCRIOCgZhbW91bnQYBSABKAkSOAoUcHJpY2VfZWZmZWN0aXZlX3RpbWUYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhMKC2Rlc2NyaXB0aW9uGAcgASgJQvgBChtjb20uaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTFCCUxpbmVQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9iaWxsaW5nL3YxYWxwaGExO2JpbGxpbmd2MWFscGhhMaICA0hCWKoCF0hhbmdhci5CaWxsaW5nLlYxYWxwaGExygIXSGFuZ2FyXEJpbGxpbmdcVjFhbHBoYTHiAiNIYW5nYXJcQmlsbGluZ1xWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6QmlsbGluZzo6VjFhbHBoYTFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * StatementLine is one thing billed.
@@ -21,7 +21,8 @@ export const file_hangar_billing_v1alpha1_line: GenFile = /*@__PURE__*/
  */
 export type StatementLine = Message<"hangar.billing.v1alpha1.StatementLine"> & {
   /**
-   * What it is: "monthly_fee", or a Prices field, such as "cpu".
+   * What it is: "monthly_fee", a Prices field, such as "cpu", or
+   * "promotion".
    *
    * @generated from field: string item = 1;
    */
@@ -62,6 +63,14 @@ export type StatementLine = Message<"hangar.billing.v1alpha1.StatementLine"> & {
    * @generated from field: google.protobuf.Timestamp price_effective_time = 6;
    */
   priceEffectiveTime?: Timestamp | undefined;
+
+  /**
+   * A promotion's label, on its line, whose item is "promotion" and whose
+   * amount is negative.
+   *
+   * @generated from field: string description = 7;
+   */
+  description: string;
 };
 
 /**

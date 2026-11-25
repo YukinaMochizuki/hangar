@@ -131,13 +131,15 @@ type Line struct {
 	Amount    Micros
 	// Effective is when UnitPrice took effect; zero for a fee.
 	Effective time.Time
+	// Description is a promotion's label.
+	Description string
 }
 
 // Proto is l as a Statement line.
 func (l Line) Proto() *billingv1alpha1.StatementLine {
 	out := &billingv1alpha1.StatementLine{
 		Item: l.Item, Quantity: l.Quantity.String(), Unit: l.Unit,
-		UnitPrice: l.UnitPrice.String(), Amount: l.Amount.String(),
+		UnitPrice: l.UnitPrice.String(), Amount: l.Amount.String(), Description: l.Description,
 	}
 	if !l.Effective.IsZero() {
 		out.PriceEffectiveTime = timestamppb.New(l.Effective)
@@ -190,4 +192,30 @@ func Total(lines []Line, currency string) Micros {
 		sum += l.Amount
 	}
 	return RoundToMinor(sum, currency)
+}
+
+// Promotion is a discount of Percent on what is billed for the time before
+// Until.
+type Promotion struct {
+	Label   string
+	Percent int64
+	Until   time.Time
+}
+
+// PromotionLines are the lines of promotions on billed, the amount of what
+// is billed: each a negative amount, its percent of before(Until), what
+// the part of the time before Until comes to. Together they take no more
+// than billed; a promotion that would take nothing has no line.
+func PromotionLines(promotions []Promotion, billed Micros, before func(until time.Time) Micros) []Line {
+	var out []Line
+	left := billed
+	for _, p := range promotions {
+		off := min(before(p.Until).Share(p.Percent, 100), left)
+		if off <= 0 {
+			continue
+		}
+		left -= off
+		out = append(out, Line{Item: "promotion", Description: p.Label, Quantity: Micros(p.Percent * perUnit), Unit: "percent", Amount: -off})
+	}
+	return out
 }
