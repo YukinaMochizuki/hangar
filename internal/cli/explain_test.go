@@ -34,11 +34,11 @@ func TestAPIResources(t *testing.T) {
 	if err := json.Unmarshal([]byte(w.must("", "api-resources", "-o", "json")), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Items) == 0 || doc.Items[0].Kind != "Container" || doc.Items[0].Scope != "SCOPE_PROJECT" ||
-		!strings.HasPrefix(doc.Items[0].Description, "Container runs an OCI image") {
+	if len(doc.Items) == 0 || doc.Items[0].Kind != "BillingAccount" || doc.Items[0].Scope != "SCOPE_GLOBAL" ||
+		!strings.HasPrefix(doc.Items[0].Description, "BillingAccount is what a tenant has agreed to pay") {
 		t.Errorf("api-resources -o json: %+v", doc.Items)
 	}
-	if out := w.must("", "api-resources", "-o", "name"); !strings.HasPrefix(out, "containers\nmachines\n") {
+	if out := w.must("", "api-resources", "-o", "name"); !strings.HasPrefix(out, "billingaccounts\npricelists\nstatements\ncontainers\nmachines\n") {
 		t.Errorf("api-resources -o name:\n%s", out)
 	}
 }

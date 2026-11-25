@@ -5,13 +5,14 @@
 package registry
 
 import (
-	v1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
-	v1alpha11 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
+	v1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/billing/v1alpha1"
+	v1alpha11 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	v1alpha12 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	v1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
-	v1alpha12 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
-	v1alpha13 "github.com/YukinaMochizuki/hangar/gen/go/hangar/secrets/v1alpha1"
-	v1alpha14 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
-	v1alpha15 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	v1alpha13 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
+	v1alpha14 "github.com/YukinaMochizuki/hangar/gen/go/hangar/secrets/v1alpha1"
+	v1alpha15 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
+	v1alpha16 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	slices "slices"
 	strings "strings"
@@ -41,6 +42,36 @@ func (r Resource) APIVersion() string { return r.Group + "." + Domain + "/" + r.
 func (r Resource) ProjectScoped() bool { return r.Scope == v1.Scope_SCOPE_PROJECT }
 
 var (
+	BillingAccount = Resource{
+		Group:      "billing",
+		Version:    "v1alpha1",
+		Kind:       "BillingAccount",
+		Plural:     "billingaccounts",
+		ShortNames: []string{"ba"},
+		Scope:      v1.Scope_SCOPE_GLOBAL,
+		Message:    (*v1alpha1.BillingAccount)(nil).ProtoReflect().Type(),
+		Service:    "hangar.billing.v1alpha1.BillingAccountService",
+	}
+	PriceList = Resource{
+		Group:      "billing",
+		Version:    "v1alpha1",
+		Kind:       "PriceList",
+		Plural:     "pricelists",
+		ShortNames: []string{"pl"},
+		Scope:      v1.Scope_SCOPE_GLOBAL,
+		Message:    (*v1alpha1.PriceList)(nil).ProtoReflect().Type(),
+		Service:    "hangar.billing.v1alpha1.PriceListService",
+	}
+	Statement = Resource{
+		Group:      "billing",
+		Version:    "v1alpha1",
+		Kind:       "Statement",
+		Plural:     "statements",
+		ShortNames: []string{"stmt"},
+		Scope:      v1.Scope_SCOPE_GLOBAL,
+		Message:    (*v1alpha1.Statement)(nil).ProtoReflect().Type(),
+		Service:    "hangar.billing.v1alpha1.StatementService",
+	}
 	Container = Resource{
 		Group:      "compute",
 		Version:    "v1alpha1",
@@ -48,7 +79,7 @@ var (
 		Plural:     "containers",
 		ShortNames: []string{"ct"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha1.Container)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha11.Container)(nil).ProtoReflect().Type(),
 		Service:    "hangar.compute.v1alpha1.ContainerService",
 	}
 	Machine = Resource{
@@ -58,7 +89,7 @@ var (
 		Plural:     "machines",
 		ShortNames: []string{"mc"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha1.Machine)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha11.Machine)(nil).ProtoReflect().Type(),
 		Service:    "hangar.compute.v1alpha1.MachineService",
 	}
 	MachineSize = Resource{
@@ -68,7 +99,7 @@ var (
 		Plural:     "machinesizes",
 		ShortNames: []string{"ms"},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha1.MachineSize)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha11.MachineSize)(nil).ProtoReflect().Type(),
 		Service:    "hangar.compute.v1alpha1.MachineSizeService",
 	}
 	Node = Resource{
@@ -78,7 +109,7 @@ var (
 		Plural:     "nodes",
 		ShortNames: []string{},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha1.Node)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha11.Node)(nil).ProtoReflect().Type(),
 		Service:    "hangar.compute.v1alpha1.NodeService",
 	}
 	VirtualMachine = Resource{
@@ -88,7 +119,7 @@ var (
 		Plural:     "virtualmachines",
 		ShortNames: []string{"vm"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha1.VirtualMachine)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha11.VirtualMachine)(nil).ProtoReflect().Type(),
 		Service:    "hangar.compute.v1alpha1.VirtualMachineService",
 	}
 	Invitation = Resource{
@@ -98,7 +129,7 @@ var (
 		Plural:     "invitations",
 		ShortNames: []string{},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha11.Invitation)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha12.Invitation)(nil).ProtoReflect().Type(),
 		Service:    "hangar.iam.v1alpha1.InvitationService",
 	}
 	RoleBinding = Resource{
@@ -108,7 +139,7 @@ var (
 		Plural:     "rolebindings",
 		ShortNames: []string{"rb"},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha11.RoleBinding)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha12.RoleBinding)(nil).ProtoReflect().Type(),
 		Service:    "hangar.iam.v1alpha1.RoleBindingService",
 	}
 	ServiceToken = Resource{
@@ -118,7 +149,7 @@ var (
 		Plural:     "servicetokens",
 		ShortNames: []string{"st"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha11.ServiceToken)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha12.ServiceToken)(nil).ProtoReflect().Type(),
 		Service:    "hangar.iam.v1alpha1.ServiceTokenService",
 	}
 	User = Resource{
@@ -128,7 +159,7 @@ var (
 		Plural:     "users",
 		ShortNames: []string{},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha11.User)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha12.User)(nil).ProtoReflect().Type(),
 		Service:    "hangar.iam.v1alpha1.UserService",
 	}
 	Address = Resource{
@@ -138,7 +169,7 @@ var (
 		Plural:     "addresses",
 		ShortNames: []string{"addr"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha12.Address)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha13.Address)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.AddressService",
 	}
 	CustomDomain = Resource{
@@ -148,7 +179,7 @@ var (
 		Plural:     "customdomains",
 		ShortNames: []string{"cdom"},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha12.CustomDomain)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha13.CustomDomain)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.CustomDomainService",
 	}
 	EndpointService = Resource{
@@ -158,7 +189,7 @@ var (
 		Plural:     "endpointservices",
 		ShortNames: []string{"epsvc"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha12.EndpointService)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha13.EndpointService)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.EndpointServiceService",
 	}
 	Network = Resource{
@@ -168,7 +199,7 @@ var (
 		Plural:     "networks",
 		ShortNames: []string{"net"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha12.Network)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha13.Network)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.NetworkService",
 	}
 	NetworkEndpoint = Resource{
@@ -178,7 +209,7 @@ var (
 		Plural:     "networkendpoints",
 		ShortNames: []string{"nep"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha12.NetworkEndpoint)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha13.NetworkEndpoint)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.NetworkEndpointService",
 	}
 	PortForward = Resource{
@@ -188,7 +219,7 @@ var (
 		Plural:     "portforwards",
 		ShortNames: []string{"pf"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha12.PortForward)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha13.PortForward)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.PortForwardService",
 	}
 	PublicEndpoint = Resource{
@@ -198,7 +229,7 @@ var (
 		Plural:     "publicendpoints",
 		ShortNames: []string{"ep"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha12.PublicEndpoint)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha13.PublicEndpoint)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.PublicEndpointService",
 	}
 	SecurityGroup = Resource{
@@ -208,7 +239,7 @@ var (
 		Plural:     "securitygroups",
 		ShortNames: []string{"sg"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha12.SecurityGroup)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha13.SecurityGroup)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.SecurityGroupService",
 	}
 	Secret = Resource{
@@ -218,7 +249,7 @@ var (
 		Plural:     "secrets",
 		ShortNames: []string{},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha13.Secret)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha14.Secret)(nil).ProtoReflect().Type(),
 		Service:    "hangar.secrets.v1alpha1.SecretService",
 	}
 	CustomImage = Resource{
@@ -228,7 +259,7 @@ var (
 		Plural:     "customimages",
 		ShortNames: []string{"cimg"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha14.CustomImage)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha15.CustomImage)(nil).ProtoReflect().Type(),
 		Service:    "hangar.storage.v1alpha1.CustomImageService",
 	}
 	Disk = Resource{
@@ -238,7 +269,7 @@ var (
 		Plural:     "disks",
 		ShortNames: []string{"dk"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha14.Disk)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha15.Disk)(nil).ProtoReflect().Type(),
 		Service:    "hangar.storage.v1alpha1.DiskService",
 	}
 	FileShare = Resource{
@@ -248,7 +279,7 @@ var (
 		Plural:     "fileshares",
 		ShortNames: []string{"fs"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha14.FileShare)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha15.FileShare)(nil).ProtoReflect().Type(),
 		Service:    "hangar.storage.v1alpha1.FileShareService",
 	}
 	Image = Resource{
@@ -258,7 +289,7 @@ var (
 		Plural:     "images",
 		ShortNames: []string{"img"},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha14.Image)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha15.Image)(nil).ProtoReflect().Type(),
 		Service:    "hangar.storage.v1alpha1.ImageService",
 	}
 	Plan = Resource{
@@ -268,7 +299,7 @@ var (
 		Plural:     "plans",
 		ShortNames: []string{},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha15.Plan)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha16.Plan)(nil).ProtoReflect().Type(),
 		Service:    "hangar.tenancy.v1alpha1.PlanService",
 	}
 	Project = Resource{
@@ -278,7 +309,7 @@ var (
 		Plural:     "projects",
 		ShortNames: []string{"proj"},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha15.Project)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha16.Project)(nil).ProtoReflect().Type(),
 		Service:    "hangar.tenancy.v1alpha1.ProjectService",
 	}
 	Tenant = Resource{
@@ -288,13 +319,16 @@ var (
 		Plural:     "tenants",
 		ShortNames: []string{},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha15.Tenant)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha16.Tenant)(nil).ProtoReflect().Type(),
 		Service:    "hangar.tenancy.v1alpha1.TenantService",
 	}
 )
 
 // All lists every resource kind, ordered by group and kind.
 var All = []Resource{
+	BillingAccount,
+	PriceList,
+	Statement,
 	Container,
 	Machine,
 	MachineSize,

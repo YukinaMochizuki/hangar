@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package hangar.billing.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+
+// StatementLine is one thing billed.
+message StatementLine {
+  // What it is: "monthly_fee", or a Prices field, such as "cpu".
+  string item = 1;
+  // How much of it, in unit-hours with up to six decimals, such as
+  // "1440.5" vCPU-hours; "1" for a whole month's fee, a fraction for part.
+  string quantity = 2;
+  // The unit quantity counts, such as "vCPU-hour" or "month".
+  string unit = 3;
+  // The price of one unit, as the PriceList or the account gave it.
+  string unit_price = 4;
+  // quantity times unit_price, with six decimals.
+  string amount = 5;
+  // When the price took effect, for a PAY_AS_YOU_GO line.
+  google.protobuf.Timestamp price_effective_time = 6;
+}

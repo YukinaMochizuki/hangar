@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package hangar.billing.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+import "hangar/billing/v1alpha1/billing_account.proto";
+import "hangar/billing/v1alpha1/line.proto";
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Statement is what a tenant owes for one period of its BillingAccount. The
+// apiserver makes it as the period ends, and nothing changes it after but
+// its payment, which a platform administrator records
+// (StatementPaymentService). It outlives its tenant. Its name is the
+// tenant's and the period's start, as "acme-202611010000". See
+// docs/decisions/billing.md.
+message Statement {
+  option (hangar.meta.v1.resource) = {
+    kind: "Statement"
+    plural: "statements"
+    short_names: ["stmt"]
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  StatementSpec spec = 4;
+  StatementStatus status = 5;
+}
+
+// StatementEnd is why a period ended.
+enum StatementEnd {
+  STATEMENT_END_UNSPECIFIED = 0;
+  // It ran its length.
+  STATEMENT_END_PERIOD = 1;
+  // The account's agreement changed.
+  STATEMENT_END_AGREEMENT_CHANGED = 2;
+  // The account was deleted, with its tenant or alone.
+  STATEMENT_END_ACCOUNT_DELETED = 3;
+}
+
+// StatementSpec is the bill, as the apiserver made it.
+message StatementSpec {
+  // Name of the Tenant billed.
+  string tenant = 1 [(hangar.meta.v1.field).immutable = true];
+  BillingType type = 2 [(hangar.meta.v1.field).immutable = true];
+  string currency = 3 [(hangar.meta.v1.field).immutable = true];
+  google.protobuf.Timestamp period_start_time = 4 [(hangar.meta.v1.field).immutable = true];
+  google.protobuf.Timestamp period_end_time = 5 [(hangar.meta.v1.field).immutable = true];
+  StatementEnd end = 6 [(hangar.meta.v1.field).immutable = true];
+  // What is billed, one line for the fee of a FIXED account, or one for
+  // each thing held at each price for a PAY_AS_YOU_GO one.
+  repeated StatementLine lines = 7 [(hangar.meta.v1.field).immutable = true];
+  // The lines' amounts together, rounded to the currency's minor unit.
+  string total = 8 [(hangar.meta.v1.field).immutable = true];
+  // What the period's holdings came to at the account's PriceList, when a
+  // FIXED account names one; for the record, not billed.
+  string metered = 9 [(hangar.meta.v1.field).immutable = true];
+  // The uid of the BillingAccount that made it.
+  string account_uid = 10 [(hangar.meta.v1.field).immutable = true];
+  // The Plan whose fee a FIXED account paid.
+  string plan = 11 [(hangar.meta.v1.field).immutable = true];
+}
+
+// StatementStatus says whether it is paid.
+message StatementStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // When it was paid, as the administrator recorded it; unset while it is
+  // not.
+  google.protobuf.Timestamp paid_time = 3;
+  // Who recorded it paid.
+  string paid_recorded_by = 4;
+}
+
+// StatementService manages statements. Only the apiserver writes them.
+service StatementService {
+  rpc GetStatement(GetStatementRequest) returns (GetStatementResponse);
+  rpc ListStatements(ListStatementsRequest) returns (ListStatementsResponse);
+  rpc WatchStatements(WatchStatementsRequest) returns (stream WatchStatementsResponse);
+  rpc ApplyStatement(ApplyStatementRequest) returns (ApplyStatementResponse);
+  rpc DeleteStatement(DeleteStatementRequest) returns (DeleteStatementResponse);
+  rpc UpdateStatementStatus(UpdateStatementStatusRequest) returns (UpdateStatementStatusResponse);
+}
+
+message GetStatementRequest {
+  string name = 1;
+}
+
+message GetStatementResponse {
+  Statement statement = 1;
+}
+
+message ListStatementsRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListStatementsResponse {
+  repeated Statement items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchStatementsRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchStatementsResponse {
+  hangar.meta.v1.EventType type = 1;
+  Statement statement = 2;
+  int64 revision = 3;
+}
+
+message ApplyStatementRequest {
+  Statement statement = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
+}
+
+message ApplyStatementResponse {
+  Statement statement = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteStatementRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeleteStatementResponse {
+  Statement statement = 1;
+}
+
+message UpdateStatementStatusRequest {
+  string name = 1;
+  StatementStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdateStatementStatusResponse {
+  Statement statement = 1;
+}

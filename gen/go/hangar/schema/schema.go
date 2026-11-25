@@ -6,6 +6,15 @@ package schema
 
 import _ "embed"
 
+//go:embed billing_v1alpha1_billingaccount.json
+var billingv1alpha1BillingAccount []byte
+
+//go:embed billing_v1alpha1_pricelist.json
+var billingv1alpha1PriceList []byte
+
+//go:embed billing_v1alpha1_statement.json
+var billingv1alpha1Statement []byte
+
 //go:embed compute_v1alpha1_container.json
 var computev1alpha1Container []byte
 
@@ -84,6 +93,12 @@ var tenancyv1alpha1Tenant []byte
 // Get returns the JSON Schema of a kind, by its group, version and kind.
 func Get(group, version, kind string) ([]byte, bool) {
 	switch group + "/" + version + "/" + kind {
+	case "billing/v1alpha1/BillingAccount":
+		return billingv1alpha1BillingAccount, true
+	case "billing/v1alpha1/PriceList":
+		return billingv1alpha1PriceList, true
+	case "billing/v1alpha1/Statement":
+		return billingv1alpha1Statement, true
 	case "compute/v1alpha1/Container":
 		return computev1alpha1Container, true
 	case "compute/v1alpha1/Machine":

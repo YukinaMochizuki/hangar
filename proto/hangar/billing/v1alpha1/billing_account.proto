@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+package hangar.billing.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+import "hangar/billing/v1alpha1/line.proto";
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// BillingAccount is what a tenant has agreed to pay, and how often it is
+// billed. Its name is the tenant's, and it goes with the tenant, after a last
+// Statement for the period it had open. A tenant without one is not billed,
+// and what it holds is not metered. Platform administrators keep billing
+// accounts; the tenant's own people, at the tenant, read theirs. See
+// docs/decisions/billing.md.
+message BillingAccount {
+  option (hangar.meta.v1.resource) = {
+    kind: "BillingAccount"
+    plural: "billingaccounts"
+    short_names: ["ba"]
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  BillingAccountSpec spec = 4;
+  BillingAccountStatus status = 5;
+}
+
+// BillingType is how a tenant pays.
+enum BillingType {
+  BILLING_TYPE_UNSPECIFIED = 0;
+  // A fee each month, whatever the tenant holds.
+  BILLING_TYPE_FIXED = 1;
+  // What the tenant holds, minute by minute, at a PriceList's prices.
+  BILLING_TYPE_PAY_AS_YOU_GO = 2;
+}
+
+// BillingAccountSpec is the agreement. Changing the type, or the tenant's
+// Plan while FIXED, ends the period open, in the minute the apiserver sees
+// it, with a Statement for the part of it that has passed; the next period
+// starts there. Any other change, and a new price of the Plan, applies from
+// the next period.
+message BillingAccountSpec {
+  BillingType type = 1;
+  // The ISO 4217 code the account is billed in, such as "TWD". A FIXED
+  // account's Plan, and a price list it names, must be in it.
+  string currency = 2 [(hangar.meta.v1.field).immutable = true];
+  // monthly_fee was the FIXED fee, before a FIXED account paid its Plan's.
+  reserved 3;
+  reserved "monthly_fee";
+  // Name of the PriceList that rates what the tenant holds. Required for
+  // PAY_AS_YOU_GO; on a FIXED account it is optional, and only values what
+  // the tenant holds for the platform's administrators, apart from what it
+  // pays.
+  string price_list = 4;
+  // How many months one period lasts: 1 to 6 for PAY_AS_YOU_GO; a FIXED
+  // account's is always 1, and 0 means 1 for either.
+  int32 period_months = 5;
+  // When the first period starts, on a whole minute. Each period starts on
+  // its day of the month and its time of day, in time_zone, or on the
+  // month's last day if it has fewer. A new account's may not be before the
+  // end of its tenant's last Statement.
+  google.protobuf.Timestamp anchor_time = 6 [(hangar.meta.v1.field).immutable = true];
+  // The IANA time zone periods are cut in, such as "Asia/Taipei"; empty is
+  // UTC.
+  string time_zone = 7 [(hangar.meta.v1.field).immutable = true];
+}
+
+// BillingAccountStatus is the period open and what it has come to.
+message BillingAccountStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // When the periods are counted from: anchor_time, or the minute the
+  // agreement last changed.
+  google.protobuf.Timestamp period_anchor_time = 3;
+  // The period open now; unset before anchor_time.
+  google.protobuf.Timestamp period_start_time = 4;
+  google.protobuf.Timestamp period_end_time = 5;
+  // What the open period has come to so far, as its Statement would bill
+  // it, up to accrued_time.
+  string accrued = 6;
+  // What the open period's holdings come to at price_list's prices, for an
+  // account that names one; for a PAY_AS_YOU_GO account, it is accrued.
+  string metered = 7;
+  google.protobuf.Timestamp accrued_time = 8;
+  // The agreement the open period started under: its type, and its fee and
+  // the Plan it came from (FIXED), or its price list, and its length.
+  BillingType period_type = 9;
+  string period_monthly_fee = 10;
+  string period_price_list = 11;
+  int32 period_months = 12;
+  // What the open period's holdings come to up to accrued_time at
+  // price_list's prices, a line for each thing held at each price, as a
+  // Statement lists them; none for an account that names no price list.
+  repeated StatementLine usage_lines = 13;
+  string period_plan = 14;
+  // Where a change of type or Plan, once seen, ends the open period; unset
+  // while none is pending.
+  google.protobuf.Timestamp period_cut_time = 15;
+  // How many months after period_anchor_time the periods of this length
+  // are cut from, once a new length took effect; they keep the anchor's
+  // day of the month.
+  int32 period_offset_months = 16;
+  // The resource version of the price list accrued and metered were rated
+  // at; a new one rates them again.
+  int64 price_list_version = 17;
+}
+
+// BillingAccountService manages billing accounts.
+service BillingAccountService {
+  rpc GetBillingAccount(GetBillingAccountRequest) returns (GetBillingAccountResponse);
+  rpc ListBillingAccounts(ListBillingAccountsRequest) returns (ListBillingAccountsResponse);
+  rpc WatchBillingAccounts(WatchBillingAccountsRequest) returns (stream WatchBillingAccountsResponse);
+  rpc ApplyBillingAccount(ApplyBillingAccountRequest) returns (ApplyBillingAccountResponse);
+  rpc DeleteBillingAccount(DeleteBillingAccountRequest) returns (DeleteBillingAccountResponse);
+  rpc UpdateBillingAccountStatus(UpdateBillingAccountStatusRequest) returns (UpdateBillingAccountStatusResponse);
+}
+
+message GetBillingAccountRequest {
+  string name = 1;
+}
+
+message GetBillingAccountResponse {
+  BillingAccount billing_account = 1;
+}
+
+message ListBillingAccountsRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListBillingAccountsResponse {
+  repeated BillingAccount items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchBillingAccountsRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchBillingAccountsResponse {
+  hangar.meta.v1.EventType type = 1;
+  BillingAccount billing_account = 2;
+  int64 revision = 3;
+}
+
+message ApplyBillingAccountRequest {
+  BillingAccount billing_account = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
+}
+
+message ApplyBillingAccountResponse {
+  BillingAccount billing_account = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteBillingAccountRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeleteBillingAccountResponse {
+  BillingAccount billing_account = 1;
+}
+
+message UpdateBillingAccountStatusRequest {
+  string name = 1;
+  BillingAccountStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdateBillingAccountStatusResponse {
+  BillingAccount billing_account = 1;
+}

@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/tenancy/v1alpha1/plan.proto.
  */
 export const file_hangar_tenancy_v1alpha1_plan: GenFile = /*@__PURE__*/
-  fileDesc("CiJoYW5nYXIvdGVuYW5jeS92MWFscGhhMS9wbGFuLnByb3RvEhdoYW5nYXIudGVuYW5jeS52MWFscGhhMSLSAQoEUGxhbhITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRIvCgRzcGVjGAQgASgLMiEuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhblNwZWMSMwoGc3RhdHVzGAUgASgLMiMuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhblN0YXR1czoTirUYDwoEUGxhbhIFcGxhbnMgAiJRCghQbGFuU3BlYxIUCgxkaXNwbGF5X25hbWUYASABKAkSLwoGbGltaXRzGAIgASgLMh8uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTGltaXRzIlgKClBsYW5TdGF0dXMSGwoTb2JzZXJ2ZWRfZ2VuZXJhdGlvbhgBIAEoAxItCgpjb25kaXRpb25zGAIgAygLMhkuaGFuZ2FyLm1ldGEudjEuQ29uZGl0aW9uIuAECgZMaW1pdHMSEAoDY3B1GAEgASgJSACIAQESEwoGbWVtb3J5GAIgASgJSAGIAQESEQoEZGlzaxgDIAEoCUgCiAEBEhUKCG1hY2hpbmVzGAQgASgFSAOIAQESFQoIcHJvamVjdHMYBSABKAVIBIgBARIVCghuZXR3b3JrcxgGIAEoBUgFiAEBEhYKCWFkZHJlc3NlcxgHIAEoBUgGiAEBEh0KEHB1YmxpY19lbmRwb2ludHMYCCABKAVIB4gBARIbCg5zZXJ2aWNlX3Rva2VucxgJIAEoBUgIiAEBEhgKC2ZpbGVfc2hhcmVzGAogASgFSAmIAQESFAoHZG9tYWlucxgLIAEoBUgKiAEBEhoKDXBvcnRfZm9yd2FyZHMYDCABKAVIC4gBARIaCg1jdXN0b21faW1hZ2VzGA0gASgFSAyIAQESGgoNbWFjaGluZV9jYWxscxgOIAEoBUgNiAEBEh4KEW5ldHdvcmtfZW5kcG9pbnRzGA8gASgFSA6IAQFCBgoEX2NwdUIJCgdfbWVtb3J5QgcKBV9kaXNrQgsKCV9tYWNoaW5lc0ILCglfcHJvamVjdHNCCwoJX25ldHdvcmtzQgwKCl9hZGRyZXNzZXNCEwoRX3B1YmxpY19lbmRwb2ludHNCEQoPX3NlcnZpY2VfdG9rZW5zQg4KDF9maWxlX3NoYXJlc0IKCghfZG9tYWluc0IQCg5fcG9ydF9mb3J3YXJkc0IQCg5fY3VzdG9tX2ltYWdlc0IQCg5fbWFjaGluZV9jYWxsc0IUChJfbmV0d29ya19lbmRwb2ludHMiogIKBVVzYWdlEgsKA2NwdRgBIAEoCRIOCgZtZW1vcnkYAiABKAkSDAoEZGlzaxgDIAEoCRIQCghtYWNoaW5lcxgEIAEoBRIQCghwcm9qZWN0cxgFIAEoBRIQCghuZXR3b3JrcxgGIAEoBRIRCglhZGRyZXNzZXMYByABKAUSGAoQcHVibGljX2VuZHBvaW50cxgIIAEoBRIWCg5zZXJ2aWNlX3Rva2VucxgJIAEoBRITCgtmaWxlX3NoYXJlcxgKIAEoBRIPCgdkb21haW5zGAsgASgFEhUKDXBvcnRfZm9yd2FyZHMYDCABKAUSFQoNY3VzdG9tX2ltYWdlcxgNIAEoBRIZChFuZXR3b3JrX2VuZHBvaW50cxgPIAEoBUoECA4QDyIeCg5HZXRQbGFuUmVxdWVzdBIMCgRuYW1lGAEgASgJIj4KD0dldFBsYW5SZXNwb25zZRIrCgRwbGFuGAEgASgLMh0uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhbiJRChBMaXN0UGxhbnNSZXF1ZXN0EhYKDmxhYmVsX3NlbGVjdG9yGAEgASgJEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJImwKEUxpc3RQbGFuc1Jlc3BvbnNlEiwKBWl0ZW1zGAEgAygLMh0uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhbhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEAoIcmV2aXNpb24YAyABKAMiQwoRV2F0Y2hQbGFuc1JlcXVlc3QSFgoObGFiZWxfc2VsZWN0b3IYASABKAkSFgoOc2luY2VfcmV2aXNpb24YAiABKAMifAoSV2F0Y2hQbGFuc1Jlc3BvbnNlEicKBHR5cGUYASABKA4yGS5oYW5nYXIubWV0YS52MS5FdmVudFR5cGUSKwoEcGxhbhgCIAEoCzIdLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlBsYW4SEAoIcmV2aXNpb24YAyABKAMiVAoQQXBwbHlQbGFuUmVxdWVzdBIrCgRwbGFuGAEgASgLMh0uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhbhITCgtjcmVhdGVfb25seRgCIAEoCCJjChFBcHBseVBsYW5SZXNwb25zZRIrCgRwbGFuGAEgASgLMh0uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhbhIQCgh3YXJuaW5ncxgCIAMoCRIPCgdjcmVhdGVkGAMgASgIImcKEURlbGV0ZVBsYW5SZXF1ZXN0EgwKBG5hbWUYASABKAkSJgoZZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbhgCIAEoA0gAiAEBQhwKGl9leHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uIkEKEkRlbGV0ZVBsYW5SZXNwb25zZRIrCgRwbGFuGAEgASgLMh0uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhbiKiAQoXVXBkYXRlUGxhblN0YXR1c1JlcXVlc3QSDAoEbmFtZRgBIAEoCRIzCgZzdGF0dXMYAiABKAsyIy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5QbGFuU3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJHChhVcGRhdGVQbGFuU3RhdHVzUmVzcG9uc2USKwoEcGxhbhgBIAEoCzIdLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlBsYW4y/AQKC1BsYW5TZXJ2aWNlElwKB0dldFBsYW4SJy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5HZXRQbGFuUmVxdWVzdBooLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkdldFBsYW5SZXNwb25zZRJiCglMaXN0UGxhbnMSKS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5MaXN0UGxhbnNSZXF1ZXN0GiouaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTGlzdFBsYW5zUmVzcG9uc2USZwoKV2F0Y2hQbGFucxIqLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLldhdGNoUGxhbnNSZXF1ZXN0GisuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuV2F0Y2hQbGFuc1Jlc3BvbnNlMAESYgoJQXBwbHlQbGFuEikuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuQXBwbHlQbGFuUmVxdWVzdBoqLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkFwcGx5UGxhblJlc3BvbnNlEmUKCkRlbGV0ZVBsYW4SKi5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5EZWxldGVQbGFuUmVxdWVzdBorLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkRlbGV0ZVBsYW5SZXNwb25zZRJ3ChBVcGRhdGVQbGFuU3RhdHVzEjAuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuVXBkYXRlUGxhblN0YXR1c1JlcXVlc3QaMS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5VcGRhdGVQbGFuU3RhdHVzUmVzcG9uc2VC+AEKG2NvbS5oYW5nYXIudGVuYW5jeS52MWFscGhhMUIJUGxhblByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL3RlbmFuY3kvdjFhbHBoYTE7dGVuYW5jeXYxYWxwaGExogIDSFRYqgIXSGFuZ2FyLlRlbmFuY3kuVjFhbHBoYTHKAhdIYW5nYXJcVGVuYW5jeVxWMWFscGhhMeICI0hhbmdhclxUZW5hbmN5XFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpUZW5hbmN5OjpWMWFscGhhMWIGcHJvdG8z", [file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
+  fileDesc("CiJoYW5nYXIvdGVuYW5jeS92MWFscGhhMS9wbGFuLnByb3RvEhdoYW5nYXIudGVuYW5jeS52MWFscGhhMSLSAQoEUGxhbhITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRIvCgRzcGVjGAQgASgLMiEuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhblNwZWMSMwoGc3RhdHVzGAUgASgLMiMuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhblN0YXR1czoTirUYDwoEUGxhbhIFcGxhbnMgAiKEAQoIUGxhblNwZWMSFAoMZGlzcGxheV9uYW1lGAEgASgJEi8KBmxpbWl0cxgCIAEoCzIfLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkxpbWl0cxIxCgVwcmljZRgDIAEoCzIiLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlBsYW5QcmljZSIyCglQbGFuUHJpY2USEwoLbW9udGhseV9mZWUYASABKAkSEAoIY3VycmVuY3kYAiABKAkiWAoKUGxhblN0YXR1cxIbChNvYnNlcnZlZF9nZW5lcmF0aW9uGAEgASgDEi0KCmNvbmRpdGlvbnMYAiADKAsyGS5oYW5nYXIubWV0YS52MS5Db25kaXRpb24i4AQKBkxpbWl0cxIQCgNjcHUYASABKAlIAIgBARITCgZtZW1vcnkYAiABKAlIAYgBARIRCgRkaXNrGAMgASgJSAKIAQESFQoIbWFjaGluZXMYBCABKAVIA4gBARIVCghwcm9qZWN0cxgFIAEoBUgEiAEBEhUKCG5ldHdvcmtzGAYgASgFSAWIAQESFgoJYWRkcmVzc2VzGAcgASgFSAaIAQESHQoQcHVibGljX2VuZHBvaW50cxgIIAEoBUgHiAEBEhsKDnNlcnZpY2VfdG9rZW5zGAkgASgFSAiIAQESGAoLZmlsZV9zaGFyZXMYCiABKAVICYgBARIUCgdkb21haW5zGAsgASgFSAqIAQESGgoNcG9ydF9mb3J3YXJkcxgMIAEoBUgLiAEBEhoKDWN1c3RvbV9pbWFnZXMYDSABKAVIDIgBARIaCg1tYWNoaW5lX2NhbGxzGA4gASgFSA2IAQESHgoRbmV0d29ya19lbmRwb2ludHMYDyABKAVIDogBAUIGCgRfY3B1QgkKB19tZW1vcnlCBwoFX2Rpc2tCCwoJX21hY2hpbmVzQgsKCV9wcm9qZWN0c0ILCglfbmV0d29ya3NCDAoKX2FkZHJlc3Nlc0ITChFfcHVibGljX2VuZHBvaW50c0IRCg9fc2VydmljZV90b2tlbnNCDgoMX2ZpbGVfc2hhcmVzQgoKCF9kb21haW5zQhAKDl9wb3J0X2ZvcndhcmRzQhAKDl9jdXN0b21faW1hZ2VzQhAKDl9tYWNoaW5lX2NhbGxzQhQKEl9uZXR3b3JrX2VuZHBvaW50cyKiAgoFVXNhZ2USCwoDY3B1GAEgASgJEg4KBm1lbW9yeRgCIAEoCRIMCgRkaXNrGAMgASgJEhAKCG1hY2hpbmVzGAQgASgFEhAKCHByb2plY3RzGAUgASgFEhAKCG5ldHdvcmtzGAYgASgFEhEKCWFkZHJlc3NlcxgHIAEoBRIYChBwdWJsaWNfZW5kcG9pbnRzGAggASgFEhYKDnNlcnZpY2VfdG9rZW5zGAkgASgFEhMKC2ZpbGVfc2hhcmVzGAogASgFEg8KB2RvbWFpbnMYCyABKAUSFQoNcG9ydF9mb3J3YXJkcxgMIAEoBRIVCg1jdXN0b21faW1hZ2VzGA0gASgFEhkKEW5ldHdvcmtfZW5kcG9pbnRzGA8gASgFSgQIDhAPIh4KDkdldFBsYW5SZXF1ZXN0EgwKBG5hbWUYASABKAkiPgoPR2V0UGxhblJlc3BvbnNlEisKBHBsYW4YASABKAsyHS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5QbGFuIlEKEExpc3RQbGFuc1JlcXVlc3QSFgoObGFiZWxfc2VsZWN0b3IYASABKAkSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkibAoRTGlzdFBsYW5zUmVzcG9uc2USLAoFaXRlbXMYASADKAsyHS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5QbGFuEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCRIQCghyZXZpc2lvbhgDIAEoAyJDChFXYXRjaFBsYW5zUmVxdWVzdBIWCg5sYWJlbF9zZWxlY3RvchgBIAEoCRIWCg5zaW5jZV9yZXZpc2lvbhgCIAEoAyJ8ChJXYXRjaFBsYW5zUmVzcG9uc2USJwoEdHlwZRgBIAEoDjIZLmhhbmdhci5tZXRhLnYxLkV2ZW50VHlwZRIrCgRwbGFuGAIgASgLMh0uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhbhIQCghyZXZpc2lvbhgDIAEoAyJUChBBcHBseVBsYW5SZXF1ZXN0EisKBHBsYW4YASABKAsyHS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5QbGFuEhMKC2NyZWF0ZV9vbmx5GAIgASgIImMKEUFwcGx5UGxhblJlc3BvbnNlEisKBHBsYW4YASABKAsyHS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5QbGFuEhAKCHdhcm5pbmdzGAIgAygJEg8KB2NyZWF0ZWQYAyABKAgiZwoRRGVsZXRlUGxhblJlcXVlc3QSDAoEbmFtZRgBIAEoCRImChlleHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uGAIgASgDSACIAQFCHAoaX2V4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24iQQoSRGVsZXRlUGxhblJlc3BvbnNlEisKBHBsYW4YASABKAsyHS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5QbGFuIqIBChdVcGRhdGVQbGFuU3RhdHVzUmVxdWVzdBIMCgRuYW1lGAEgASgJEjMKBnN0YXR1cxgCIAEoCzIjLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlBsYW5TdGF0dXMSJgoZZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbhgDIAEoA0gAiAEBQhwKGl9leHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uIkcKGFVwZGF0ZVBsYW5TdGF0dXNSZXNwb25zZRIrCgRwbGFuGAEgASgLMh0uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuUGxhbjL8BAoLUGxhblNlcnZpY2USXAoHR2V0UGxhbhInLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkdldFBsYW5SZXF1ZXN0GiguaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuR2V0UGxhblJlc3BvbnNlEmIKCUxpc3RQbGFucxIpLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkxpc3RQbGFuc1JlcXVlc3QaKi5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5MaXN0UGxhbnNSZXNwb25zZRJnCgpXYXRjaFBsYW5zEiouaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuV2F0Y2hQbGFuc1JlcXVlc3QaKy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5XYXRjaFBsYW5zUmVzcG9uc2UwARJiCglBcHBseVBsYW4SKS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5BcHBseVBsYW5SZXF1ZXN0GiouaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuQXBwbHlQbGFuUmVzcG9uc2USZQoKRGVsZXRlUGxhbhIqLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkRlbGV0ZVBsYW5SZXF1ZXN0GisuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuRGVsZXRlUGxhblJlc3BvbnNlEncKEFVwZGF0ZVBsYW5TdGF0dXMSMC5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5VcGRhdGVQbGFuU3RhdHVzUmVxdWVzdBoxLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlVwZGF0ZVBsYW5TdGF0dXNSZXNwb25zZUL4AQobY29tLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExQglQbGFuUHJvdG9QAVpQZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvdGVuYW5jeS92MWFscGhhMTt0ZW5hbmN5djFhbHBoYTGiAgNIVFiqAhdIYW5nYXIuVGVuYW5jeS5WMWFscGhhMcoCF0hhbmdhclxUZW5hbmN5XFYxYWxwaGEx4gIjSGFuZ2FyXFRlbmFuY3lcVjFhbHBoYTFcR1BCTWV0YWRhdGHqAhlIYW5nYXI6OlRlbmFuY3k6OlYxYWxwaGExYgZwcm90bzM", [file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
 
 /**
  * Plan is a tenant's budget: the limits on what all its projects together
@@ -75,6 +75,15 @@ export type PlanSpec = Message<"hangar.tenancy.v1alpha1.PlanSpec"> & {
    * @generated from field: hangar.tenancy.v1alpha1.Limits limits = 2;
    */
   limits?: Limits | undefined;
+
+  /**
+   * What a tenant on the plan pays each month when its BillingAccount is
+   * FIXED; unset, no FIXED account may be on it. A changed price applies
+   * from each such account's next period. See docs/decisions/billing.md.
+   *
+   * @generated from field: hangar.tenancy.v1alpha1.PlanPrice price = 3;
+   */
+  price?: PlanPrice | undefined;
 };
 
 /**
@@ -83,6 +92,34 @@ export type PlanSpec = Message<"hangar.tenancy.v1alpha1.PlanSpec"> & {
  */
 export const PlanSpecSchema: GenMessage<PlanSpec> = /*@__PURE__*/
   messageDesc(file_hangar_tenancy_v1alpha1_plan, 1);
+
+/**
+ * PlanPrice is a plan's monthly fee.
+ *
+ * @generated from message hangar.tenancy.v1alpha1.PlanPrice
+ */
+export type PlanPrice = Message<"hangar.tenancy.v1alpha1.PlanPrice"> & {
+  /**
+   * A decimal in the currency's units, such as "300"; "0" is free.
+   *
+   * @generated from field: string monthly_fee = 1;
+   */
+  monthlyFee: string;
+
+  /**
+   * The ISO 4217 code of the fee, such as "TWD".
+   *
+   * @generated from field: string currency = 2;
+   */
+  currency: string;
+};
+
+/**
+ * Describes the message hangar.tenancy.v1alpha1.PlanPrice.
+ * Use `create(PlanPriceSchema)` to create a new message.
+ */
+export const PlanPriceSchema: GenMessage<PlanPrice> = /*@__PURE__*/
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 2);
 
 /**
  * PlanStatus is the observed state of a plan.
@@ -106,7 +143,7 @@ export type PlanStatus = Message<"hangar.tenancy.v1alpha1.PlanStatus"> & {
  * Use `create(PlanStatusSchema)` to create a new message.
  */
 export const PlanStatusSchema: GenMessage<PlanStatus> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 2);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 3);
 
 /**
  * Limits caps what a tenant, or one of its projects, may hold. Where
@@ -232,7 +269,7 @@ export type Limits = Message<"hangar.tenancy.v1alpha1.Limits"> & {
  * Use `create(LimitsSchema)` to create a new message.
  */
 export const LimitsSchema: GenMessage<Limits> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 3);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 4);
 
 /**
  * Usage is what a tenant, or one of its projects, holds, counted as Limits
@@ -317,7 +354,7 @@ export type Usage = Message<"hangar.tenancy.v1alpha1.Usage"> & {
  * Use `create(UsageSchema)` to create a new message.
  */
 export const UsageSchema: GenMessage<Usage> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 4);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 5);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.GetPlanRequest
@@ -334,7 +371,7 @@ export type GetPlanRequest = Message<"hangar.tenancy.v1alpha1.GetPlanRequest"> &
  * Use `create(GetPlanRequestSchema)` to create a new message.
  */
 export const GetPlanRequestSchema: GenMessage<GetPlanRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 5);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 6);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.GetPlanResponse
@@ -351,7 +388,7 @@ export type GetPlanResponse = Message<"hangar.tenancy.v1alpha1.GetPlanResponse">
  * Use `create(GetPlanResponseSchema)` to create a new message.
  */
 export const GetPlanResponseSchema: GenMessage<GetPlanResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 6);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 7);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.ListPlansRequest
@@ -378,7 +415,7 @@ export type ListPlansRequest = Message<"hangar.tenancy.v1alpha1.ListPlansRequest
  * Use `create(ListPlansRequestSchema)` to create a new message.
  */
 export const ListPlansRequestSchema: GenMessage<ListPlansRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 7);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 8);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.ListPlansResponse
@@ -405,7 +442,7 @@ export type ListPlansResponse = Message<"hangar.tenancy.v1alpha1.ListPlansRespon
  * Use `create(ListPlansResponseSchema)` to create a new message.
  */
 export const ListPlansResponseSchema: GenMessage<ListPlansResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 8);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 9);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.WatchPlansRequest
@@ -427,7 +464,7 @@ export type WatchPlansRequest = Message<"hangar.tenancy.v1alpha1.WatchPlansReque
  * Use `create(WatchPlansRequestSchema)` to create a new message.
  */
 export const WatchPlansRequestSchema: GenMessage<WatchPlansRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 9);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 10);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.WatchPlansResponse
@@ -454,7 +491,7 @@ export type WatchPlansResponse = Message<"hangar.tenancy.v1alpha1.WatchPlansResp
  * Use `create(WatchPlansResponseSchema)` to create a new message.
  */
 export const WatchPlansResponseSchema: GenMessage<WatchPlansResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 10);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 11);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.ApplyPlanRequest
@@ -478,7 +515,7 @@ export type ApplyPlanRequest = Message<"hangar.tenancy.v1alpha1.ApplyPlanRequest
  * Use `create(ApplyPlanRequestSchema)` to create a new message.
  */
 export const ApplyPlanRequestSchema: GenMessage<ApplyPlanRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 11);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 12);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.ApplyPlanResponse
@@ -505,7 +542,7 @@ export type ApplyPlanResponse = Message<"hangar.tenancy.v1alpha1.ApplyPlanRespon
  * Use `create(ApplyPlanResponseSchema)` to create a new message.
  */
 export const ApplyPlanResponseSchema: GenMessage<ApplyPlanResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 12);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 13);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.DeletePlanRequest
@@ -527,7 +564,7 @@ export type DeletePlanRequest = Message<"hangar.tenancy.v1alpha1.DeletePlanReque
  * Use `create(DeletePlanRequestSchema)` to create a new message.
  */
 export const DeletePlanRequestSchema: GenMessage<DeletePlanRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 13);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 14);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.DeletePlanResponse
@@ -544,7 +581,7 @@ export type DeletePlanResponse = Message<"hangar.tenancy.v1alpha1.DeletePlanResp
  * Use `create(DeletePlanResponseSchema)` to create a new message.
  */
 export const DeletePlanResponseSchema: GenMessage<DeletePlanResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 14);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 15);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.UpdatePlanStatusRequest
@@ -571,7 +608,7 @@ export type UpdatePlanStatusRequest = Message<"hangar.tenancy.v1alpha1.UpdatePla
  * Use `create(UpdatePlanStatusRequestSchema)` to create a new message.
  */
 export const UpdatePlanStatusRequestSchema: GenMessage<UpdatePlanStatusRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 15);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 16);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.UpdatePlanStatusResponse
@@ -588,7 +625,7 @@ export type UpdatePlanStatusResponse = Message<"hangar.tenancy.v1alpha1.UpdatePl
  * Use `create(UpdatePlanStatusResponseSchema)` to create a new message.
  */
 export const UpdatePlanStatusResponseSchema: GenMessage<UpdatePlanStatusResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_plan, 16);
+  messageDesc(file_hangar_tenancy_v1alpha1_plan, 17);
 
 /**
  * PlanService manages plans.

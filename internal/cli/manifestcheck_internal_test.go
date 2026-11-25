@@ -104,7 +104,7 @@ func TestUnknownKindSuggests(t *testing.T) {
 	for name, want := range map[string]string{
 		"containr": "did you mean containers?",
 		"vms":      "did you mean virtualmachines?",
-		"widgets":  "kinds: addresses (addr), containers (ct)",
+		"widgets":  "kinds: addresses (addr), billingaccounts (ba), containers (ct)",
 	} {
 		if err := unknownKind(name); !strings.Contains(err.Error(), want) {
 			t.Errorf("unknownKind(%q) = %q, lacks %q", name, err, want)

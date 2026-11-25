@@ -28,6 +28,18 @@ message PlanSpec {
   // A field left unset has no limit, but for machine_calls, which is then
   // 64.
   Limits limits = 2;
+  // What a tenant on the plan pays each month when its BillingAccount is
+  // FIXED; unset, no FIXED account may be on it. A changed price applies
+  // from each such account's next period. See docs/decisions/billing.md.
+  PlanPrice price = 3;
+}
+
+// PlanPrice is a plan's monthly fee.
+message PlanPrice {
+  // A decimal in the currency's units, such as "300"; "0" is free.
+  string monthly_fee = 1;
+  // The ISO 4217 code of the fee, such as "TWD".
+  string currency = 2;
 }
 
 // PlanStatus is the observed state of a plan.
