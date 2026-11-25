@@ -8,8 +8,12 @@
           "description": "quantity times unit_price, with six decimals.",
           "type": "string"
         },
+        "description": {
+          "description": "A promotion's label, on its line, whose item is \"promotion\" and whose amount is negative.",
+          "type": "string"
+        },
         "item": {
-          "description": "What it is: \"monthly_fee\", or a Prices field, such as \"cpu\".",
+          "description": "What it is: \"monthly_fee\", a Prices field, such as \"cpu\", or \"promotion\".",
           "type": "string"
         },
         "priceEffectiveTime": {

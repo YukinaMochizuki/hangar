@@ -1004,3 +1004,81 @@ func TestBillingStartsOverAStoreWrittenOffline(t *testing.T) {
 		t.Errorf("%d statements, want 2", n)
 	}
 }
+
+func promoted(a *billingv1alpha1.BillingAccount, label string, percent int32, until time.Time) *billingv1alpha1.BillingAccount {
+	a.Spec.Promotions = append(a.Spec.Promotions, &billingv1alpha1.Promotion{Label: label, Percent: percent, UntilTime: timestamppb.New(until)})
+	return a
+}
+
+// TestAPromotionTakesOffThePartBeforeItsEnd: what a pay-as-you-go period
+// comes to before a promotion's end is taken off, on a line of its own.
+func TestAPromotionTakesOffThePartBeforeItsEnd(t *testing.T) {
+	t.Parallel()
+	s, system, root, alice := billed(t)
+	clock := fakeClock(s)
+	now := minuteNow(s)
+	anchor := now.AddDate(0, -1, 0).Add(time.Hour)
+	mustApply(t, s, root, registry.PriceList, priceList("std", "TWD", priceEntry(anchor, &billingv1alpha1.Prices{Cpu: "0.6"})))
+	mustApply(t, s, root, registry.BillingAccount, promoted(payg("acme", "std", 1, anchor), "Early access", 100, now.Add(30*time.Minute)))
+	runningContainer(t, s, system, alice, "api")
+	for i := range 60 {
+		if err := s.meterOnce(system, now.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clock.Advance(time.Hour)
+	st := waitStatement(t, s, system, statementName("acme", anchor, time.UTC))
+	// An hour of 1 vCPU at 0.6, its first half taken off.
+	promo := lineOf(st, "promotion")
+	if promo.GetAmount() != "-0.3" || promo.GetDescription() != "Early access" || st.GetSpec().GetTotal() != "0.3" {
+		t.Errorf("statement %v", st.GetSpec())
+	}
+}
+
+// TestAFixedFeeUnderAFullPromotion: a period all before a 100% promotion's
+// end comes to nothing, and its status says what was taken off.
+func TestAFixedFeeUnderAFullPromotion(t *testing.T) {
+	t.Parallel()
+	s, system, root, _ := billed(t)
+	now := minuteNow(s)
+	anchor := now.AddDate(0, -1, 0)
+	mustApply(t, s, root, registry.Plan, pricedPlan("standard", "2100"))
+	onPlan(t, s, root, "acme", "standard")
+	mustApply(t, s, root, registry.BillingAccount, promoted(fixed("acme", anchor), "Early access", 100, now.AddDate(0, 2, 0)))
+	st := waitStatement(t, s, system, statementName("acme", anchor, time.UTC))
+	if st.GetSpec().GetTotal() != "0" || lineOf(st, "monthly_fee").GetAmount() != "2100" || lineOf(st, "promotion").GetAmount() != "-2100" {
+		t.Errorf("statement %v", st.GetSpec())
+	}
+	a := waitAccount(t, s, system, "in its next period", func(a *billingv1alpha1.BillingAccount) bool {
+		return a.GetStatus().GetPeriodStartTime().AsTime().Equal(now)
+	})
+	if a.GetStatus().GetAccrued() != "0" || a.GetStatus().GetDiscount() != "2100" {
+		t.Errorf("status %v", a.GetStatus())
+	}
+	// A promotion taken away reaches the open period at once.
+	mustApply(t, s, root, registry.BillingAccount, fixed("acme", anchor))
+	waitAccount(t, s, system, "at the full fee", func(a *billingv1alpha1.BillingAccount) bool {
+		return a.GetStatus().GetAccrued() == "2100" && a.GetStatus().GetDiscount() == ""
+	})
+}
+
+func TestAPromotionIsChecked(t *testing.T) {
+	t.Parallel()
+	s, _, root, _ := billed(t)
+	now := minuteNow(s)
+	mustApply(t, s, root, registry.PriceList, priceList("std", "TWD"))
+	for name, p := range map[string]*billingv1alpha1.Promotion{
+		"no label":            {Percent: 100, UntilTime: timestamppb.New(now)},
+		"a long label":        {Label: "an early access promotion for our friends", Percent: 100, UntilTime: timestamppb.New(now)},
+		"no percent":          {Label: "a", UntilTime: timestamppb.New(now)},
+		"more than 100%":      {Label: "a", Percent: 101, UntilTime: timestamppb.New(now)},
+		"no end":              {Label: "a", Percent: 50},
+		"an end off a minute": {Label: "a", Percent: 50, UntilTime: timestamppb.New(now.Add(time.Second))},
+	} {
+		a := payg("acme", "std", 1, now)
+		a.Spec.Promotions = []*billingv1alpha1.Promotion{p}
+		if _, err := s.backend(registry.BillingAccount).Apply(root, a); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("%s: %v, want InvalidArgument", name, err)
+		}
+	}
+}

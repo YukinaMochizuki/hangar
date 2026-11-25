@@ -133,6 +133,20 @@ func validateBillingAccount(ctx context.Context, s *Server, _ auth.Principal, ol
 	if _, err := billing.LoadZone(spec.GetTimeZone()); err != nil {
 		return invalid("spec.time_zone: %v", err)
 	}
+	for i, p := range spec.GetPromotions() {
+		if n := len([]rune(p.GetLabel())); n < 1 || n > 40 {
+			return invalid("spec.promotions[%d].label: 1 to 40 characters, not %d", i, n)
+		}
+		if p.GetPercent() < 1 || p.GetPercent() > 100 {
+			return invalid("spec.promotions[%d].percent: %d is not from 1 to 100", i, p.GetPercent())
+		}
+		if p.GetUntilTime() == nil {
+			return invalid("spec.promotions[%d].until_time is required", i)
+		}
+		if at := p.GetUntilTime().AsTime(); !at.Equal(at.Truncate(time.Minute)) {
+			return invalid("spec.promotions[%d].until_time: %s is not on a whole minute", i, at.Format(time.RFC3339Nano))
+		}
+	}
 	if old == nil {
 		billed, err := s.billedUntil(ctx, name)
 		if err != nil {

@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/billing/v1alpha1/billing_account.proto.
  */
 export const file_hangar_billing_v1alpha1_billing_account: GenFile = /*@__PURE__*/
-  fileDesc("Ci1oYW5nYXIvYmlsbGluZy92MWFscGhhMS9iaWxsaW5nX2FjY291bnQucHJvdG8SF2hhbmdhci5iaWxsaW5nLnYxYWxwaGExIogCCg5CaWxsaW5nQWNjb3VudBITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRI5CgRzcGVjGAQgASgLMisuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuQmlsbGluZ0FjY291bnRTcGVjEj0KBnN0YXR1cxgFIAEoCzItLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkJpbGxpbmdBY2NvdW50U3RhdHVzOiuKtRgnCg5CaWxsaW5nQWNjb3VudBIPYmlsbGluZ2FjY291bnRzGgJiYSACIvQBChJCaWxsaW5nQWNjb3VudFNwZWMSMgoEdHlwZRgBIAEoDjIkLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkJpbGxpbmdUeXBlEhgKCGN1cnJlbmN5GAIgASgJQgaKtRgCCAESEgoKcHJpY2VfbGlzdBgEIAEoCRIVCg1wZXJpb2RfbW9udGhzGAUgASgFEjcKC2FuY2hvcl90aW1lGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIGirUYAggBEhkKCXRpbWVfem9uZRgHIAEoCUIGirUYAggBSgQIAxAEUgttb250aGx5X2ZlZSKkBQoUQmlsbGluZ0FjY291bnRTdGF0dXMSGwoTb2JzZXJ2ZWRfZ2VuZXJhdGlvbhgBIAEoAxItCgpjb25kaXRpb25zGAIgAygLMhkuaGFuZ2FyLm1ldGEudjEuQ29uZGl0aW9uEjYKEnBlcmlvZF9hbmNob3JfdGltZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASNQoRcGVyaW9kX3N0YXJ0X3RpbWUYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD3BlcmlvZF9lbmRfdGltZRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHYWNjcnVlZBgGIAEoCRIPCgdtZXRlcmVkGAcgASgJEjAKDGFjY3J1ZWRfdGltZRgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASOQoLcGVyaW9kX3R5cGUYCSABKA4yJC5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5CaWxsaW5nVHlwZRIaChJwZXJpb2RfbW9udGhseV9mZWUYCiABKAkSGQoRcGVyaW9kX3ByaWNlX2xpc3QYCyABKAkSFQoNcGVyaW9kX21vbnRocxgMIAEoBRI7Cgt1c2FnZV9saW5lcxgNIAMoCzImLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLlN0YXRlbWVudExpbmUSEwoLcGVyaW9kX3BsYW4YDiABKAkSMwoPcGVyaW9kX2N1dF90aW1lGA8gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIcChRwZXJpb2Rfb2Zmc2V0X21vbnRocxgQIAEoBRIaChJwcmljZV9saXN0X3ZlcnNpb24YESABKAMiKAoYR2V0QmlsbGluZ0FjY291bnRSZXF1ZXN0EgwKBG5hbWUYASABKAkiXQoZR2V0QmlsbGluZ0FjY291bnRSZXNwb25zZRJACg9iaWxsaW5nX2FjY291bnQYASABKAsyJy5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5CaWxsaW5nQWNjb3VudCJbChpMaXN0QmlsbGluZ0FjY291bnRzUmVxdWVzdBIWCg5sYWJlbF9zZWxlY3RvchgBIAEoCRIRCglwYWdlX3NpemUYAiABKAUSEgoKcGFnZV90b2tlbhgDIAEoCSKAAQobTGlzdEJpbGxpbmdBY2NvdW50c1Jlc3BvbnNlEjYKBWl0ZW1zGAEgAygLMicuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuQmlsbGluZ0FjY291bnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhAKCHJldmlzaW9uGAMgASgDIk0KG1dhdGNoQmlsbGluZ0FjY291bnRzUmVxdWVzdBIWCg5sYWJlbF9zZWxlY3RvchgBIAEoCRIWCg5zaW5jZV9yZXZpc2lvbhgCIAEoAyKbAQocV2F0Y2hCaWxsaW5nQWNjb3VudHNSZXNwb25zZRInCgR0eXBlGAEgASgOMhkuaGFuZ2FyLm1ldGEudjEuRXZlbnRUeXBlEkAKD2JpbGxpbmdfYWNjb3VudBgCIAEoCzInLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkJpbGxpbmdBY2NvdW50EhAKCHJldmlzaW9uGAMgASgDInMKGkFwcGx5QmlsbGluZ0FjY291bnRSZXF1ZXN0EkAKD2JpbGxpbmdfYWNjb3VudBgBIAEoCzInLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkJpbGxpbmdBY2NvdW50EhMKC2NyZWF0ZV9vbmx5GAIgASgIIoIBChtBcHBseUJpbGxpbmdBY2NvdW50UmVzcG9uc2USQAoPYmlsbGluZ19hY2NvdW50GAEgASgLMicuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuQmlsbGluZ0FjY291bnQSEAoId2FybmluZ3MYAiADKAkSDwoHY3JlYXRlZBgDIAEoCCJxChtEZWxldGVCaWxsaW5nQWNjb3VudFJlcXVlc3QSDAoEbmFtZRgBIAEoCRImChlleHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uGAIgASgDSACIAQFCHAoaX2V4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24iYAocRGVsZXRlQmlsbGluZ0FjY291bnRSZXNwb25zZRJACg9iaWxsaW5nX2FjY291bnQYASABKAsyJy5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5CaWxsaW5nQWNjb3VudCK2AQohVXBkYXRlQmlsbGluZ0FjY291bnRTdGF0dXNSZXF1ZXN0EgwKBG5hbWUYASABKAkSPQoGc3RhdHVzGAIgASgLMi0uaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuQmlsbGluZ0FjY291bnRTdGF0dXMSJgoZZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbhgDIAEoA0gAiAEBQhwKGl9leHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uImYKIlVwZGF0ZUJpbGxpbmdBY2NvdW50U3RhdHVzUmVzcG9uc2USQAoPYmlsbGluZ19hY2NvdW50GAEgASgLMicuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuQmlsbGluZ0FjY291bnQqYwoLQmlsbGluZ1R5cGUSHAoYQklMTElOR19UWVBFX1VOU1BFQ0lGSUVEEAASFgoSQklMTElOR19UWVBFX0ZJWEVEEAESHgoaQklMTElOR19UWVBFX1BBWV9BU19ZT1VfR08QAjK/BgoVQmlsbGluZ0FjY291bnRTZXJ2aWNlEnoKEUdldEJpbGxpbmdBY2NvdW50EjEuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuR2V0QmlsbGluZ0FjY291bnRSZXF1ZXN0GjIuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuR2V0QmlsbGluZ0FjY291bnRSZXNwb25zZRKAAQoTTGlzdEJpbGxpbmdBY2NvdW50cxIzLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkxpc3RCaWxsaW5nQWNjb3VudHNSZXF1ZXN0GjQuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuTGlzdEJpbGxpbmdBY2NvdW50c1Jlc3BvbnNlEoUBChRXYXRjaEJpbGxpbmdBY2NvdW50cxI0Lmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLldhdGNoQmlsbGluZ0FjY291bnRzUmVxdWVzdBo1Lmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLldhdGNoQmlsbGluZ0FjY291bnRzUmVzcG9uc2UwARKAAQoTQXBwbHlCaWxsaW5nQWNjb3VudBIzLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkFwcGx5QmlsbGluZ0FjY291bnRSZXF1ZXN0GjQuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuQXBwbHlCaWxsaW5nQWNjb3VudFJlc3BvbnNlEoMBChREZWxldGVCaWxsaW5nQWNjb3VudBI0Lmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkRlbGV0ZUJpbGxpbmdBY2NvdW50UmVxdWVzdBo1Lmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkRlbGV0ZUJpbGxpbmdBY2NvdW50UmVzcG9uc2USlQEKGlVwZGF0ZUJpbGxpbmdBY2NvdW50U3RhdHVzEjouaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuVXBkYXRlQmlsbGluZ0FjY291bnRTdGF0dXNSZXF1ZXN0GjsuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuVXBkYXRlQmlsbGluZ0FjY291bnRTdGF0dXNSZXNwb25zZUKCAgobY29tLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExQhNCaWxsaW5nQWNjb3VudFByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2JpbGxpbmcvdjFhbHBoYTE7YmlsbGluZ3YxYWxwaGExogIDSEJYqgIXSGFuZ2FyLkJpbGxpbmcuVjFhbHBoYTHKAhdIYW5nYXJcQmlsbGluZ1xWMWFscGhhMeICI0hhbmdhclxCaWxsaW5nXFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpCaWxsaW5nOjpWMWFscGhhMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_hangar_billing_v1alpha1_line, file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
+  fileDesc("Ci1oYW5nYXIvYmlsbGluZy92MWFscGhhMS9iaWxsaW5nX2FjY291bnQucHJvdG8SF2hhbmdhci5iaWxsaW5nLnYxYWxwaGExIogCCg5CaWxsaW5nQWNjb3VudBITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRI5CgRzcGVjGAQgASgLMisuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuQmlsbGluZ0FjY291bnRTcGVjEj0KBnN0YXR1cxgFIAEoCzItLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkJpbGxpbmdBY2NvdW50U3RhdHVzOiuKtRgnCg5CaWxsaW5nQWNjb3VudBIPYmlsbGluZ2FjY291bnRzGgJiYSACIqwCChJCaWxsaW5nQWNjb3VudFNwZWMSMgoEdHlwZRgBIAEoDjIkLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkJpbGxpbmdUeXBlEhgKCGN1cnJlbmN5GAIgASgJQgaKtRgCCAESEgoKcHJpY2VfbGlzdBgEIAEoCRIVCg1wZXJpb2RfbW9udGhzGAUgASgFEjcKC2FuY2hvcl90aW1lGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIGirUYAggBEhkKCXRpbWVfem9uZRgHIAEoCUIGirUYAggBEjYKCnByb21vdGlvbnMYCCADKAsyIi5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5Qcm9tb3Rpb25KBAgDEARSC21vbnRobHlfZmVlIlsKCVByb21vdGlvbhINCgVsYWJlbBgBIAEoCRIPCgdwZXJjZW50GAIgASgFEi4KCnVudGlsX3RpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrYFChRCaWxsaW5nQWNjb3VudFN0YXR1cxIbChNvYnNlcnZlZF9nZW5lcmF0aW9uGAEgASgDEi0KCmNvbmRpdGlvbnMYAiADKAsyGS5oYW5nYXIubWV0YS52MS5Db25kaXRpb24SNgoScGVyaW9kX2FuY2hvcl90aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI1ChFwZXJpb2Rfc3RhcnRfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMwoPcGVyaW9kX2VuZF90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdhY2NydWVkGAYgASgJEg8KB21ldGVyZWQYByABKAkSMAoMYWNjcnVlZF90aW1lGAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI5CgtwZXJpb2RfdHlwZRgJIAEoDjIkLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkJpbGxpbmdUeXBlEhoKEnBlcmlvZF9tb250aGx5X2ZlZRgKIAEoCRIZChFwZXJpb2RfcHJpY2VfbGlzdBgLIAEoCRIVCg1wZXJpb2RfbW9udGhzGAwgASgFEjsKC3VzYWdlX2xpbmVzGA0gAygLMiYuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuU3RhdGVtZW50TGluZRITCgtwZXJpb2RfcGxhbhgOIAEoCRIzCg9wZXJpb2RfY3V0X3RpbWUYDyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhwKFHBlcmlvZF9vZmZzZXRfbW9udGhzGBAgASgFEhoKEnByaWNlX2xpc3RfdmVyc2lvbhgRIAEoAxIQCghkaXNjb3VudBgSIAEoCSIoChhHZXRCaWxsaW5nQWNjb3VudFJlcXVlc3QSDAoEbmFtZRgBIAEoCSJdChlHZXRCaWxsaW5nQWNjb3VudFJlc3BvbnNlEkAKD2JpbGxpbmdfYWNjb3VudBgBIAEoCzInLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkJpbGxpbmdBY2NvdW50IlsKGkxpc3RCaWxsaW5nQWNjb3VudHNSZXF1ZXN0EhYKDmxhYmVsX3NlbGVjdG9yGAEgASgJEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJIoABChtMaXN0QmlsbGluZ0FjY291bnRzUmVzcG9uc2USNgoFaXRlbXMYASADKAsyJy5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5CaWxsaW5nQWNjb3VudBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEAoIcmV2aXNpb24YAyABKAMiTQobV2F0Y2hCaWxsaW5nQWNjb3VudHNSZXF1ZXN0EhYKDmxhYmVsX3NlbGVjdG9yGAEgASgJEhYKDnNpbmNlX3JldmlzaW9uGAIgASgDIpsBChxXYXRjaEJpbGxpbmdBY2NvdW50c1Jlc3BvbnNlEicKBHR5cGUYASABKA4yGS5oYW5nYXIubWV0YS52MS5FdmVudFR5cGUSQAoPYmlsbGluZ19hY2NvdW50GAIgASgLMicuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuQmlsbGluZ0FjY291bnQSEAoIcmV2aXNpb24YAyABKAMicwoaQXBwbHlCaWxsaW5nQWNjb3VudFJlcXVlc3QSQAoPYmlsbGluZ19hY2NvdW50GAEgASgLMicuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuQmlsbGluZ0FjY291bnQSEwoLY3JlYXRlX29ubHkYAiABKAgiggEKG0FwcGx5QmlsbGluZ0FjY291bnRSZXNwb25zZRJACg9iaWxsaW5nX2FjY291bnQYASABKAsyJy5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5CaWxsaW5nQWNjb3VudBIQCgh3YXJuaW5ncxgCIAMoCRIPCgdjcmVhdGVkGAMgASgIInEKG0RlbGV0ZUJpbGxpbmdBY2NvdW50UmVxdWVzdBIMCgRuYW1lGAEgASgJEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAiABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJgChxEZWxldGVCaWxsaW5nQWNjb3VudFJlc3BvbnNlEkAKD2JpbGxpbmdfYWNjb3VudBgBIAEoCzInLmhhbmdhci5iaWxsaW5nLnYxYWxwaGExLkJpbGxpbmdBY2NvdW50IrYBCiFVcGRhdGVCaWxsaW5nQWNjb3VudFN0YXR1c1JlcXVlc3QSDAoEbmFtZRgBIAEoCRI9CgZzdGF0dXMYAiABKAsyLS5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5CaWxsaW5nQWNjb3VudFN0YXR1cxImChlleHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uGAMgASgDSACIAQFCHAoaX2V4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24iZgoiVXBkYXRlQmlsbGluZ0FjY291bnRTdGF0dXNSZXNwb25zZRJACg9iaWxsaW5nX2FjY291bnQYASABKAsyJy5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5CaWxsaW5nQWNjb3VudCpjCgtCaWxsaW5nVHlwZRIcChhCSUxMSU5HX1RZUEVfVU5TUEVDSUZJRUQQABIWChJCSUxMSU5HX1RZUEVfRklYRUQQARIeChpCSUxMSU5HX1RZUEVfUEFZX0FTX1lPVV9HTxACMr8GChVCaWxsaW5nQWNjb3VudFNlcnZpY2USegoRR2V0QmlsbGluZ0FjY291bnQSMS5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5HZXRCaWxsaW5nQWNjb3VudFJlcXVlc3QaMi5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5HZXRCaWxsaW5nQWNjb3VudFJlc3BvbnNlEoABChNMaXN0QmlsbGluZ0FjY291bnRzEjMuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuTGlzdEJpbGxpbmdBY2NvdW50c1JlcXVlc3QaNC5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5MaXN0QmlsbGluZ0FjY291bnRzUmVzcG9uc2UShQEKFFdhdGNoQmlsbGluZ0FjY291bnRzEjQuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuV2F0Y2hCaWxsaW5nQWNjb3VudHNSZXF1ZXN0GjUuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuV2F0Y2hCaWxsaW5nQWNjb3VudHNSZXNwb25zZTABEoABChNBcHBseUJpbGxpbmdBY2NvdW50EjMuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuQXBwbHlCaWxsaW5nQWNjb3VudFJlcXVlc3QaNC5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5BcHBseUJpbGxpbmdBY2NvdW50UmVzcG9uc2USgwEKFERlbGV0ZUJpbGxpbmdBY2NvdW50EjQuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuRGVsZXRlQmlsbGluZ0FjY291bnRSZXF1ZXN0GjUuaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTEuRGVsZXRlQmlsbGluZ0FjY291bnRSZXNwb25zZRKVAQoaVXBkYXRlQmlsbGluZ0FjY291bnRTdGF0dXMSOi5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5VcGRhdGVCaWxsaW5nQWNjb3VudFN0YXR1c1JlcXVlc3QaOy5oYW5nYXIuYmlsbGluZy52MWFscGhhMS5VcGRhdGVCaWxsaW5nQWNjb3VudFN0YXR1c1Jlc3BvbnNlQoICChtjb20uaGFuZ2FyLmJpbGxpbmcudjFhbHBoYTFCE0JpbGxpbmdBY2NvdW50UHJvdG9QAVpQZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvYmlsbGluZy92MWFscGhhMTtiaWxsaW5ndjFhbHBoYTGiAgNIQliqAhdIYW5nYXIuQmlsbGluZy5WMWFscGhhMcoCF0hhbmdhclxCaWxsaW5nXFYxYWxwaGEx4gIjSGFuZ2FyXEJpbGxpbmdcVjFhbHBoYTFcR1BCTWV0YWRhdGHqAhlIYW5nYXI6OkJpbGxpbmc6OlYxYWxwaGExYgZwcm90bzM", [file_google_protobuf_timestamp, file_hangar_billing_v1alpha1_line, file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
 
 /**
  * BillingAccount is what a tenant has agreed to pay, and how often it is
@@ -121,6 +121,17 @@ export type BillingAccountSpec = Message<"hangar.billing.v1alpha1.BillingAccount
    * @generated from field: string time_zone = 7;
    */
   timeZone: string;
+
+  /**
+   * Discounts on what is billed for the time before each one's until_time,
+   * such as a trial's. Each takes its percent of what that part of a period
+   * comes to, on a line of its own; together they never take more than the
+   * period comes to. They are read as a period is billed, so a change
+   * reaches every period not billed yet.
+   *
+   * @generated from field: repeated hangar.billing.v1alpha1.Promotion promotions = 8;
+   */
+  promotions: Promotion[];
 };
 
 /**
@@ -129,6 +140,41 @@ export type BillingAccountSpec = Message<"hangar.billing.v1alpha1.BillingAccount
  */
 export const BillingAccountSpecSchema: GenMessage<BillingAccountSpec> = /*@__PURE__*/
   messageDesc(file_hangar_billing_v1alpha1_billing_account, 1);
+
+/**
+ * Promotion is a discount on what an account is billed until a time.
+ *
+ * @generated from message hangar.billing.v1alpha1.Promotion
+ */
+export type Promotion = Message<"hangar.billing.v1alpha1.Promotion"> & {
+  /**
+   * What a statement calls it, such as "Early access": 1 to 40 characters.
+   *
+   * @generated from field: string label = 1;
+   */
+  label: string;
+
+  /**
+   * How much it takes off, from 1 to 100 percent.
+   *
+   * @generated from field: int32 percent = 2;
+   */
+  percent: number;
+
+  /**
+   * It discounts what is billed for the time before this, on a whole minute.
+   *
+   * @generated from field: google.protobuf.Timestamp until_time = 3;
+   */
+  untilTime?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message hangar.billing.v1alpha1.Promotion.
+ * Use `create(PromotionSchema)` to create a new message.
+ */
+export const PromotionSchema: GenMessage<Promotion> = /*@__PURE__*/
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 2);
 
 /**
  * BillingAccountStatus is the period open and what it has come to.
@@ -248,6 +294,14 @@ export type BillingAccountStatus = Message<"hangar.billing.v1alpha1.BillingAccou
    * @generated from field: int64 price_list_version = 17;
    */
   priceListVersion: bigint;
+
+  /**
+   * What the open period's promotions take off accrued, which is after
+   * them; accrued and this together are what it comes to before them.
+   *
+   * @generated from field: string discount = 18;
+   */
+  discount: string;
 };
 
 /**
@@ -255,7 +309,7 @@ export type BillingAccountStatus = Message<"hangar.billing.v1alpha1.BillingAccou
  * Use `create(BillingAccountStatusSchema)` to create a new message.
  */
 export const BillingAccountStatusSchema: GenMessage<BillingAccountStatus> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 2);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 3);
 
 /**
  * @generated from message hangar.billing.v1alpha1.GetBillingAccountRequest
@@ -272,7 +326,7 @@ export type GetBillingAccountRequest = Message<"hangar.billing.v1alpha1.GetBilli
  * Use `create(GetBillingAccountRequestSchema)` to create a new message.
  */
 export const GetBillingAccountRequestSchema: GenMessage<GetBillingAccountRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 3);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 4);
 
 /**
  * @generated from message hangar.billing.v1alpha1.GetBillingAccountResponse
@@ -289,7 +343,7 @@ export type GetBillingAccountResponse = Message<"hangar.billing.v1alpha1.GetBill
  * Use `create(GetBillingAccountResponseSchema)` to create a new message.
  */
 export const GetBillingAccountResponseSchema: GenMessage<GetBillingAccountResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 4);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 5);
 
 /**
  * @generated from message hangar.billing.v1alpha1.ListBillingAccountsRequest
@@ -316,7 +370,7 @@ export type ListBillingAccountsRequest = Message<"hangar.billing.v1alpha1.ListBi
  * Use `create(ListBillingAccountsRequestSchema)` to create a new message.
  */
 export const ListBillingAccountsRequestSchema: GenMessage<ListBillingAccountsRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 5);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 6);
 
 /**
  * @generated from message hangar.billing.v1alpha1.ListBillingAccountsResponse
@@ -343,7 +397,7 @@ export type ListBillingAccountsResponse = Message<"hangar.billing.v1alpha1.ListB
  * Use `create(ListBillingAccountsResponseSchema)` to create a new message.
  */
 export const ListBillingAccountsResponseSchema: GenMessage<ListBillingAccountsResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 6);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 7);
 
 /**
  * @generated from message hangar.billing.v1alpha1.WatchBillingAccountsRequest
@@ -365,7 +419,7 @@ export type WatchBillingAccountsRequest = Message<"hangar.billing.v1alpha1.Watch
  * Use `create(WatchBillingAccountsRequestSchema)` to create a new message.
  */
 export const WatchBillingAccountsRequestSchema: GenMessage<WatchBillingAccountsRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 7);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 8);
 
 /**
  * @generated from message hangar.billing.v1alpha1.WatchBillingAccountsResponse
@@ -392,7 +446,7 @@ export type WatchBillingAccountsResponse = Message<"hangar.billing.v1alpha1.Watc
  * Use `create(WatchBillingAccountsResponseSchema)` to create a new message.
  */
 export const WatchBillingAccountsResponseSchema: GenMessage<WatchBillingAccountsResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 8);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 9);
 
 /**
  * @generated from message hangar.billing.v1alpha1.ApplyBillingAccountRequest
@@ -416,7 +470,7 @@ export type ApplyBillingAccountRequest = Message<"hangar.billing.v1alpha1.ApplyB
  * Use `create(ApplyBillingAccountRequestSchema)` to create a new message.
  */
 export const ApplyBillingAccountRequestSchema: GenMessage<ApplyBillingAccountRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 9);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 10);
 
 /**
  * @generated from message hangar.billing.v1alpha1.ApplyBillingAccountResponse
@@ -443,7 +497,7 @@ export type ApplyBillingAccountResponse = Message<"hangar.billing.v1alpha1.Apply
  * Use `create(ApplyBillingAccountResponseSchema)` to create a new message.
  */
 export const ApplyBillingAccountResponseSchema: GenMessage<ApplyBillingAccountResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 10);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 11);
 
 /**
  * @generated from message hangar.billing.v1alpha1.DeleteBillingAccountRequest
@@ -465,7 +519,7 @@ export type DeleteBillingAccountRequest = Message<"hangar.billing.v1alpha1.Delet
  * Use `create(DeleteBillingAccountRequestSchema)` to create a new message.
  */
 export const DeleteBillingAccountRequestSchema: GenMessage<DeleteBillingAccountRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 11);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 12);
 
 /**
  * @generated from message hangar.billing.v1alpha1.DeleteBillingAccountResponse
@@ -482,7 +536,7 @@ export type DeleteBillingAccountResponse = Message<"hangar.billing.v1alpha1.Dele
  * Use `create(DeleteBillingAccountResponseSchema)` to create a new message.
  */
 export const DeleteBillingAccountResponseSchema: GenMessage<DeleteBillingAccountResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 12);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 13);
 
 /**
  * @generated from message hangar.billing.v1alpha1.UpdateBillingAccountStatusRequest
@@ -509,7 +563,7 @@ export type UpdateBillingAccountStatusRequest = Message<"hangar.billing.v1alpha1
  * Use `create(UpdateBillingAccountStatusRequestSchema)` to create a new message.
  */
 export const UpdateBillingAccountStatusRequestSchema: GenMessage<UpdateBillingAccountStatusRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 13);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 14);
 
 /**
  * @generated from message hangar.billing.v1alpha1.UpdateBillingAccountStatusResponse
@@ -526,7 +580,7 @@ export type UpdateBillingAccountStatusResponse = Message<"hangar.billing.v1alpha
  * Use `create(UpdateBillingAccountStatusResponseSchema)` to create a new message.
  */
 export const UpdateBillingAccountStatusResponseSchema: GenMessage<UpdateBillingAccountStatusResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_billing_v1alpha1_billing_account, 14);
+  messageDesc(file_hangar_billing_v1alpha1_billing_account, 15);
 
 /**
  * BillingType is how a tenant pays.

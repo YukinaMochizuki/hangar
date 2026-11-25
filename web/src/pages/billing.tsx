@@ -244,6 +244,11 @@ function AgreementCard({ a }: { a: BillingAccount }) {
   );
 }
 
+/** The account's promotions not ended yet. */
+function activePromotions(a: BillingAccount | undefined, now: Date) {
+  return (a?.spec?.promotions ?? []).filter((p) => (date(p.untilTime)?.getTime() ?? 0) > now.getTime());
+}
+
 /** A day in the account's zone, as "Dec 15, 2026". */
 function formatDay(d: Date | undefined, zone: string | undefined): string {
   return d ? new Intl.DateTimeFormat("en", { timeZone: zone || "UTC", year: "numeric", month: "short", day: "numeric" }).format(d) : "—";
@@ -290,13 +295,34 @@ export function TenantBilling() {
           </Card>
         ) : (
           <>
+            {activePromotions(a, now).map((p, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border border-ok/30 bg-ok/8 px-4 py-2.5 text-[13px]">
+                <span className="size-1.5 rounded-full bg-ok" />
+                <span className="font-medium">{p.label}</span>
+                <span className="text-muted">
+                  {p.percent}% off what is billed until {formatDay(date(p.untilTime), zone)}
+                </span>
+              </div>
+            ))}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {!a || !start ? (
                 <Stat label="This period" value="—" sub={a ? `Starts ${formatMoment(date(a.spec?.anchorTime), zone)}` : "The account is closed"} />
               ) : fixed ? (
-                <Stat label="Monthly fee" value={formatMoney(st?.periodMonthlyFee, currency)} sub={`Plan ${st?.periodPlan}`} />
+                <Stat
+                  label="Monthly fee"
+                  value={formatMoney(st?.periodMonthlyFee, currency)}
+                  sub={st?.discount ? `Plan ${st?.periodPlan} · this period ${formatMoney(st?.accrued, currency)} after promotions` : `Plan ${st?.periodPlan}`}
+                />
               ) : (
-                <Stat label="This period so far" value={formatMoney(st?.accrued, currency)} sub={`${formatPeriod(start, end, zone)} · ${daysLeft(end, now)}`}>
+                <Stat
+                  label="This period so far"
+                  value={formatMoney(st?.accrued, currency)}
+                  sub={
+                    st?.discount
+                      ? `${formatMoney(String(Number(st.accrued) + Number(st.discount)), currency)} before promotions · ${daysLeft(end, now)}`
+                      : `${formatPeriod(start, end, zone)} · ${daysLeft(end, now)}`
+                  }
+                >
                   <PeriodTrack share={periodShare(start, end, now)} />
                 </Stat>
               )}
@@ -393,7 +419,8 @@ export function StatementPage({ statement: name }: { statement: string }) {
   const zone = account?.spec?.timeZone;
   const mayPay = usePlatformCan([payPermission]).can(payPermission);
   const currency = s?.spec?.currency;
-  const groups = groupLines(s?.spec?.lines ?? []);
+  const groups = groupLines((s?.spec?.lines ?? []).filter((l) => l.item !== "promotion"));
+  const promotions = (s?.spec?.lines ?? []).filter((l) => l.item === "promotion");
   const paid = !!s?.status?.paidTime;
   return (
     <DetailFrame
@@ -452,6 +479,15 @@ export function StatementPage({ statement: name }: { statement: string }) {
                   <tbody>
                     {groups.map((g) => (
                       <ItemRows key={g.item} g={g} currency={currency} zone={zone} />
+                    ))}
+                    {promotions.map((l, i) => (
+                      <tr key={`promotion-${i}`} className="border-b">
+                        <td className="px-5 py-3">
+                          <div className="font-medium text-ok">{l.description || "Promotion"}</div>
+                          <div className="mt-0.5 font-mono text-[12px] text-muted">{formatQuantity(l.quantity)}% off</div>
+                        </td>
+                        <td className="px-5 py-3 text-right align-top font-mono font-medium text-ok tabular">{formatMoney(l.amount, currency)}</td>
+                      </tr>
                     ))}
                     {groups.length === 0 && (
                       <tr className="border-b">

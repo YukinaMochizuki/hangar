@@ -262,3 +262,27 @@ func TestFeeLine(t *testing.T) {
 		t.Errorf("a third = %s for %s", l.Quantity, l.Amount)
 	}
 }
+
+func TestPromotionLines(t *testing.T) {
+	until := date(2027, 1, 1, 0, 0, time.UTC)
+	half := func(time.Time) billing.Micros { return 100_000_000 }
+	// 100% of the part before its end: 100 of 300 off.
+	lines := billing.PromotionLines([]billing.Promotion{{Label: "Early access", Percent: 100, Until: until}}, 300_000_000, half)
+	if len(lines) != 1 || lines[0].Amount != -100_000_000 || lines[0].Item != "promotion" || lines[0].Description != "Early access" {
+		t.Fatalf("lines %+v", lines)
+	}
+	// Together they take no more than what is billed.
+	all := func(time.Time) billing.Micros { return 300_000_000 }
+	lines = billing.PromotionLines([]billing.Promotion{{Label: "a", Percent: 80, Until: until}, {Label: "b", Percent: 50, Until: until}}, 300_000_000, all)
+	var off billing.Micros
+	for _, l := range lines {
+		off += l.Amount
+	}
+	if off != -300_000_000 || len(lines) != 2 {
+		t.Errorf("two promotions took %s, want all 300 and no more: %+v", off, lines)
+	}
+	// One that takes nothing has no line.
+	if lines := billing.PromotionLines([]billing.Promotion{{Label: "a", Percent: 50, Until: until}}, 300_000_000, func(time.Time) billing.Micros { return 0 }); len(lines) != 0 {
+		t.Errorf("a promotion over nothing: %+v", lines)
+	}
+}

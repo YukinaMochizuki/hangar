@@ -82,6 +82,14 @@ events are compacted (`sqlite-store.md`).
   outlives it: a deleted tenant may still owe. The account carries a
   finalizer, so deleting it, alone or with its tenant, first bills the
   period it had open, up to the deletion.
+- **A promotion is a discount until a time, shown against the price.** An
+  account's `promotions` each take a percent off what is billed for the
+  time before their end, such as a trial's 100% until it ends. A Statement
+  lists every item at its price and each promotion on a line of its own
+  with a negative amount, so a tenant sees what it would pay and what it
+  was spared; together they never take more than the period came to. They
+  are read as a period is billed, so a change reaches every period not yet
+  billed, and the open period's status says what they take off.
 - **Payment is recorded, not collected.** `StatementPaymentService` records
   a Statement paid, or takes that back, under `billing.statements.pay`,
   which only `platform.root` holds.

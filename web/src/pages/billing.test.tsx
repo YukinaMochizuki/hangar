@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PlatformBilling, StatementPage, TenantBilling } from "@/pages/billing";
 import { billingApi, fixedAccount, paygAccount, statement } from "@/test/billing";
@@ -115,5 +116,30 @@ describe("PlatformBilling", () => {
     render(<PlatformBilling />, { wrapper: withApi(api, platform) });
     expect(await screen.findByText("This account's roles do not include reading every tenant's billing.")).toBeTruthy();
     expect(api.calls).not.toContain("ListBillingAccounts");
+  });
+});
+
+describe("promotions", () => {
+  it("lists a statement's promotion as a line of its own, taking off its amount", async () => {
+    const s = statement("acme-202612010000", { total: "0" });
+    s.spec!.lines.push({ $typeName: "hangar.billing.v1alpha1.StatementLine", item: "promotion", quantity: "100", unit: "percent", unitPrice: "", amount: "-6175.2", description: "Early access" });
+    render(<StatementPage statement="acme-202612010000" />, { wrapper: withApi(billingApi({ statements: [s] }), tenant("acme")) });
+    const row = (await screen.findByText("Early access")).closest("tr") as HTMLElement;
+    expect(within(row).getByText("100% off")).toBeTruthy();
+    expect(within(row).getByText("TWD -6,175.20")).toBeTruthy();
+    // Not an item of the bill's breakdown.
+    expect(screen.queryByText("promotion")).toBeNull();
+  });
+
+  it("says a promotion not ended yet, and what the period comes to before it", async () => {
+    const a = paygAccount();
+    a.spec!.promotions = [{ $typeName: "hangar.billing.v1alpha1.Promotion", label: "Early access", percent: 100, untilTime: timestampFromDate(new Date("2099-01-01T00:00:00Z")) }];
+    a.status!.accrued = "0";
+    a.status!.discount = "9025.84";
+    render(<TenantBilling />, { wrapper: withApi(billingApi({ accounts: [a, fixedAccount()] }), tenant("acme")) });
+    expect(await screen.findByText("Early access")).toBeTruthy();
+    expect(screen.getByText(/100% off what is billed until/)).toBeTruthy();
+    expect(within(stat("This period so far")).getByText("TWD 0.00")).toBeTruthy();
+    expect(within(stat("This period so far")).getByText(/TWD 9,025.84 before promotions/)).toBeTruthy();
   });
 });

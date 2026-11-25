@@ -65,6 +65,22 @@ message BillingAccountSpec {
   // The IANA time zone periods are cut in, such as "Asia/Taipei"; empty is
   // UTC.
   string time_zone = 7 [(hangar.meta.v1.field).immutable = true];
+  // Discounts on what is billed for the time before each one's until_time,
+  // such as a trial's. Each takes its percent of what that part of a period
+  // comes to, on a line of its own; together they never take more than the
+  // period comes to. They are read as a period is billed, so a change
+  // reaches every period not billed yet.
+  repeated Promotion promotions = 8;
+}
+
+// Promotion is a discount on what an account is billed until a time.
+message Promotion {
+  // What a statement calls it, such as "Early access": 1 to 40 characters.
+  string label = 1;
+  // How much it takes off, from 1 to 100 percent.
+  int32 percent = 2;
+  // It discounts what is billed for the time before this, on a whole minute.
+  google.protobuf.Timestamp until_time = 3;
 }
 
 // BillingAccountStatus is the period open and what it has come to.
@@ -105,6 +121,9 @@ message BillingAccountStatus {
   // The resource version of the price list accrued and metered were rated
   // at; a new one rates them again.
   int64 price_list_version = 17;
+  // What the open period's promotions take off accrued, which is after
+  // them; accrued and this together are what it comes to before them.
+  string discount = 18;
 }
 
 // BillingAccountService manages billing accounts.
