@@ -135,3 +135,42 @@ WHERE key = ?;
 -- name: DeleteExpiredAuthRequests :exec
 DELETE FROM auth_requests
 WHERE expires_at <= ?;
+
+-- name: RecordMeterMinute :exec
+INSERT INTO meter_minutes (tenant, uid, item, minute, quantity, kind, project, name)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (tenant, uid, item, minute) DO UPDATE
+SET quantity = excluded.quantity, kind = excluded.kind, project = excluded.project, name = excluded.name;
+
+-- name: ForgetMeterMinutes :exec
+DELETE FROM meter_minutes
+WHERE tenant = sqlc.arg(tenant) AND minute = sqlc.arg(minute);
+
+-- name: SumMeterMinutes :many
+SELECT uid, item, MAX(kind) AS kind, MAX(project) AS project, MAX(name) AS name,
+       CAST(SUM(quantity) AS INTEGER) AS quantity
+FROM meter_minutes
+WHERE tenant = sqlc.arg(tenant) AND minute >= sqlc.arg(from_minute) AND minute < sqlc.arg(to_minute)
+GROUP BY uid, item
+ORDER BY uid, item;
+
+-- name: SumMeterHours :many
+SELECT uid, item, MAX(kind) AS kind, MAX(project) AS project, MAX(name) AS name,
+       CAST(SUM(quantity) AS INTEGER) AS quantity
+FROM meter_hours
+WHERE tenant = sqlc.arg(tenant) AND hour >= sqlc.arg(from_minute) AND hour < sqlc.arg(to_minute)
+GROUP BY uid, item
+ORDER BY uid, item;
+
+-- name: FoldMeterMinutes :exec
+INSERT INTO meter_hours (tenant, uid, item, hour, quantity, kind, project, name)
+SELECT m.tenant, m.uid, m.item, (m.minute / 60) * 60, SUM(m.quantity), MAX(m.kind), MAX(m.project), MAX(m.name)
+FROM meter_minutes AS m
+WHERE m.tenant = sqlc.arg(tenant) AND m.minute >= sqlc.arg(from_minute) AND m.minute < sqlc.arg(to_minute)
+GROUP BY m.tenant, m.uid, m.item, m.minute / 60
+ON CONFLICT (tenant, uid, item, hour) DO UPDATE
+SET quantity = meter_hours.quantity + excluded.quantity;
+
+-- name: DeleteMeterMinutesIn :exec
+DELETE FROM meter_minutes
+WHERE tenant = sqlc.arg(tenant) AND minute >= sqlc.arg(from_minute) AND minute < sqlc.arg(to_minute);

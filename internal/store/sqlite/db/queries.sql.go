@@ -113,6 +113,22 @@ func (q *Queries) DeleteExpiredRevokedFamilies(ctx context.Context, expiresAt in
 	return err
 }
 
+const deleteMeterMinutesIn = `-- name: DeleteMeterMinutesIn :exec
+DELETE FROM meter_minutes
+WHERE tenant = ?1 AND minute >= ?2 AND minute < ?3
+`
+
+type DeleteMeterMinutesInParams struct {
+	Tenant     string
+	FromMinute int64
+	ToMinute   int64
+}
+
+func (q *Queries) DeleteMeterMinutesIn(ctx context.Context, arg DeleteMeterMinutesInParams) error {
+	_, err := q.exec(ctx, q.deleteMeterMinutesInStmt, deleteMeterMinutesIn, arg.Tenant, arg.FromMinute, arg.ToMinute)
+	return err
+}
+
 const deleteObject = `-- name: DeleteObject :exec
 DELETE FROM objects
 WHERE kind = ? AND project = ? AND name = ?
@@ -208,6 +224,42 @@ func (q *Queries) FamilyRevoked(ctx context.Context, family string) (int64, erro
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const foldMeterMinutes = `-- name: FoldMeterMinutes :exec
+INSERT INTO meter_hours (tenant, uid, item, hour, quantity, kind, project, name)
+SELECT m.tenant, m.uid, m.item, (m.minute / 60) * 60, SUM(m.quantity), MAX(m.kind), MAX(m.project), MAX(m.name)
+FROM meter_minutes AS m
+WHERE m.tenant = ?1 AND m.minute >= ?2 AND m.minute < ?3
+GROUP BY m.tenant, m.uid, m.item, m.minute / 60
+ON CONFLICT (tenant, uid, item, hour) DO UPDATE
+SET quantity = meter_hours.quantity + excluded.quantity
+`
+
+type FoldMeterMinutesParams struct {
+	Tenant     string
+	FromMinute int64
+	ToMinute   int64
+}
+
+func (q *Queries) FoldMeterMinutes(ctx context.Context, arg FoldMeterMinutesParams) error {
+	_, err := q.exec(ctx, q.foldMeterMinutesStmt, foldMeterMinutes, arg.Tenant, arg.FromMinute, arg.ToMinute)
+	return err
+}
+
+const forgetMeterMinutes = `-- name: ForgetMeterMinutes :exec
+DELETE FROM meter_minutes
+WHERE tenant = ?1 AND minute = ?2
+`
+
+type ForgetMeterMinutesParams struct {
+	Tenant string
+	Minute int64
+}
+
+func (q *Queries) ForgetMeterMinutes(ctx context.Context, arg ForgetMeterMinutesParams) error {
+	_, err := q.exec(ctx, q.forgetMeterMinutesStmt, forgetMeterMinutes, arg.Tenant, arg.Minute)
+	return err
 }
 
 const getAuthRequest = `-- name: GetAuthRequest :one
@@ -492,6 +544,38 @@ func (q *Queries) ListObjects(ctx context.Context, arg ListObjectsParams) ([]Obj
 	return items, nil
 }
 
+const recordMeterMinute = `-- name: RecordMeterMinute :exec
+INSERT INTO meter_minutes (tenant, uid, item, minute, quantity, kind, project, name)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (tenant, uid, item, minute) DO UPDATE
+SET quantity = excluded.quantity, kind = excluded.kind, project = excluded.project, name = excluded.name
+`
+
+type RecordMeterMinuteParams struct {
+	Tenant   string
+	Uid      string
+	Item     string
+	Minute   int64
+	Quantity int64
+	Kind     string
+	Project  string
+	Name     string
+}
+
+func (q *Queries) RecordMeterMinute(ctx context.Context, arg RecordMeterMinuteParams) error {
+	_, err := q.exec(ctx, q.recordMeterMinuteStmt, recordMeterMinute,
+		arg.Tenant,
+		arg.Uid,
+		arg.Item,
+		arg.Minute,
+		arg.Quantity,
+		arg.Kind,
+		arg.Project,
+		arg.Name,
+	)
+	return err
+}
+
 const revokeFamily = `-- name: RevokeFamily :exec
 INSERT INTO revoked_families (family, expires_at)
 VALUES (?, ?)
@@ -520,6 +604,114 @@ type SetMetaParams struct {
 func (q *Queries) SetMeta(ctx context.Context, arg SetMetaParams) error {
 	_, err := q.exec(ctx, q.setMetaStmt, setMeta, arg.Value, arg.Key)
 	return err
+}
+
+const sumMeterHours = `-- name: SumMeterHours :many
+SELECT uid, item, MAX(kind) AS kind, MAX(project) AS project, MAX(name) AS name,
+       CAST(SUM(quantity) AS INTEGER) AS quantity
+FROM meter_hours
+WHERE tenant = ?1 AND hour >= ?2 AND hour < ?3
+GROUP BY uid, item
+ORDER BY uid, item
+`
+
+type SumMeterHoursParams struct {
+	Tenant     string
+	FromMinute int64
+	ToMinute   int64
+}
+
+type SumMeterHoursRow struct {
+	Uid      string
+	Item     string
+	Kind     interface{}
+	Project  interface{}
+	Name     interface{}
+	Quantity int64
+}
+
+func (q *Queries) SumMeterHours(ctx context.Context, arg SumMeterHoursParams) ([]SumMeterHoursRow, error) {
+	rows, err := q.query(ctx, q.sumMeterHoursStmt, sumMeterHours, arg.Tenant, arg.FromMinute, arg.ToMinute)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SumMeterHoursRow
+	for rows.Next() {
+		var i SumMeterHoursRow
+		if err := rows.Scan(
+			&i.Uid,
+			&i.Item,
+			&i.Kind,
+			&i.Project,
+			&i.Name,
+			&i.Quantity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const sumMeterMinutes = `-- name: SumMeterMinutes :many
+SELECT uid, item, MAX(kind) AS kind, MAX(project) AS project, MAX(name) AS name,
+       CAST(SUM(quantity) AS INTEGER) AS quantity
+FROM meter_minutes
+WHERE tenant = ?1 AND minute >= ?2 AND minute < ?3
+GROUP BY uid, item
+ORDER BY uid, item
+`
+
+type SumMeterMinutesParams struct {
+	Tenant     string
+	FromMinute int64
+	ToMinute   int64
+}
+
+type SumMeterMinutesRow struct {
+	Uid      string
+	Item     string
+	Kind     interface{}
+	Project  interface{}
+	Name     interface{}
+	Quantity int64
+}
+
+func (q *Queries) SumMeterMinutes(ctx context.Context, arg SumMeterMinutesParams) ([]SumMeterMinutesRow, error) {
+	rows, err := q.query(ctx, q.sumMeterMinutesStmt, sumMeterMinutes, arg.Tenant, arg.FromMinute, arg.ToMinute)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SumMeterMinutesRow
+	for rows.Next() {
+		var i SumMeterMinutesRow
+		if err := rows.Scan(
+			&i.Uid,
+			&i.Item,
+			&i.Kind,
+			&i.Project,
+			&i.Name,
+			&i.Quantity,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const swapAuthRequest = `-- name: SwapAuthRequest :execrows
