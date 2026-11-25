@@ -20,6 +20,7 @@ import { publicAddress } from "@/lib/port-forwards";
 import { permission } from "@/lib/network-actions";
 import { matchSections } from "@/lib/palette";
 import { machinePerms, useCan, useMayReadMonitoring, useTenantsWhere } from "@/lib/permissions";
+import { useMayReadBilling } from "@/lib/billing";
 import { projectLabel, useProjects } from "@/lib/projects";
 import { quantityGiB } from "@/lib/quantity";
 import { useDisks, useImages } from "@/lib/storage";
@@ -86,12 +87,12 @@ type Hands = {
   handOver: (t: Then) => void;
 };
 
-function pageEntries(sections: PageSection[], go: (to: string) => void, platform: boolean): Section {
+function pageEntries(sections: PageSection[], go: (to: string) => void, platform: boolean, billing = false): Section {
   // The platform's pages follow the place's own, named as the platform's, for
   // whoever holds their permission, as the picker lists the platform.
   const own = sections.flatMap((s) => s.items).map((p) => ({ id: `page:${p.to}`, icon: p.icon, title: p.label, run: () => go(p.to) }));
   const theirs = platform
-    ? platformPages()
+    ? platformPages(billing)
         .flatMap((s) => s.items)
         .map((p) => ({ id: `page:${p.to}`, icon: p.icon, title: `Platform › ${p.label}`, run: () => go(p.to) }))
     : [];
@@ -181,6 +182,7 @@ function useProjectModel(project: string, hands: Hands): Model {
   const places = usePlaces(place, hands);
   const go = (to: string) => hands.done(() => void navigate({ to }));
   const platform = useMayReadMonitoring().may;
+  const billing = useMayReadBilling();
   const members = useMemberSection({ level: "project", name: project }, () => go(`/projects/${project}/members`));
   const { can } = useCan({ level: "project", name: project }, Object.values(actionPerms));
   const common = useCommonActions(places.tenantNames, hands);
@@ -286,7 +288,7 @@ function useProjectModel(project: string, hands: Hands): Model {
     project,
   );
   return {
-    always: [actions, pageEntries(projectPages(project), go, platform)],
+    always: [actions, pageEntries(projectPages(project), go, platform, billing)],
     searched,
     sources: [
       ...sourceOf("machines", "machines", { ...machines, held: machines.items.length > 0 }),
@@ -313,6 +315,7 @@ function useTenantModel(tenant: string, hands: Hands): Model {
   const places = usePlaces({ kind: "tenant", name: tenant }, hands);
   const go = (to: string) => hands.done(() => void navigate({ to }));
   const platform = useMayReadMonitoring().may;
+  const billing = useMayReadBilling();
   const members = useMemberSection({ level: "tenant", name: tenant }, () => go(`/tenants/${tenant}/members`));
   const common = useCommonActions(places.tenantNames, hands);
   const { tenantName } = useProjects(cached);
@@ -334,7 +337,7 @@ function useTenantModel(tenant: string, hands: Hands): Model {
     })),
   };
   return {
-    always: [{ key: "actions", title: "Actions", entries: [...newDomain, ...common] }, pageEntries(tenantPages(tenant), go, platform)],
+    always: [{ key: "actions", title: "Actions", entries: [...newDomain, ...common] }, pageEntries(tenantPages(tenant), go, platform, billing)],
     searched: [domainSection, members.section, ...places.sections],
     sources: [...sourceOf("custom-domains", "custom domains", { ...domains, held: domains.items.length > 0 }), ...members.source, ...places.source],
     noMatch: `${tenantName(tenant)}'s custom domains and members, the projects and tenants, or the pages`,

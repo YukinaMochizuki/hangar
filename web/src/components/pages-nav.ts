@@ -2,7 +2,7 @@
 // groups. The sidebar and the command palette both list them from here, so
 // a page joins both when it is added.
 
-import { ArrowRightLeft, AtSign, Box, Disc3, Folders, Globe, HardDrive, KeyRound, LayoutGrid, Network, Server, ShieldCheck, Terminal, Users, Waypoints, type LucideIcon } from "lucide-react";
+import { ArrowRightLeft, AtSign, Box, Disc3, Folders, Globe, HardDrive, KeyRound, LayoutGrid, Network, Receipt, Server, ShieldCheck, Terminal, Users, Waypoints, type LucideIcon } from "lucide-react";
 
 export type PageLink = { label: string; icon: LucideIcon; to: string };
 
@@ -49,14 +49,18 @@ export function projectPages(project: string): PageSection[] {
   ];
 }
 
-/** The platform's pages, listed only to those who hold their permission. */
-export function platformPages(): PageSection[] {
+/**
+ * The platform's pages, listed only to those who hold their permission;
+ * Billing only to whoever reads every tenant's billing.
+ */
+export function platformPages(billing = false): PageSection[] {
   return [
     {
       group: "Platform",
       items: [
         { label: "Overview", icon: LayoutGrid, to: "/platform" },
         { label: "Nodes", icon: Server, to: "/platform/nodes" },
+        ...(billing ? [{ label: "Billing", icon: Receipt, to: "/platform/billing" }] : []),
       ],
     },
   ];
@@ -69,5 +73,6 @@ export function tenantPages(tenant: string): PageSection[] {
     { items: [{ label: "Overview", icon: LayoutGrid, to: base }] },
     { group: "Network", items: [{ label: "Domains", icon: AtSign, to: `${base}/domains` }] },
     { group: "Access", items: [{ label: "Members", icon: Users, to: `${base}/members` }] },
+    { group: "Account", items: [{ label: "Billing", icon: Receipt, to: `${base}/billing` }] },
   ];
 }
