@@ -84,5 +84,6 @@ Every other tool is pinned in the repo (`go.mod`, `tools/tools.mod`, or
 | `docs/runbook/guest-kernel.md` | You build the guest kernel or initramfs, change the kernel config, or bump its version |
 | `docs/runbook/converter.md` | You build the converter initramfs, or bump the qemu-img or the Alpine packages it carries |
 | `docs/runbook/swtpm.md` | You build the swtpm bundle a VM's TPM runs, bump swtpm or the Alpine packages it carries, or change how the launcher runs it |
+| `docs/runbook/billing.md` | You set prices, open or change a tenant's billing account, read what a tenant owes, or record a payment (`hangar admin pay`) |
 
 When you add a doc, add it to this index.

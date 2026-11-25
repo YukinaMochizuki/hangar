@@ -25,6 +25,7 @@ the change.
 | `sqlite-store.md` | SQLite with a global revision and a replayable event log |
 | `buf-breaking-wire-json.md` | WIRE_JSON breaking checks are enforced even in alpha |
 | `tenancy-and-iam.md` | Tenant and Project; permissions, roles and bindings |
+| `billing.md` | A tenant's `BillingAccount` is fixed or pay-as-you-go; the apiserver meters what it holds each minute into a table of its own, a `PriceList` rates it, and a `Statement` is made per period of whole months; payment is recorded by root, not collected |
 | `authentication.md` | Sign-in through Google and Hangar's own sessions and tokens for people and agents; peer credentials for the node, the edge and root on the host |
 | `cloudflare-setup.md` | Cloudflare is DNS alone: DNS-only records at the host, converged by `hangar-cloudflare`, which changes only what its state file records |
 | `networking.md` | Per-network namespaces, security groups, routed IPv6; networks reach only the front door's ports of the host |
