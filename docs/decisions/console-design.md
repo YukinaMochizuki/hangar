@@ -1107,6 +1107,48 @@ Overview reads the platform and each node has a page of its own.
   retried at once; the pages ask again every 30 s (charts every 60 s), as
   lists do.
 
+### Billing
+
+Settled with the owner on screenshots of a dev apiserver's own statements,
+after a first layout of one figure and a table read as too flat
+(`billing.md`).
+
+- **A tenant's Billing page leads with three figures**, `/tenants/<tenant>/billing`
+  (`web/src/pages/billing.tsx`), under an Account group of the tenant's
+  sidebar. A tenant paying as it goes sees what the open period has come
+  to, with how far through it is; what the period would come to at its
+  pace so far, once a day of it has passed; and what is outstanding, with
+  a pending LED while a statement is due. Then what the period is made of:
+  one bar of its items in shades of the foreground, the largest darkest,
+  and a row each with its quantity, share and amount; then its statements,
+  each a Due or Paid pill; and beside them the agreement and the prices in
+  effect, with those taking effect next.
+- **A fixed-fee tenant sees its plan and fee, never what its holdings would
+  cost.** Its figures are its monthly fee with its plan, its next
+  statement's day, and what is outstanding; it has no breakdown and no
+  prices. Shown its holdings' worth at list prices, a tenant took it for its
+  bill, or a reason to hold less: that figure is the platform's, on the
+  platform's Billing page and on a statement for whoever records payments.
+- **A statement's page reads as a bill.** Its amount leads; an item is one
+  line with its amount, and when its price changed in the period, each
+  price's part is under it as quantity × unit price. The Payment card says
+  whether it is paid, when, and who recorded it. Record payment (a time,
+  now unless changed, none ahead of now) or Record as not paid is drawn
+  only where TestPermissions holds `billing.statements.pay` at the
+  platform.
+- **The platform's Billing page** (`/platform/billing`) leads with what is
+  outstanding across tenants, what the open periods have come to, and the
+  accounts counted by type; then each account with its period's progress,
+  what it has come to, a fixed account's worth at list prices, and what it
+  owes; then the statements due, and the price lists. It is listed in the
+  platform's sidebar and the palette only where TestPermissions holds
+  `billing.billingaccounts.list` at the platform, and states a refusal
+  otherwise.
+- **Periods are written in the account's time zone**, by days when both
+  ends are at midnight there ("Sep 1, 2026 – Nov 30, 2026", the last day
+  included), to the minute when not. Amounts carry the currency's minor
+  digits, and more when a line or a price does.
+
 ### How the session reaches the API, and CSRF
 
 - **One origin.** hangar-edge serves the console's files and the API's paths

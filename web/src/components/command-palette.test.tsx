@@ -145,6 +145,8 @@ describe("CommandPalette", () => {
     key("ArrowUp");
     key("ArrowUp");
     // The last page: the platform's follow the project's for an administrator.
+    expect(active()).toBe(option("Platform › Billing"));
+    key("ArrowUp");
     expect(active()).toBe(option("Platform › Nodes"));
     key("ArrowUp");
     key("ArrowUp");

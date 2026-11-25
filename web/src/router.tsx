@@ -33,6 +33,7 @@ import { MachineDetail } from "@/pages/machine-detail";
 import { MachineList } from "@/pages/machine-list";
 import { PlatformOverview } from "@/pages/monitoring";
 import { NodeDetail, NodeList } from "@/pages/nodes";
+import { PlatformBilling, StatementPage, TenantBilling } from "@/pages/billing";
 import { TerminalPage } from "@/pages/machine-terminal";
 import { ConsolePage } from "@/pages/machine-console";
 import { ProjectMembers, TenantMembers } from "@/pages/members";
@@ -554,6 +555,24 @@ const domainRoute = createRoute({
   },
 });
 const newDomainRoute = createRoute({ getParentRoute: () => tenantRoute, path: "/new/custom-domain", component: CreateCustomDomain });
+const tenantBillingRoute = createRoute({ getParentRoute: () => tenantRoute, path: "/billing", component: TenantBilling });
+const statementRoute = createRoute({
+  getParentRoute: () => tenantRoute,
+  path: "/billing/$statement",
+  component: function StatementRoutePage() {
+    const { statement } = statementRoute.useParams();
+    return <StatementPage key={statement} statement={statement} />;
+  },
+});
+const platformBillingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/billing",
+  component: () => (
+    <PlatformShell>
+      <PlatformBilling />
+    </PlatformShell>
+  ),
+});
 
 /** Every page, for the router and for tests that route over memory history. */
 export const routeTree = rootRoute.addChildren([
@@ -593,11 +612,12 @@ export const routeTree = rootRoute.addChildren([
     tokenRoute,
     ...networkRoutes,
   ]),
-  tenantRoute.addChildren([tenantOverviewRoute, tenantMembersRoute, domainsRoute, domainRoute, newDomainRoute]),
+  tenantRoute.addChildren([tenantOverviewRoute, tenantMembersRoute, domainsRoute, domainRoute, newDomainRoute, tenantBillingRoute, statementRoute]),
   platformRoute,
   monitoringRoute,
   nodesRoute,
   nodeRoute,
+  platformBillingRoute,
 ]);
 
 export const router = createRouter({ routeTree });

@@ -7,6 +7,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { CommandPalette } from "@/components/command-palette";
 import { HangarMark } from "@/components/marks";
 import { platformPages, projectPages, tenantPages } from "@/components/pages-nav";
+import { useMayReadBilling } from "@/lib/billing";
 import { SearchButton } from "@/components/palette-view";
 import { ProjectPicker } from "@/components/project-picker";
 import { Notice } from "@/components/notice";
@@ -201,6 +202,7 @@ function TenantSidebar({ tenant }: { tenant: string }) {
  */
 function PlatformSidebar({ place }: { place: Place }) {
   const { projects } = useProjects();
+  const billing = useMayReadBilling();
   const project = place.kind === "project" ? place.name : "";
   const back = project ? (
     <Link
@@ -212,7 +214,7 @@ function PlatformSidebar({ place }: { place: Place }) {
       <span className="truncate">Back to {projectLabel(projects.find((p) => p.metadata?.name === project), project)}</span>
     </Link>
   ) : undefined;
-  return <SidebarFrame place={place} base="/platform" nav={platformPages()} platform back={back} />;
+  return <SidebarFrame place={place} base="/platform" nav={platformPages(billing)} platform back={back} />;
 }
 
 type NavSection = { group?: string; items: NavItem[] };
