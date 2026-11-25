@@ -18,6 +18,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/billing/v1alpha1/billingv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/discovery/v1alpha1/discoveryv1alpha1connect"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
@@ -193,6 +194,9 @@ type Server struct {
 	// or an Invitation, so none comes to name a plan being deleted. Whoever
 	// holds it and quota takes plans first.
 	plans sync.Mutex
+	// billing serializes every apply and delete of a BillingAccount or a
+	// PriceList, so no account comes to name a price list being deleted.
+	billing sync.Mutex
 	// nameSuffix makes the random part of the name signing up gives a
 	// person's first tenant and project.
 	nameSuffix func() string
@@ -326,6 +330,7 @@ func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 		s.interceptors(chain))
 	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(machineCapabilities{s}, s.interceptors(chain)))
 	mux.Handle(storagev1alpha1connect.NewFileShareFilesServiceHandler(fileShareFiles{s}, s.interceptors(chain)))
+	mux.Handle(billingv1alpha1connect.NewStatementPaymentServiceHandler(statementPayments{s}, s.interceptors(chain)))
 	mux.HandleFunc(execws.Pattern, s.machineSocket(chain))
 	mux.HandleFunc("GET "+uploadPattern, s.customImageUpload(chain))
 	mux.HandleFunc("PUT "+uploadPattern, s.customImageUpload(chain))

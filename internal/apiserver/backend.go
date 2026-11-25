@@ -270,6 +270,9 @@ func (b *backend) answer(p auth.Principal, obj proto.Message) {
 	if p.Type == auth.Node && b.hooks.forNode != nil {
 		b.hooks.forNode(p.ID, obj)
 	}
+	if p.Type != auth.System && b.hooks.forReader != nil {
+		b.hooks.forReader(b.s, p, obj)
+	}
 }
 
 // read fetches an object for an action and authorizes it. Its answer never

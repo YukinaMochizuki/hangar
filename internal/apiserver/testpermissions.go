@@ -140,6 +140,11 @@ func (s *Server) holds(p auth.Principal, perm string, sc testedScope) bool {
 	if authz.IsReach(perm) {
 		return s.authz.Allowed(p, perm, sc.target)
 	}
+	if perm == authz.StatementPay {
+		// Recording a payment is StatementPaymentService's, checked at the
+		// platform; a Statement's own writes are the apiserver's alone.
+		return s.authz.Allowed(p, perm, authz.Target{})
+	}
 	b := s.backend(r)
 	var target authz.Target
 	switch {

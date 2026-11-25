@@ -50,10 +50,13 @@ const (
 	// the files' contents. It is not Get, which reads the share's settings:
 	// names can say what settings do not.
 	Browse Verb = "browse"
+	// Pay records a Statement paid; only statements use it. It is not
+	// UpdateStatus, which only the apiserver writes.
+	Pay Verb = "pay"
 )
 
 // verbs lists every Verb, for tests that must see each one.
-var verbs = []Verb{Get, List, Watch, Apply, Delete, UpdateStatus, Create, Logs, Exec, SSH, PortForward, Access, Browse}
+var verbs = []Verb{Get, List, Watch, Apply, Delete, UpdateStatus, Create, Logs, Exec, SSH, PortForward, Access, Browse, Pay}
 
 // CreateTenant is the permission to open a tenant of one's own.
 const CreateTenant = "tenancy.tenants.create"
@@ -82,6 +85,10 @@ var PublicEndpointAccess = Permission(registry.PublicEndpoint, Access)
 // FileShareBrowse is the permission to list a FileShare's directories, as
 // its server, root, sees them (docs/decisions/file-shares.md).
 var FileShareBrowse = Permission(registry.FileShare, Browse)
+
+// StatementPay is the permission to record a Statement paid, or not
+// (docs/decisions/billing.md). Only platform.root holds it.
+var StatementPay = Permission(registry.Statement, Pay)
 
 // MonitoringRead is the permission to read the platform's monitoring
 // (MonitoringService). It is on no kind, and held at the platform alone. See
@@ -167,7 +174,7 @@ var reachPermissions = []string{MachineLogs, MachineExec, MachineSSH, MachinePor
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.
 var Roles = map[string]Role{
-	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: append(append([]string{CreateTenant}, reachPermissions...), platformPermissions...), Member: true},
+	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: append(append([]string{CreateTenant, StatementPay}, reachPermissions...), platformPermissions...), Member: true},
 	// A sponsor funds the hardware and reads what the platform's own pages
 	// show: its monitoring and its Nodes, both of which count tenants'
 	// machines and never name them. It reads nothing of any tenant's
@@ -202,7 +209,7 @@ var knownPermissions = func() map[string]knownPermission {
 			out[Permission(r, v)] = knownPermission{r, v}
 		}
 	}
-	for _, perm := range append([]string{CreateTenant}, reachPermissions...) {
+	for _, perm := range append([]string{CreateTenant, StatementPay}, reachPermissions...) {
 		for _, r := range registry.All {
 			if kindOfResource(r) == permissionKind(perm) {
 				out[perm] = knownPermission{r, verbOf(perm)}
