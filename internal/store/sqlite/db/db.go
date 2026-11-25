@@ -48,6 +48,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteExpiredRevokedFamiliesStmt, err = db.PrepareContext(ctx, deleteExpiredRevokedFamilies); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteExpiredRevokedFamilies: %w", err)
 	}
+	if q.deleteMeterMinutesInStmt, err = db.PrepareContext(ctx, deleteMeterMinutesIn); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteMeterMinutesIn: %w", err)
+	}
 	if q.deleteObjectStmt, err = db.PrepareContext(ctx, deleteObject); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteObject: %w", err)
 	}
@@ -62,6 +65,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.familyRevokedStmt, err = db.PrepareContext(ctx, familyRevoked); err != nil {
 		return nil, fmt.Errorf("error preparing query FamilyRevoked: %w", err)
+	}
+	if q.foldMeterMinutesStmt, err = db.PrepareContext(ctx, foldMeterMinutes); err != nil {
+		return nil, fmt.Errorf("error preparing query FoldMeterMinutes: %w", err)
+	}
+	if q.forgetMeterMinutesStmt, err = db.PrepareContext(ctx, forgetMeterMinutes); err != nil {
+		return nil, fmt.Errorf("error preparing query ForgetMeterMinutes: %w", err)
 	}
 	if q.getAuthRequestStmt, err = db.PrepareContext(ctx, getAuthRequest); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthRequest: %w", err)
@@ -93,11 +102,20 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listObjectsStmt, err = db.PrepareContext(ctx, listObjects); err != nil {
 		return nil, fmt.Errorf("error preparing query ListObjects: %w", err)
 	}
+	if q.recordMeterMinuteStmt, err = db.PrepareContext(ctx, recordMeterMinute); err != nil {
+		return nil, fmt.Errorf("error preparing query RecordMeterMinute: %w", err)
+	}
 	if q.revokeFamilyStmt, err = db.PrepareContext(ctx, revokeFamily); err != nil {
 		return nil, fmt.Errorf("error preparing query RevokeFamily: %w", err)
 	}
 	if q.setMetaStmt, err = db.PrepareContext(ctx, setMeta); err != nil {
 		return nil, fmt.Errorf("error preparing query SetMeta: %w", err)
+	}
+	if q.sumMeterHoursStmt, err = db.PrepareContext(ctx, sumMeterHours); err != nil {
+		return nil, fmt.Errorf("error preparing query SumMeterHours: %w", err)
+	}
+	if q.sumMeterMinutesStmt, err = db.PrepareContext(ctx, sumMeterMinutes); err != nil {
+		return nil, fmt.Errorf("error preparing query SumMeterMinutes: %w", err)
 	}
 	if q.swapAuthRequestStmt, err = db.PrepareContext(ctx, swapAuthRequest); err != nil {
 		return nil, fmt.Errorf("error preparing query SwapAuthRequest: %w", err)
@@ -153,6 +171,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteExpiredRevokedFamiliesStmt: %w", cerr)
 		}
 	}
+	if q.deleteMeterMinutesInStmt != nil {
+		if cerr := q.deleteMeterMinutesInStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteMeterMinutesInStmt: %w", cerr)
+		}
+	}
 	if q.deleteObjectStmt != nil {
 		if cerr := q.deleteObjectStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteObjectStmt: %w", cerr)
@@ -176,6 +199,16 @@ func (q *Queries) Close() error {
 	if q.familyRevokedStmt != nil {
 		if cerr := q.familyRevokedStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing familyRevokedStmt: %w", cerr)
+		}
+	}
+	if q.foldMeterMinutesStmt != nil {
+		if cerr := q.foldMeterMinutesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing foldMeterMinutesStmt: %w", cerr)
+		}
+	}
+	if q.forgetMeterMinutesStmt != nil {
+		if cerr := q.forgetMeterMinutesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing forgetMeterMinutesStmt: %w", cerr)
 		}
 	}
 	if q.getAuthRequestStmt != nil {
@@ -228,6 +261,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listObjectsStmt: %w", cerr)
 		}
 	}
+	if q.recordMeterMinuteStmt != nil {
+		if cerr := q.recordMeterMinuteStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing recordMeterMinuteStmt: %w", cerr)
+		}
+	}
 	if q.revokeFamilyStmt != nil {
 		if cerr := q.revokeFamilyStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing revokeFamilyStmt: %w", cerr)
@@ -236,6 +274,16 @@ func (q *Queries) Close() error {
 	if q.setMetaStmt != nil {
 		if cerr := q.setMetaStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setMetaStmt: %w", cerr)
+		}
+	}
+	if q.sumMeterHoursStmt != nil {
+		if cerr := q.sumMeterHoursStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing sumMeterHoursStmt: %w", cerr)
+		}
+	}
+	if q.sumMeterMinutesStmt != nil {
+		if cerr := q.sumMeterMinutesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing sumMeterMinutesStmt: %w", cerr)
 		}
 	}
 	if q.swapAuthRequestStmt != nil {
@@ -300,11 +348,14 @@ type Queries struct {
 	deleteExpiredAuthRequestsStmt    *sql.Stmt
 	deleteExpiredCredentialsStmt     *sql.Stmt
 	deleteExpiredRevokedFamiliesStmt *sql.Stmt
+	deleteMeterMinutesInStmt         *sql.Stmt
 	deleteObjectStmt                 *sql.Stmt
 	familiesOfStmt                   *sql.Stmt
 	familyExpiryStmt                 *sql.Stmt
 	familyHoldsStmt                  *sql.Stmt
 	familyRevokedStmt                *sql.Stmt
+	foldMeterMinutesStmt             *sql.Stmt
+	forgetMeterMinutesStmt           *sql.Stmt
 	getAuthRequestStmt               *sql.Stmt
 	getCredentialStmt                *sql.Stmt
 	getMetaStmt                      *sql.Stmt
@@ -315,8 +366,11 @@ type Queries struct {
 	insertObjectStmt                 *sql.Stmt
 	listEventsStmt                   *sql.Stmt
 	listObjectsStmt                  *sql.Stmt
+	recordMeterMinuteStmt            *sql.Stmt
 	revokeFamilyStmt                 *sql.Stmt
 	setMetaStmt                      *sql.Stmt
+	sumMeterHoursStmt                *sql.Stmt
+	sumMeterMinutesStmt              *sql.Stmt
 	swapAuthRequestStmt              *sql.Stmt
 	touchCredentialStmt              *sql.Stmt
 	updateObjectStmt                 *sql.Stmt
@@ -334,11 +388,14 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteExpiredAuthRequestsStmt:    q.deleteExpiredAuthRequestsStmt,
 		deleteExpiredCredentialsStmt:     q.deleteExpiredCredentialsStmt,
 		deleteExpiredRevokedFamiliesStmt: q.deleteExpiredRevokedFamiliesStmt,
+		deleteMeterMinutesInStmt:         q.deleteMeterMinutesInStmt,
 		deleteObjectStmt:                 q.deleteObjectStmt,
 		familiesOfStmt:                   q.familiesOfStmt,
 		familyExpiryStmt:                 q.familyExpiryStmt,
 		familyHoldsStmt:                  q.familyHoldsStmt,
 		familyRevokedStmt:                q.familyRevokedStmt,
+		foldMeterMinutesStmt:             q.foldMeterMinutesStmt,
+		forgetMeterMinutesStmt:           q.forgetMeterMinutesStmt,
 		getAuthRequestStmt:               q.getAuthRequestStmt,
 		getCredentialStmt:                q.getCredentialStmt,
 		getMetaStmt:                      q.getMetaStmt,
@@ -349,8 +406,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		insertObjectStmt:                 q.insertObjectStmt,
 		listEventsStmt:                   q.listEventsStmt,
 		listObjectsStmt:                  q.listObjectsStmt,
+		recordMeterMinuteStmt:            q.recordMeterMinuteStmt,
 		revokeFamilyStmt:                 q.revokeFamilyStmt,
 		setMetaStmt:                      q.setMetaStmt,
+		sumMeterHoursStmt:                q.sumMeterHoursStmt,
+		sumMeterMinutesStmt:              q.sumMeterMinutesStmt,
 		swapAuthRequestStmt:              q.swapAuthRequestStmt,
 		touchCredentialStmt:              q.touchCredentialStmt,
 		updateObjectStmt:                 q.updateObjectStmt,

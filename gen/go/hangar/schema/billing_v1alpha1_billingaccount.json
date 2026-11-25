@@ -1,0 +1,337 @@
+{
+  "$defs": {
+    "hangar.billing.v1alpha1.BillingAccountSpec": {
+      "additionalProperties": false,
+      "description": "BillingAccountSpec is the agreement. Changing the type, or the tenant's Plan while FIXED, ends the period open, in the minute the apiserver sees it, with a Statement for the part of it that has passed; the next period starts there. Any other change, and a new price of the Plan, applies from the next period.",
+      "properties": {
+        "anchorTime": {
+          "description": "When the first period starts, on a whole minute. Each period starts on its day of the month and its time of day, in time_zone, or on the month's last day if it has fewer. A new account's may not be before the end of its tenant's last Statement.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "currency": {
+          "description": "The ISO 4217 code the account is billed in, such as \"TWD\". A FIXED account's Plan, and a price list it names, must be in it.",
+          "type": "string"
+        },
+        "periodMonths": {
+          "description": "How many months one period lasts: 1 to 6 for PAY_AS_YOU_GO; a FIXED account's is always 1, and 0 means 1 for either.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "priceList": {
+          "description": "Name of the PriceList that rates what the tenant holds. Required for PAY_AS_YOU_GO; on a FIXED account it is optional, and only values what the tenant holds for the platform's administrators, apart from what it pays.",
+          "type": "string"
+        },
+        "timeZone": {
+          "description": "The IANA time zone periods are cut in, such as \"Asia/Taipei\"; empty is UTC.",
+          "type": "string"
+        },
+        "type": {
+          "description": "BillingType is how a tenant pays.\n\n- BILLING_TYPE_FIXED: A fee each month, whatever the tenant holds.\n- BILLING_TYPE_PAY_AS_YOU_GO: What the tenant holds, minute by minute, at a PriceList's prices.",
+          "enum": [
+            "BILLING_TYPE_FIXED",
+            "BILLING_TYPE_PAY_AS_YOU_GO"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.billing.v1alpha1.BillingAccountStatus": {
+      "additionalProperties": false,
+      "description": "BillingAccountStatus is the period open and what it has come to.",
+      "properties": {
+        "accrued": {
+          "description": "What the open period has come to so far, as its Statement would bill it, up to accrued_time.",
+          "type": "string"
+        },
+        "accruedTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "metered": {
+          "description": "What the open period's holdings come to at price_list's prices, for an account that names one; for a PAY_AS_YOU_GO account, it is accrued.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "periodAnchorTime": {
+          "description": "When the periods are counted from: anchor_time, or the minute the agreement last changed.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "periodCutTime": {
+          "description": "Where a change of type or Plan, once seen, ends the open period; unset while none is pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "periodEndTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "periodMonthlyFee": {
+          "type": "string"
+        },
+        "periodMonths": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "periodOffsetMonths": {
+          "description": "How many months after period_anchor_time the periods of this length are cut from, once a new length took effect; they keep the anchor's day of the month.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "periodPlan": {
+          "type": "string"
+        },
+        "periodPriceList": {
+          "type": "string"
+        },
+        "periodStartTime": {
+          "description": "The period open now; unset before anchor_time.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "periodType": {
+          "description": "The agreement the open period started under: its type, and its fee and the Plan it came from (FIXED), or its price list, and its length.\n\n- BILLING_TYPE_FIXED: A fee each month, whatever the tenant holds.\n- BILLING_TYPE_PAY_AS_YOU_GO: What the tenant holds, minute by minute, at a PriceList's prices.",
+          "enum": [
+            "BILLING_TYPE_FIXED",
+            "BILLING_TYPE_PAY_AS_YOU_GO"
+          ],
+          "type": "string"
+        },
+        "priceListVersion": {
+          "description": "The resource version of the price list accrued and metered were rated at; a new one rates them again.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "usageLines": {
+          "description": "What the open period's holdings come to up to accrued_time at price_list's prices, a line for each thing held at each price, as a Statement lists them; none for an account that names no price list.",
+          "items": {
+            "$ref": "#/$defs/hangar.billing.v1alpha1.StatementLine"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.billing.v1alpha1.StatementLine": {
+      "additionalProperties": false,
+      "description": "StatementLine is one thing billed.",
+      "properties": {
+        "amount": {
+          "description": "quantity times unit_price, with six decimals.",
+          "type": "string"
+        },
+        "item": {
+          "description": "What it is: \"monthly_fee\", or a Prices field, such as \"cpu\".",
+          "type": "string"
+        },
+        "priceEffectiveTime": {
+          "description": "When the price took effect, for a PAY_AS_YOU_GO line.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "quantity": {
+          "description": "How much of it, in unit-hours with up to six decimals, such as \"1440.5\" vCPU-hours; \"1\" for a whole month's fee, a fraction for part.",
+          "type": "string"
+        },
+        "unit": {
+          "description": "The unit quantity counts, such as \"vCPU-hour\" or \"month\".",
+          "type": "string"
+        },
+        "unitPrice": {
+          "description": "The price of one unit, as the PriceList or the account gave it.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "BillingAccount is what a tenant has agreed to pay, and how often it is billed. Its name is the tenant's, and it goes with the tenant, after a last Statement for the period it had open. A tenant without one is not billed, and what it holds is not metered. Platform administrators keep billing accounts; the tenant's own people, at the tenant, read theirs. See docs/decisions/billing.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "billing.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "BillingAccount",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.billing.v1alpha1.BillingAccountSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.billing.v1alpha1.BillingAccountStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "BillingAccount",
+  "type": "object"
+}

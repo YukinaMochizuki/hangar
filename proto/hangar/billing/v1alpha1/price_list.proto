@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+package hangar.billing.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// PriceList is what Hangar charges for each thing a tenant holds, by the
+// hour, each price from the time it takes effect. A pay-as-you-go
+// BillingAccount is rated by one, minute by minute, at the prices in effect
+// in that minute, so a new price never changes what was already used.
+// Platform administrators keep price lists; everyone allowed to use Hangar
+// reads them. See docs/decisions/billing.md.
+message PriceList {
+  option (hangar.meta.v1.resource) = {
+    kind: "PriceList"
+    plural: "pricelists"
+    short_names: ["pl"]
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  PriceListSpec spec = 4;
+  PriceListStatus status = 5;
+}
+
+// PriceListSpec is the currency and the prices over time.
+message PriceListSpec {
+  string display_name = 1;
+  // The ISO 4217 code every price is in, such as "TWD".
+  string currency = 2 [(hangar.meta.v1.field).immutable = true];
+  // The prices, each from its effective_time on, until the next entry's,
+  // in order of effective_time. An entry whose time has come is never
+  // changed or removed: an apply may only add entries, at the end, that
+  // take effect now or later. A minute before the first entry is free.
+  repeated PriceEntry entries = 3;
+}
+
+// PriceEntry is a set of prices and when it takes effect.
+message PriceEntry {
+  // When the prices take effect, on a whole minute.
+  google.protobuf.Timestamp effective_time = 1;
+  Prices prices = 2;
+}
+
+// Prices are what holding one unit of each thing for an hour costs, as a
+// decimal in the currency's units with at most six digits after the point,
+// such as "0.6". A minute costs a sixtieth of the hour. A price left empty is
+// free. cpu and memory count only while a machine runs; everything else
+// counts while it exists, as the quota counts it (Limits).
+message Prices {
+  // Per vCPU.
+  string cpu = 1;
+  // Per GiB of memory.
+  string memory = 2;
+  // Per GiB of disk.
+  string disk = 3;
+  // Per public IPv6 Address.
+  string addresses = 4;
+  // Per PublicEndpoint.
+  string public_endpoints = 5;
+  // Per PortForward.
+  string port_forwards = 6;
+  // Per FileShare, besides its disk.
+  string file_shares = 7;
+  // Per NetworkEndpoint.
+  string network_endpoints = 8;
+  // Per CustomDomain.
+  string domains = 9;
+}
+
+// PriceListStatus is the observed state of a price list.
+message PriceListStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+}
+
+// PriceListService manages price lists.
+service PriceListService {
+  rpc GetPriceList(GetPriceListRequest) returns (GetPriceListResponse);
+  rpc ListPriceLists(ListPriceListsRequest) returns (ListPriceListsResponse);
+  rpc WatchPriceLists(WatchPriceListsRequest) returns (stream WatchPriceListsResponse);
+  rpc ApplyPriceList(ApplyPriceListRequest) returns (ApplyPriceListResponse);
+  rpc DeletePriceList(DeletePriceListRequest) returns (DeletePriceListResponse);
+  rpc UpdatePriceListStatus(UpdatePriceListStatusRequest) returns (UpdatePriceListStatusResponse);
+}
+
+message GetPriceListRequest {
+  string name = 1;
+}
+
+message GetPriceListResponse {
+  PriceList price_list = 1;
+}
+
+message ListPriceListsRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListPriceListsResponse {
+  repeated PriceList items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchPriceListsRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchPriceListsResponse {
+  hangar.meta.v1.EventType type = 1;
+  PriceList price_list = 2;
+  int64 revision = 3;
+}
+
+message ApplyPriceListRequest {
+  PriceList price_list = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
+}
+
+message ApplyPriceListResponse {
+  PriceList price_list = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeletePriceListRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeletePriceListResponse {
+  PriceList price_list = 1;
+}
+
+message UpdatePriceListStatusRequest {
+  string name = 1;
+  PriceListStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdatePriceListStatusResponse {
+  PriceList price_list = 1;
+}

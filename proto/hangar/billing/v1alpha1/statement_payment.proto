@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package hangar.billing.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+import "hangar/billing/v1alpha1/statement.proto";
+
+// StatementPaymentService records that a Statement was paid, which Hangar
+// does not collect itself: payment happens outside it, and a platform
+// administrator records it. It needs billing.statements.pay, which only
+// platform.root holds. It is not a resource's service, so it is written by
+// hand rather than generated. See docs/decisions/billing.md.
+service StatementPaymentService {
+  // MarkStatementPaid records the statement paid at paid_time, now if
+  // unset, or, with unpaid, takes that back. Recording one already in that
+  // state changes nothing.
+  rpc MarkStatementPaid(MarkStatementPaidRequest) returns (MarkStatementPaidResponse);
+}
+
+message MarkStatementPaidRequest {
+  string name = 1;
+  google.protobuf.Timestamp paid_time = 2;
+  bool unpaid = 3;
+}
+
+message MarkStatementPaidResponse {
+  Statement statement = 1;
+}

@@ -16,7 +16,7 @@ func TestBuiltInRolesHoldExactly(t *testing.T) {
 	isWrite := func(v Verb) bool { return v == Apply || v == Delete }
 	want := map[string]func(r registry.Resource, v Verb, perm string) bool{
 		"platform.root": func(_ registry.Resource, v Verb, perm string) bool {
-			return isRead(v) || isWrite(v) || slices.Contains(reach, perm)
+			return isRead(v) || isWrite(v) || slices.Contains(reach, perm) || perm == "billing.statements.pay"
 		},
 		// A sponsor reads the Nodes, the platform's own, and no kind else.
 		"platform.sponsor": func(r registry.Resource, v Verb, _ string) bool { return r.Kind == registry.Node.Kind && isRead(v) },

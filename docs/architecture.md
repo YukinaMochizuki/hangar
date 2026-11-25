@@ -105,6 +105,11 @@ grant (`decisions/authentication.md`).
 A tenant's budget is a global `Plan`, which admission checks every write
 that would raise the tenant's usage against; a project may have a smaller
 budget of its own, and both report their usage in `status`.
+What a tenant pays is its global `BillingAccount`: a fixed fee a month, or
+what it holds at a `PriceList`'s prices. For a tenant with one, the
+apiserver meters what it holds each minute into a table of the store's own,
+outside objects and events, and the billing controller makes a `Statement`
+for each period (`decisions/billing.md`).
 
 ## Data flow for a change
 

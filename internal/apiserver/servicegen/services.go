@@ -8,18 +8,20 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	v1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/billing/v1alpha1"
+	billingv1alpha1connect "github.com/YukinaMochizuki/hangar/gen/go/hangar/billing/v1alpha1/billingv1alpha1connect"
+	v1alpha11 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	computev1alpha1connect "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
-	v1alpha11 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
+	v1alpha12 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	iamv1alpha1connect "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
-	v1alpha12 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
+	v1alpha13 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	networkv1alpha1connect "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
 	registry "github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
-	v1alpha13 "github.com/YukinaMochizuki/hangar/gen/go/hangar/secrets/v1alpha1"
+	v1alpha14 "github.com/YukinaMochizuki/hangar/gen/go/hangar/secrets/v1alpha1"
 	secretsv1alpha1connect "github.com/YukinaMochizuki/hangar/gen/go/hangar/secrets/v1alpha1/secretsv1alpha1connect"
-	v1alpha14 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
+	v1alpha15 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	storagev1alpha1connect "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1/storagev1alpha1connect"
-	v1alpha15 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	v1alpha16 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	tenancyv1alpha1connect "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	resource "github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	http "net/http"
@@ -30,6 +32,9 @@ type Backends func(registry.Resource) resource.Backend
 
 // Mount registers a handler for every resource kind on mux.
 func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption) {
+	mux.Handle(billingv1alpha1connect.NewBillingAccountServiceHandler(&billingAccountService{b: backends(registry.BillingAccount)}, opts...))
+	mux.Handle(billingv1alpha1connect.NewPriceListServiceHandler(&priceListService{b: backends(registry.PriceList)}, opts...))
+	mux.Handle(billingv1alpha1connect.NewStatementServiceHandler(&statementService{b: backends(registry.Statement)}, opts...))
 	mux.Handle(computev1alpha1connect.NewContainerServiceHandler(&containerService{b: backends(registry.Container)}, opts...))
 	mux.Handle(computev1alpha1connect.NewMachineServiceHandler(&machineService{b: backends(registry.Machine)}, opts...))
 	mux.Handle(computev1alpha1connect.NewMachineSizeServiceHandler(&machineSizeService{b: backends(registry.MachineSize)}, opts...))
@@ -57,42 +62,243 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(tenancyv1alpha1connect.NewTenantServiceHandler(&tenantService{b: backends(registry.Tenant)}, opts...))
 }
 
-type containerService struct {
+type billingAccountService struct {
 	b resource.Backend
 }
 
-func (s *containerService) GetContainer(ctx context.Context, req *connect.Request[v1alpha1.GetContainerRequest]) (*connect.Response[v1alpha1.GetContainerResponse], error) {
-	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
+func (s *billingAccountService) GetBillingAccount(ctx context.Context, req *connect.Request[v1alpha1.GetBillingAccountRequest]) (*connect.Response[v1alpha1.GetBillingAccountResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.GetContainerResponse{Container: obj.(*v1alpha1.Container)}), nil
+	return connect.NewResponse(&v1alpha1.GetBillingAccountResponse{BillingAccount: obj.(*v1alpha1.BillingAccount)}), nil
 }
 
-func (s *containerService) ListContainers(ctx context.Context, req *connect.Request[v1alpha1.ListContainersRequest]) (*connect.Response[v1alpha1.ListContainersResponse], error) {
-	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+func (s *billingAccountService) ListBillingAccounts(ctx context.Context, req *connect.Request[v1alpha1.ListBillingAccountsRequest]) (*connect.Response[v1alpha1.ListBillingAccountsResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha1.ListContainersResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha1.ListBillingAccountsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha1.Container))
+		out.Items = append(out.Items, item.(*v1alpha1.BillingAccount))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *containerService) WatchContainers(ctx context.Context, req *connect.Request[v1alpha1.WatchContainersRequest], stream *connect.ServerStream[v1alpha1.WatchContainersResponse]) error {
-	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+func (s *billingAccountService) WatchBillingAccounts(ctx context.Context, req *connect.Request[v1alpha1.WatchBillingAccountsRequest], stream *connect.ServerStream[v1alpha1.WatchBillingAccountsResponse]) error {
+	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha1.WatchContainersResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha1.WatchBillingAccountsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Container = ev.Object.(*v1alpha1.Container)
+			out.BillingAccount = ev.Object.(*v1alpha1.BillingAccount)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *containerService) ApplyContainer(ctx context.Context, req *connect.Request[v1alpha1.ApplyContainerRequest]) (*connect.Response[v1alpha1.ApplyContainerResponse], error) {
+func (s *billingAccountService) ApplyBillingAccount(ctx context.Context, req *connect.Request[v1alpha1.ApplyBillingAccountRequest]) (*connect.Response[v1alpha1.ApplyBillingAccountResponse], error) {
+	in := req.Msg.GetBillingAccount()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("billing_account is required"))
+	}
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.ApplyBillingAccountResponse{BillingAccount: res.Object.(*v1alpha1.BillingAccount), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *billingAccountService) DeleteBillingAccount(ctx context.Context, req *connect.Request[v1alpha1.DeleteBillingAccountRequest]) (*connect.Response[v1alpha1.DeleteBillingAccountResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.DeleteBillingAccountResponse{BillingAccount: obj.(*v1alpha1.BillingAccount)}), nil
+}
+
+func (s *billingAccountService) UpdateBillingAccountStatus(ctx context.Context, req *connect.Request[v1alpha1.UpdateBillingAccountStatusRequest]) (*connect.Response[v1alpha1.UpdateBillingAccountStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.UpdateBillingAccountStatusResponse{BillingAccount: obj.(*v1alpha1.BillingAccount)}), nil
+}
+
+type priceListService struct {
+	b resource.Backend
+}
+
+func (s *priceListService) GetPriceList(ctx context.Context, req *connect.Request[v1alpha1.GetPriceListRequest]) (*connect.Response[v1alpha1.GetPriceListResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.GetPriceListResponse{PriceList: obj.(*v1alpha1.PriceList)}), nil
+}
+
+func (s *priceListService) ListPriceLists(ctx context.Context, req *connect.Request[v1alpha1.ListPriceListsRequest]) (*connect.Response[v1alpha1.ListPriceListsResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha1.ListPriceListsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha1.PriceList))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *priceListService) WatchPriceLists(ctx context.Context, req *connect.Request[v1alpha1.WatchPriceListsRequest], stream *connect.ServerStream[v1alpha1.WatchPriceListsResponse]) error {
+	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha1.WatchPriceListsResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.PriceList = ev.Object.(*v1alpha1.PriceList)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *priceListService) ApplyPriceList(ctx context.Context, req *connect.Request[v1alpha1.ApplyPriceListRequest]) (*connect.Response[v1alpha1.ApplyPriceListResponse], error) {
+	in := req.Msg.GetPriceList()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("price_list is required"))
+	}
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.ApplyPriceListResponse{PriceList: res.Object.(*v1alpha1.PriceList), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *priceListService) DeletePriceList(ctx context.Context, req *connect.Request[v1alpha1.DeletePriceListRequest]) (*connect.Response[v1alpha1.DeletePriceListResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.DeletePriceListResponse{PriceList: obj.(*v1alpha1.PriceList)}), nil
+}
+
+func (s *priceListService) UpdatePriceListStatus(ctx context.Context, req *connect.Request[v1alpha1.UpdatePriceListStatusRequest]) (*connect.Response[v1alpha1.UpdatePriceListStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.UpdatePriceListStatusResponse{PriceList: obj.(*v1alpha1.PriceList)}), nil
+}
+
+type statementService struct {
+	b resource.Backend
+}
+
+func (s *statementService) GetStatement(ctx context.Context, req *connect.Request[v1alpha1.GetStatementRequest]) (*connect.Response[v1alpha1.GetStatementResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.GetStatementResponse{Statement: obj.(*v1alpha1.Statement)}), nil
+}
+
+func (s *statementService) ListStatements(ctx context.Context, req *connect.Request[v1alpha1.ListStatementsRequest]) (*connect.Response[v1alpha1.ListStatementsResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha1.ListStatementsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha1.Statement))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *statementService) WatchStatements(ctx context.Context, req *connect.Request[v1alpha1.WatchStatementsRequest], stream *connect.ServerStream[v1alpha1.WatchStatementsResponse]) error {
+	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha1.WatchStatementsResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.Statement = ev.Object.(*v1alpha1.Statement)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *statementService) ApplyStatement(ctx context.Context, req *connect.Request[v1alpha1.ApplyStatementRequest]) (*connect.Response[v1alpha1.ApplyStatementResponse], error) {
+	in := req.Msg.GetStatement()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("statement is required"))
+	}
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.ApplyStatementResponse{Statement: res.Object.(*v1alpha1.Statement), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *statementService) DeleteStatement(ctx context.Context, req *connect.Request[v1alpha1.DeleteStatementRequest]) (*connect.Response[v1alpha1.DeleteStatementResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.DeleteStatementResponse{Statement: obj.(*v1alpha1.Statement)}), nil
+}
+
+func (s *statementService) UpdateStatementStatus(ctx context.Context, req *connect.Request[v1alpha1.UpdateStatementStatusRequest]) (*connect.Response[v1alpha1.UpdateStatementStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.UpdateStatementStatusResponse{Statement: obj.(*v1alpha1.Statement)}), nil
+}
+
+type containerService struct {
+	b resource.Backend
+}
+
+func (s *containerService) GetContainer(ctx context.Context, req *connect.Request[v1alpha11.GetContainerRequest]) (*connect.Response[v1alpha11.GetContainerResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.GetContainerResponse{Container: obj.(*v1alpha11.Container)}), nil
+}
+
+func (s *containerService) ListContainers(ctx context.Context, req *connect.Request[v1alpha11.ListContainersRequest]) (*connect.Response[v1alpha11.ListContainersResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha11.ListContainersResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha11.Container))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *containerService) WatchContainers(ctx context.Context, req *connect.Request[v1alpha11.WatchContainersRequest], stream *connect.ServerStream[v1alpha11.WatchContainersResponse]) error {
+	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha11.WatchContainersResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.Container = ev.Object.(*v1alpha11.Container)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *containerService) ApplyContainer(ctx context.Context, req *connect.Request[v1alpha11.ApplyContainerRequest]) (*connect.Response[v1alpha11.ApplyContainerResponse], error) {
 	in := req.Msg.GetContainer()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("container is required"))
@@ -105,61 +311,61 @@ func (s *containerService) ApplyContainer(ctx context.Context, req *connect.Requ
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.ApplyContainerResponse{Container: res.Object.(*v1alpha1.Container), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha11.ApplyContainerResponse{Container: res.Object.(*v1alpha11.Container), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *containerService) DeleteContainer(ctx context.Context, req *connect.Request[v1alpha1.DeleteContainerRequest]) (*connect.Response[v1alpha1.DeleteContainerResponse], error) {
+func (s *containerService) DeleteContainer(ctx context.Context, req *connect.Request[v1alpha11.DeleteContainerRequest]) (*connect.Response[v1alpha11.DeleteContainerResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.DeleteContainerResponse{Container: obj.(*v1alpha1.Container)}), nil
+	return connect.NewResponse(&v1alpha11.DeleteContainerResponse{Container: obj.(*v1alpha11.Container)}), nil
 }
 
-func (s *containerService) UpdateContainerStatus(ctx context.Context, req *connect.Request[v1alpha1.UpdateContainerStatusRequest]) (*connect.Response[v1alpha1.UpdateContainerStatusResponse], error) {
+func (s *containerService) UpdateContainerStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateContainerStatusRequest]) (*connect.Response[v1alpha11.UpdateContainerStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.UpdateContainerStatusResponse{Container: obj.(*v1alpha1.Container)}), nil
+	return connect.NewResponse(&v1alpha11.UpdateContainerStatusResponse{Container: obj.(*v1alpha11.Container)}), nil
 }
 
 type machineService struct {
 	b resource.Backend
 }
 
-func (s *machineService) GetMachine(ctx context.Context, req *connect.Request[v1alpha1.GetMachineRequest]) (*connect.Response[v1alpha1.GetMachineResponse], error) {
+func (s *machineService) GetMachine(ctx context.Context, req *connect.Request[v1alpha11.GetMachineRequest]) (*connect.Response[v1alpha11.GetMachineResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.GetMachineResponse{Machine: obj.(*v1alpha1.Machine)}), nil
+	return connect.NewResponse(&v1alpha11.GetMachineResponse{Machine: obj.(*v1alpha11.Machine)}), nil
 }
 
-func (s *machineService) ListMachines(ctx context.Context, req *connect.Request[v1alpha1.ListMachinesRequest]) (*connect.Response[v1alpha1.ListMachinesResponse], error) {
+func (s *machineService) ListMachines(ctx context.Context, req *connect.Request[v1alpha11.ListMachinesRequest]) (*connect.Response[v1alpha11.ListMachinesResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha1.ListMachinesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha11.ListMachinesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha1.Machine))
+		out.Items = append(out.Items, item.(*v1alpha11.Machine))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *machineService) WatchMachines(ctx context.Context, req *connect.Request[v1alpha1.WatchMachinesRequest], stream *connect.ServerStream[v1alpha1.WatchMachinesResponse]) error {
+func (s *machineService) WatchMachines(ctx context.Context, req *connect.Request[v1alpha11.WatchMachinesRequest], stream *connect.ServerStream[v1alpha11.WatchMachinesResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha1.WatchMachinesResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha11.WatchMachinesResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Machine = ev.Object.(*v1alpha1.Machine)
+			out.Machine = ev.Object.(*v1alpha11.Machine)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *machineService) ApplyMachine(ctx context.Context, req *connect.Request[v1alpha1.ApplyMachineRequest]) (*connect.Response[v1alpha1.ApplyMachineResponse], error) {
+func (s *machineService) ApplyMachine(ctx context.Context, req *connect.Request[v1alpha11.ApplyMachineRequest]) (*connect.Response[v1alpha11.ApplyMachineResponse], error) {
 	in := req.Msg.GetMachine()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("machine is required"))
@@ -172,61 +378,61 @@ func (s *machineService) ApplyMachine(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.ApplyMachineResponse{Machine: res.Object.(*v1alpha1.Machine), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha11.ApplyMachineResponse{Machine: res.Object.(*v1alpha11.Machine), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *machineService) DeleteMachine(ctx context.Context, req *connect.Request[v1alpha1.DeleteMachineRequest]) (*connect.Response[v1alpha1.DeleteMachineResponse], error) {
+func (s *machineService) DeleteMachine(ctx context.Context, req *connect.Request[v1alpha11.DeleteMachineRequest]) (*connect.Response[v1alpha11.DeleteMachineResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.DeleteMachineResponse{Machine: obj.(*v1alpha1.Machine)}), nil
+	return connect.NewResponse(&v1alpha11.DeleteMachineResponse{Machine: obj.(*v1alpha11.Machine)}), nil
 }
 
-func (s *machineService) UpdateMachineStatus(ctx context.Context, req *connect.Request[v1alpha1.UpdateMachineStatusRequest]) (*connect.Response[v1alpha1.UpdateMachineStatusResponse], error) {
+func (s *machineService) UpdateMachineStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateMachineStatusRequest]) (*connect.Response[v1alpha11.UpdateMachineStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.UpdateMachineStatusResponse{Machine: obj.(*v1alpha1.Machine)}), nil
+	return connect.NewResponse(&v1alpha11.UpdateMachineStatusResponse{Machine: obj.(*v1alpha11.Machine)}), nil
 }
 
 type machineSizeService struct {
 	b resource.Backend
 }
 
-func (s *machineSizeService) GetMachineSize(ctx context.Context, req *connect.Request[v1alpha1.GetMachineSizeRequest]) (*connect.Response[v1alpha1.GetMachineSizeResponse], error) {
+func (s *machineSizeService) GetMachineSize(ctx context.Context, req *connect.Request[v1alpha11.GetMachineSizeRequest]) (*connect.Response[v1alpha11.GetMachineSizeResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.GetMachineSizeResponse{MachineSize: obj.(*v1alpha1.MachineSize)}), nil
+	return connect.NewResponse(&v1alpha11.GetMachineSizeResponse{MachineSize: obj.(*v1alpha11.MachineSize)}), nil
 }
 
-func (s *machineSizeService) ListMachineSizes(ctx context.Context, req *connect.Request[v1alpha1.ListMachineSizesRequest]) (*connect.Response[v1alpha1.ListMachineSizesResponse], error) {
+func (s *machineSizeService) ListMachineSizes(ctx context.Context, req *connect.Request[v1alpha11.ListMachineSizesRequest]) (*connect.Response[v1alpha11.ListMachineSizesResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha1.ListMachineSizesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha11.ListMachineSizesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha1.MachineSize))
+		out.Items = append(out.Items, item.(*v1alpha11.MachineSize))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *machineSizeService) WatchMachineSizes(ctx context.Context, req *connect.Request[v1alpha1.WatchMachineSizesRequest], stream *connect.ServerStream[v1alpha1.WatchMachineSizesResponse]) error {
+func (s *machineSizeService) WatchMachineSizes(ctx context.Context, req *connect.Request[v1alpha11.WatchMachineSizesRequest], stream *connect.ServerStream[v1alpha11.WatchMachineSizesResponse]) error {
 	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha1.WatchMachineSizesResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha11.WatchMachineSizesResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.MachineSize = ev.Object.(*v1alpha1.MachineSize)
+			out.MachineSize = ev.Object.(*v1alpha11.MachineSize)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *machineSizeService) ApplyMachineSize(ctx context.Context, req *connect.Request[v1alpha1.ApplyMachineSizeRequest]) (*connect.Response[v1alpha1.ApplyMachineSizeResponse], error) {
+func (s *machineSizeService) ApplyMachineSize(ctx context.Context, req *connect.Request[v1alpha11.ApplyMachineSizeRequest]) (*connect.Response[v1alpha11.ApplyMachineSizeResponse], error) {
 	in := req.Msg.GetMachineSize()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("machine_size is required"))
@@ -239,61 +445,61 @@ func (s *machineSizeService) ApplyMachineSize(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.ApplyMachineSizeResponse{MachineSize: res.Object.(*v1alpha1.MachineSize), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha11.ApplyMachineSizeResponse{MachineSize: res.Object.(*v1alpha11.MachineSize), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *machineSizeService) DeleteMachineSize(ctx context.Context, req *connect.Request[v1alpha1.DeleteMachineSizeRequest]) (*connect.Response[v1alpha1.DeleteMachineSizeResponse], error) {
+func (s *machineSizeService) DeleteMachineSize(ctx context.Context, req *connect.Request[v1alpha11.DeleteMachineSizeRequest]) (*connect.Response[v1alpha11.DeleteMachineSizeResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.DeleteMachineSizeResponse{MachineSize: obj.(*v1alpha1.MachineSize)}), nil
+	return connect.NewResponse(&v1alpha11.DeleteMachineSizeResponse{MachineSize: obj.(*v1alpha11.MachineSize)}), nil
 }
 
-func (s *machineSizeService) UpdateMachineSizeStatus(ctx context.Context, req *connect.Request[v1alpha1.UpdateMachineSizeStatusRequest]) (*connect.Response[v1alpha1.UpdateMachineSizeStatusResponse], error) {
+func (s *machineSizeService) UpdateMachineSizeStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateMachineSizeStatusRequest]) (*connect.Response[v1alpha11.UpdateMachineSizeStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.UpdateMachineSizeStatusResponse{MachineSize: obj.(*v1alpha1.MachineSize)}), nil
+	return connect.NewResponse(&v1alpha11.UpdateMachineSizeStatusResponse{MachineSize: obj.(*v1alpha11.MachineSize)}), nil
 }
 
 type nodeService struct {
 	b resource.Backend
 }
 
-func (s *nodeService) GetNode(ctx context.Context, req *connect.Request[v1alpha1.GetNodeRequest]) (*connect.Response[v1alpha1.GetNodeResponse], error) {
+func (s *nodeService) GetNode(ctx context.Context, req *connect.Request[v1alpha11.GetNodeRequest]) (*connect.Response[v1alpha11.GetNodeResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.GetNodeResponse{Node: obj.(*v1alpha1.Node)}), nil
+	return connect.NewResponse(&v1alpha11.GetNodeResponse{Node: obj.(*v1alpha11.Node)}), nil
 }
 
-func (s *nodeService) ListNodes(ctx context.Context, req *connect.Request[v1alpha1.ListNodesRequest]) (*connect.Response[v1alpha1.ListNodesResponse], error) {
+func (s *nodeService) ListNodes(ctx context.Context, req *connect.Request[v1alpha11.ListNodesRequest]) (*connect.Response[v1alpha11.ListNodesResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha1.ListNodesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha11.ListNodesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha1.Node))
+		out.Items = append(out.Items, item.(*v1alpha11.Node))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *nodeService) WatchNodes(ctx context.Context, req *connect.Request[v1alpha1.WatchNodesRequest], stream *connect.ServerStream[v1alpha1.WatchNodesResponse]) error {
+func (s *nodeService) WatchNodes(ctx context.Context, req *connect.Request[v1alpha11.WatchNodesRequest], stream *connect.ServerStream[v1alpha11.WatchNodesResponse]) error {
 	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha1.WatchNodesResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha11.WatchNodesResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Node = ev.Object.(*v1alpha1.Node)
+			out.Node = ev.Object.(*v1alpha11.Node)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *nodeService) ApplyNode(ctx context.Context, req *connect.Request[v1alpha1.ApplyNodeRequest]) (*connect.Response[v1alpha1.ApplyNodeResponse], error) {
+func (s *nodeService) ApplyNode(ctx context.Context, req *connect.Request[v1alpha11.ApplyNodeRequest]) (*connect.Response[v1alpha11.ApplyNodeResponse], error) {
 	in := req.Msg.GetNode()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("node is required"))
@@ -306,61 +512,61 @@ func (s *nodeService) ApplyNode(ctx context.Context, req *connect.Request[v1alph
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.ApplyNodeResponse{Node: res.Object.(*v1alpha1.Node), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha11.ApplyNodeResponse{Node: res.Object.(*v1alpha11.Node), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *nodeService) DeleteNode(ctx context.Context, req *connect.Request[v1alpha1.DeleteNodeRequest]) (*connect.Response[v1alpha1.DeleteNodeResponse], error) {
+func (s *nodeService) DeleteNode(ctx context.Context, req *connect.Request[v1alpha11.DeleteNodeRequest]) (*connect.Response[v1alpha11.DeleteNodeResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.DeleteNodeResponse{Node: obj.(*v1alpha1.Node)}), nil
+	return connect.NewResponse(&v1alpha11.DeleteNodeResponse{Node: obj.(*v1alpha11.Node)}), nil
 }
 
-func (s *nodeService) UpdateNodeStatus(ctx context.Context, req *connect.Request[v1alpha1.UpdateNodeStatusRequest]) (*connect.Response[v1alpha1.UpdateNodeStatusResponse], error) {
+func (s *nodeService) UpdateNodeStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateNodeStatusRequest]) (*connect.Response[v1alpha11.UpdateNodeStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.UpdateNodeStatusResponse{Node: obj.(*v1alpha1.Node)}), nil
+	return connect.NewResponse(&v1alpha11.UpdateNodeStatusResponse{Node: obj.(*v1alpha11.Node)}), nil
 }
 
 type virtualMachineService struct {
 	b resource.Backend
 }
 
-func (s *virtualMachineService) GetVirtualMachine(ctx context.Context, req *connect.Request[v1alpha1.GetVirtualMachineRequest]) (*connect.Response[v1alpha1.GetVirtualMachineResponse], error) {
+func (s *virtualMachineService) GetVirtualMachine(ctx context.Context, req *connect.Request[v1alpha11.GetVirtualMachineRequest]) (*connect.Response[v1alpha11.GetVirtualMachineResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.GetVirtualMachineResponse{VirtualMachine: obj.(*v1alpha1.VirtualMachine)}), nil
+	return connect.NewResponse(&v1alpha11.GetVirtualMachineResponse{VirtualMachine: obj.(*v1alpha11.VirtualMachine)}), nil
 }
 
-func (s *virtualMachineService) ListVirtualMachines(ctx context.Context, req *connect.Request[v1alpha1.ListVirtualMachinesRequest]) (*connect.Response[v1alpha1.ListVirtualMachinesResponse], error) {
+func (s *virtualMachineService) ListVirtualMachines(ctx context.Context, req *connect.Request[v1alpha11.ListVirtualMachinesRequest]) (*connect.Response[v1alpha11.ListVirtualMachinesResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha1.ListVirtualMachinesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha11.ListVirtualMachinesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha1.VirtualMachine))
+		out.Items = append(out.Items, item.(*v1alpha11.VirtualMachine))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *virtualMachineService) WatchVirtualMachines(ctx context.Context, req *connect.Request[v1alpha1.WatchVirtualMachinesRequest], stream *connect.ServerStream[v1alpha1.WatchVirtualMachinesResponse]) error {
+func (s *virtualMachineService) WatchVirtualMachines(ctx context.Context, req *connect.Request[v1alpha11.WatchVirtualMachinesRequest], stream *connect.ServerStream[v1alpha11.WatchVirtualMachinesResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha1.WatchVirtualMachinesResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha11.WatchVirtualMachinesResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.VirtualMachine = ev.Object.(*v1alpha1.VirtualMachine)
+			out.VirtualMachine = ev.Object.(*v1alpha11.VirtualMachine)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *virtualMachineService) ApplyVirtualMachine(ctx context.Context, req *connect.Request[v1alpha1.ApplyVirtualMachineRequest]) (*connect.Response[v1alpha1.ApplyVirtualMachineResponse], error) {
+func (s *virtualMachineService) ApplyVirtualMachine(ctx context.Context, req *connect.Request[v1alpha11.ApplyVirtualMachineRequest]) (*connect.Response[v1alpha11.ApplyVirtualMachineResponse], error) {
 	in := req.Msg.GetVirtualMachine()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("virtual_machine is required"))
@@ -373,61 +579,61 @@ func (s *virtualMachineService) ApplyVirtualMachine(ctx context.Context, req *co
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.ApplyVirtualMachineResponse{VirtualMachine: res.Object.(*v1alpha1.VirtualMachine), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha11.ApplyVirtualMachineResponse{VirtualMachine: res.Object.(*v1alpha11.VirtualMachine), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *virtualMachineService) DeleteVirtualMachine(ctx context.Context, req *connect.Request[v1alpha1.DeleteVirtualMachineRequest]) (*connect.Response[v1alpha1.DeleteVirtualMachineResponse], error) {
+func (s *virtualMachineService) DeleteVirtualMachine(ctx context.Context, req *connect.Request[v1alpha11.DeleteVirtualMachineRequest]) (*connect.Response[v1alpha11.DeleteVirtualMachineResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.DeleteVirtualMachineResponse{VirtualMachine: obj.(*v1alpha1.VirtualMachine)}), nil
+	return connect.NewResponse(&v1alpha11.DeleteVirtualMachineResponse{VirtualMachine: obj.(*v1alpha11.VirtualMachine)}), nil
 }
 
-func (s *virtualMachineService) UpdateVirtualMachineStatus(ctx context.Context, req *connect.Request[v1alpha1.UpdateVirtualMachineStatusRequest]) (*connect.Response[v1alpha1.UpdateVirtualMachineStatusResponse], error) {
+func (s *virtualMachineService) UpdateVirtualMachineStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateVirtualMachineStatusRequest]) (*connect.Response[v1alpha11.UpdateVirtualMachineStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha1.UpdateVirtualMachineStatusResponse{VirtualMachine: obj.(*v1alpha1.VirtualMachine)}), nil
+	return connect.NewResponse(&v1alpha11.UpdateVirtualMachineStatusResponse{VirtualMachine: obj.(*v1alpha11.VirtualMachine)}), nil
 }
 
 type invitationService struct {
 	b resource.Backend
 }
 
-func (s *invitationService) GetInvitation(ctx context.Context, req *connect.Request[v1alpha11.GetInvitationRequest]) (*connect.Response[v1alpha11.GetInvitationResponse], error) {
+func (s *invitationService) GetInvitation(ctx context.Context, req *connect.Request[v1alpha12.GetInvitationRequest]) (*connect.Response[v1alpha12.GetInvitationResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.GetInvitationResponse{Invitation: obj.(*v1alpha11.Invitation)}), nil
+	return connect.NewResponse(&v1alpha12.GetInvitationResponse{Invitation: obj.(*v1alpha12.Invitation)}), nil
 }
 
-func (s *invitationService) ListInvitations(ctx context.Context, req *connect.Request[v1alpha11.ListInvitationsRequest]) (*connect.Response[v1alpha11.ListInvitationsResponse], error) {
+func (s *invitationService) ListInvitations(ctx context.Context, req *connect.Request[v1alpha12.ListInvitationsRequest]) (*connect.Response[v1alpha12.ListInvitationsResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha11.ListInvitationsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha12.ListInvitationsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha11.Invitation))
+		out.Items = append(out.Items, item.(*v1alpha12.Invitation))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *invitationService) WatchInvitations(ctx context.Context, req *connect.Request[v1alpha11.WatchInvitationsRequest], stream *connect.ServerStream[v1alpha11.WatchInvitationsResponse]) error {
+func (s *invitationService) WatchInvitations(ctx context.Context, req *connect.Request[v1alpha12.WatchInvitationsRequest], stream *connect.ServerStream[v1alpha12.WatchInvitationsResponse]) error {
 	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha11.WatchInvitationsResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha12.WatchInvitationsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Invitation = ev.Object.(*v1alpha11.Invitation)
+			out.Invitation = ev.Object.(*v1alpha12.Invitation)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *invitationService) ApplyInvitation(ctx context.Context, req *connect.Request[v1alpha11.ApplyInvitationRequest]) (*connect.Response[v1alpha11.ApplyInvitationResponse], error) {
+func (s *invitationService) ApplyInvitation(ctx context.Context, req *connect.Request[v1alpha12.ApplyInvitationRequest]) (*connect.Response[v1alpha12.ApplyInvitationResponse], error) {
 	in := req.Msg.GetInvitation()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invitation is required"))
@@ -440,61 +646,61 @@ func (s *invitationService) ApplyInvitation(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.ApplyInvitationResponse{Invitation: res.Object.(*v1alpha11.Invitation), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha12.ApplyInvitationResponse{Invitation: res.Object.(*v1alpha12.Invitation), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *invitationService) DeleteInvitation(ctx context.Context, req *connect.Request[v1alpha11.DeleteInvitationRequest]) (*connect.Response[v1alpha11.DeleteInvitationResponse], error) {
+func (s *invitationService) DeleteInvitation(ctx context.Context, req *connect.Request[v1alpha12.DeleteInvitationRequest]) (*connect.Response[v1alpha12.DeleteInvitationResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.DeleteInvitationResponse{Invitation: obj.(*v1alpha11.Invitation)}), nil
+	return connect.NewResponse(&v1alpha12.DeleteInvitationResponse{Invitation: obj.(*v1alpha12.Invitation)}), nil
 }
 
-func (s *invitationService) UpdateInvitationStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateInvitationStatusRequest]) (*connect.Response[v1alpha11.UpdateInvitationStatusResponse], error) {
+func (s *invitationService) UpdateInvitationStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateInvitationStatusRequest]) (*connect.Response[v1alpha12.UpdateInvitationStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.UpdateInvitationStatusResponse{Invitation: obj.(*v1alpha11.Invitation)}), nil
+	return connect.NewResponse(&v1alpha12.UpdateInvitationStatusResponse{Invitation: obj.(*v1alpha12.Invitation)}), nil
 }
 
 type roleBindingService struct {
 	b resource.Backend
 }
 
-func (s *roleBindingService) GetRoleBinding(ctx context.Context, req *connect.Request[v1alpha11.GetRoleBindingRequest]) (*connect.Response[v1alpha11.GetRoleBindingResponse], error) {
+func (s *roleBindingService) GetRoleBinding(ctx context.Context, req *connect.Request[v1alpha12.GetRoleBindingRequest]) (*connect.Response[v1alpha12.GetRoleBindingResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.GetRoleBindingResponse{RoleBinding: obj.(*v1alpha11.RoleBinding)}), nil
+	return connect.NewResponse(&v1alpha12.GetRoleBindingResponse{RoleBinding: obj.(*v1alpha12.RoleBinding)}), nil
 }
 
-func (s *roleBindingService) ListRoleBindings(ctx context.Context, req *connect.Request[v1alpha11.ListRoleBindingsRequest]) (*connect.Response[v1alpha11.ListRoleBindingsResponse], error) {
+func (s *roleBindingService) ListRoleBindings(ctx context.Context, req *connect.Request[v1alpha12.ListRoleBindingsRequest]) (*connect.Response[v1alpha12.ListRoleBindingsResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha11.ListRoleBindingsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha12.ListRoleBindingsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha11.RoleBinding))
+		out.Items = append(out.Items, item.(*v1alpha12.RoleBinding))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *roleBindingService) WatchRoleBindings(ctx context.Context, req *connect.Request[v1alpha11.WatchRoleBindingsRequest], stream *connect.ServerStream[v1alpha11.WatchRoleBindingsResponse]) error {
+func (s *roleBindingService) WatchRoleBindings(ctx context.Context, req *connect.Request[v1alpha12.WatchRoleBindingsRequest], stream *connect.ServerStream[v1alpha12.WatchRoleBindingsResponse]) error {
 	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha11.WatchRoleBindingsResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha12.WatchRoleBindingsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.RoleBinding = ev.Object.(*v1alpha11.RoleBinding)
+			out.RoleBinding = ev.Object.(*v1alpha12.RoleBinding)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *roleBindingService) ApplyRoleBinding(ctx context.Context, req *connect.Request[v1alpha11.ApplyRoleBindingRequest]) (*connect.Response[v1alpha11.ApplyRoleBindingResponse], error) {
+func (s *roleBindingService) ApplyRoleBinding(ctx context.Context, req *connect.Request[v1alpha12.ApplyRoleBindingRequest]) (*connect.Response[v1alpha12.ApplyRoleBindingResponse], error) {
 	in := req.Msg.GetRoleBinding()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("role_binding is required"))
@@ -507,61 +713,61 @@ func (s *roleBindingService) ApplyRoleBinding(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.ApplyRoleBindingResponse{RoleBinding: res.Object.(*v1alpha11.RoleBinding), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha12.ApplyRoleBindingResponse{RoleBinding: res.Object.(*v1alpha12.RoleBinding), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *roleBindingService) DeleteRoleBinding(ctx context.Context, req *connect.Request[v1alpha11.DeleteRoleBindingRequest]) (*connect.Response[v1alpha11.DeleteRoleBindingResponse], error) {
+func (s *roleBindingService) DeleteRoleBinding(ctx context.Context, req *connect.Request[v1alpha12.DeleteRoleBindingRequest]) (*connect.Response[v1alpha12.DeleteRoleBindingResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.DeleteRoleBindingResponse{RoleBinding: obj.(*v1alpha11.RoleBinding)}), nil
+	return connect.NewResponse(&v1alpha12.DeleteRoleBindingResponse{RoleBinding: obj.(*v1alpha12.RoleBinding)}), nil
 }
 
-func (s *roleBindingService) UpdateRoleBindingStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateRoleBindingStatusRequest]) (*connect.Response[v1alpha11.UpdateRoleBindingStatusResponse], error) {
+func (s *roleBindingService) UpdateRoleBindingStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateRoleBindingStatusRequest]) (*connect.Response[v1alpha12.UpdateRoleBindingStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.UpdateRoleBindingStatusResponse{RoleBinding: obj.(*v1alpha11.RoleBinding)}), nil
+	return connect.NewResponse(&v1alpha12.UpdateRoleBindingStatusResponse{RoleBinding: obj.(*v1alpha12.RoleBinding)}), nil
 }
 
 type serviceTokenService struct {
 	b resource.Backend
 }
 
-func (s *serviceTokenService) GetServiceToken(ctx context.Context, req *connect.Request[v1alpha11.GetServiceTokenRequest]) (*connect.Response[v1alpha11.GetServiceTokenResponse], error) {
+func (s *serviceTokenService) GetServiceToken(ctx context.Context, req *connect.Request[v1alpha12.GetServiceTokenRequest]) (*connect.Response[v1alpha12.GetServiceTokenResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.GetServiceTokenResponse{ServiceToken: obj.(*v1alpha11.ServiceToken)}), nil
+	return connect.NewResponse(&v1alpha12.GetServiceTokenResponse{ServiceToken: obj.(*v1alpha12.ServiceToken)}), nil
 }
 
-func (s *serviceTokenService) ListServiceTokens(ctx context.Context, req *connect.Request[v1alpha11.ListServiceTokensRequest]) (*connect.Response[v1alpha11.ListServiceTokensResponse], error) {
+func (s *serviceTokenService) ListServiceTokens(ctx context.Context, req *connect.Request[v1alpha12.ListServiceTokensRequest]) (*connect.Response[v1alpha12.ListServiceTokensResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha11.ListServiceTokensResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha12.ListServiceTokensResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha11.ServiceToken))
+		out.Items = append(out.Items, item.(*v1alpha12.ServiceToken))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *serviceTokenService) WatchServiceTokens(ctx context.Context, req *connect.Request[v1alpha11.WatchServiceTokensRequest], stream *connect.ServerStream[v1alpha11.WatchServiceTokensResponse]) error {
+func (s *serviceTokenService) WatchServiceTokens(ctx context.Context, req *connect.Request[v1alpha12.WatchServiceTokensRequest], stream *connect.ServerStream[v1alpha12.WatchServiceTokensResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha11.WatchServiceTokensResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha12.WatchServiceTokensResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.ServiceToken = ev.Object.(*v1alpha11.ServiceToken)
+			out.ServiceToken = ev.Object.(*v1alpha12.ServiceToken)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *serviceTokenService) ApplyServiceToken(ctx context.Context, req *connect.Request[v1alpha11.ApplyServiceTokenRequest]) (*connect.Response[v1alpha11.ApplyServiceTokenResponse], error) {
+func (s *serviceTokenService) ApplyServiceToken(ctx context.Context, req *connect.Request[v1alpha12.ApplyServiceTokenRequest]) (*connect.Response[v1alpha12.ApplyServiceTokenResponse], error) {
 	in := req.Msg.GetServiceToken()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("service_token is required"))
@@ -574,61 +780,61 @@ func (s *serviceTokenService) ApplyServiceToken(ctx context.Context, req *connec
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.ApplyServiceTokenResponse{ServiceToken: res.Object.(*v1alpha11.ServiceToken), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha12.ApplyServiceTokenResponse{ServiceToken: res.Object.(*v1alpha12.ServiceToken), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *serviceTokenService) DeleteServiceToken(ctx context.Context, req *connect.Request[v1alpha11.DeleteServiceTokenRequest]) (*connect.Response[v1alpha11.DeleteServiceTokenResponse], error) {
+func (s *serviceTokenService) DeleteServiceToken(ctx context.Context, req *connect.Request[v1alpha12.DeleteServiceTokenRequest]) (*connect.Response[v1alpha12.DeleteServiceTokenResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.DeleteServiceTokenResponse{ServiceToken: obj.(*v1alpha11.ServiceToken)}), nil
+	return connect.NewResponse(&v1alpha12.DeleteServiceTokenResponse{ServiceToken: obj.(*v1alpha12.ServiceToken)}), nil
 }
 
-func (s *serviceTokenService) UpdateServiceTokenStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateServiceTokenStatusRequest]) (*connect.Response[v1alpha11.UpdateServiceTokenStatusResponse], error) {
+func (s *serviceTokenService) UpdateServiceTokenStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateServiceTokenStatusRequest]) (*connect.Response[v1alpha12.UpdateServiceTokenStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.UpdateServiceTokenStatusResponse{ServiceToken: obj.(*v1alpha11.ServiceToken)}), nil
+	return connect.NewResponse(&v1alpha12.UpdateServiceTokenStatusResponse{ServiceToken: obj.(*v1alpha12.ServiceToken)}), nil
 }
 
 type userService struct {
 	b resource.Backend
 }
 
-func (s *userService) GetUser(ctx context.Context, req *connect.Request[v1alpha11.GetUserRequest]) (*connect.Response[v1alpha11.GetUserResponse], error) {
+func (s *userService) GetUser(ctx context.Context, req *connect.Request[v1alpha12.GetUserRequest]) (*connect.Response[v1alpha12.GetUserResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.GetUserResponse{User: obj.(*v1alpha11.User)}), nil
+	return connect.NewResponse(&v1alpha12.GetUserResponse{User: obj.(*v1alpha12.User)}), nil
 }
 
-func (s *userService) ListUsers(ctx context.Context, req *connect.Request[v1alpha11.ListUsersRequest]) (*connect.Response[v1alpha11.ListUsersResponse], error) {
+func (s *userService) ListUsers(ctx context.Context, req *connect.Request[v1alpha12.ListUsersRequest]) (*connect.Response[v1alpha12.ListUsersResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha11.ListUsersResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha12.ListUsersResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha11.User))
+		out.Items = append(out.Items, item.(*v1alpha12.User))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *userService) WatchUsers(ctx context.Context, req *connect.Request[v1alpha11.WatchUsersRequest], stream *connect.ServerStream[v1alpha11.WatchUsersResponse]) error {
+func (s *userService) WatchUsers(ctx context.Context, req *connect.Request[v1alpha12.WatchUsersRequest], stream *connect.ServerStream[v1alpha12.WatchUsersResponse]) error {
 	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha11.WatchUsersResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha12.WatchUsersResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.User = ev.Object.(*v1alpha11.User)
+			out.User = ev.Object.(*v1alpha12.User)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *userService) ApplyUser(ctx context.Context, req *connect.Request[v1alpha11.ApplyUserRequest]) (*connect.Response[v1alpha11.ApplyUserResponse], error) {
+func (s *userService) ApplyUser(ctx context.Context, req *connect.Request[v1alpha12.ApplyUserRequest]) (*connect.Response[v1alpha12.ApplyUserResponse], error) {
 	in := req.Msg.GetUser()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("user is required"))
@@ -641,61 +847,61 @@ func (s *userService) ApplyUser(ctx context.Context, req *connect.Request[v1alph
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.ApplyUserResponse{User: res.Object.(*v1alpha11.User), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha12.ApplyUserResponse{User: res.Object.(*v1alpha12.User), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *userService) DeleteUser(ctx context.Context, req *connect.Request[v1alpha11.DeleteUserRequest]) (*connect.Response[v1alpha11.DeleteUserResponse], error) {
+func (s *userService) DeleteUser(ctx context.Context, req *connect.Request[v1alpha12.DeleteUserRequest]) (*connect.Response[v1alpha12.DeleteUserResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.DeleteUserResponse{User: obj.(*v1alpha11.User)}), nil
+	return connect.NewResponse(&v1alpha12.DeleteUserResponse{User: obj.(*v1alpha12.User)}), nil
 }
 
-func (s *userService) UpdateUserStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateUserStatusRequest]) (*connect.Response[v1alpha11.UpdateUserStatusResponse], error) {
+func (s *userService) UpdateUserStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateUserStatusRequest]) (*connect.Response[v1alpha12.UpdateUserStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha11.UpdateUserStatusResponse{User: obj.(*v1alpha11.User)}), nil
+	return connect.NewResponse(&v1alpha12.UpdateUserStatusResponse{User: obj.(*v1alpha12.User)}), nil
 }
 
 type addressService struct {
 	b resource.Backend
 }
 
-func (s *addressService) GetAddress(ctx context.Context, req *connect.Request[v1alpha12.GetAddressRequest]) (*connect.Response[v1alpha12.GetAddressResponse], error) {
+func (s *addressService) GetAddress(ctx context.Context, req *connect.Request[v1alpha13.GetAddressRequest]) (*connect.Response[v1alpha13.GetAddressResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.GetAddressResponse{Address: obj.(*v1alpha12.Address)}), nil
+	return connect.NewResponse(&v1alpha13.GetAddressResponse{Address: obj.(*v1alpha13.Address)}), nil
 }
 
-func (s *addressService) ListAddresses(ctx context.Context, req *connect.Request[v1alpha12.ListAddressesRequest]) (*connect.Response[v1alpha12.ListAddressesResponse], error) {
+func (s *addressService) ListAddresses(ctx context.Context, req *connect.Request[v1alpha13.ListAddressesRequest]) (*connect.Response[v1alpha13.ListAddressesResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha12.ListAddressesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha13.ListAddressesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha12.Address))
+		out.Items = append(out.Items, item.(*v1alpha13.Address))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *addressService) WatchAddresses(ctx context.Context, req *connect.Request[v1alpha12.WatchAddressesRequest], stream *connect.ServerStream[v1alpha12.WatchAddressesResponse]) error {
+func (s *addressService) WatchAddresses(ctx context.Context, req *connect.Request[v1alpha13.WatchAddressesRequest], stream *connect.ServerStream[v1alpha13.WatchAddressesResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha12.WatchAddressesResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha13.WatchAddressesResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Address = ev.Object.(*v1alpha12.Address)
+			out.Address = ev.Object.(*v1alpha13.Address)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *addressService) ApplyAddress(ctx context.Context, req *connect.Request[v1alpha12.ApplyAddressRequest]) (*connect.Response[v1alpha12.ApplyAddressResponse], error) {
+func (s *addressService) ApplyAddress(ctx context.Context, req *connect.Request[v1alpha13.ApplyAddressRequest]) (*connect.Response[v1alpha13.ApplyAddressResponse], error) {
 	in := req.Msg.GetAddress()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
@@ -708,61 +914,61 @@ func (s *addressService) ApplyAddress(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.ApplyAddressResponse{Address: res.Object.(*v1alpha12.Address), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha13.ApplyAddressResponse{Address: res.Object.(*v1alpha13.Address), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *addressService) DeleteAddress(ctx context.Context, req *connect.Request[v1alpha12.DeleteAddressRequest]) (*connect.Response[v1alpha12.DeleteAddressResponse], error) {
+func (s *addressService) DeleteAddress(ctx context.Context, req *connect.Request[v1alpha13.DeleteAddressRequest]) (*connect.Response[v1alpha13.DeleteAddressResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.DeleteAddressResponse{Address: obj.(*v1alpha12.Address)}), nil
+	return connect.NewResponse(&v1alpha13.DeleteAddressResponse{Address: obj.(*v1alpha13.Address)}), nil
 }
 
-func (s *addressService) UpdateAddressStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateAddressStatusRequest]) (*connect.Response[v1alpha12.UpdateAddressStatusResponse], error) {
+func (s *addressService) UpdateAddressStatus(ctx context.Context, req *connect.Request[v1alpha13.UpdateAddressStatusRequest]) (*connect.Response[v1alpha13.UpdateAddressStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.UpdateAddressStatusResponse{Address: obj.(*v1alpha12.Address)}), nil
+	return connect.NewResponse(&v1alpha13.UpdateAddressStatusResponse{Address: obj.(*v1alpha13.Address)}), nil
 }
 
 type customDomainService struct {
 	b resource.Backend
 }
 
-func (s *customDomainService) GetCustomDomain(ctx context.Context, req *connect.Request[v1alpha12.GetCustomDomainRequest]) (*connect.Response[v1alpha12.GetCustomDomainResponse], error) {
+func (s *customDomainService) GetCustomDomain(ctx context.Context, req *connect.Request[v1alpha13.GetCustomDomainRequest]) (*connect.Response[v1alpha13.GetCustomDomainResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.GetCustomDomainResponse{CustomDomain: obj.(*v1alpha12.CustomDomain)}), nil
+	return connect.NewResponse(&v1alpha13.GetCustomDomainResponse{CustomDomain: obj.(*v1alpha13.CustomDomain)}), nil
 }
 
-func (s *customDomainService) ListCustomDomains(ctx context.Context, req *connect.Request[v1alpha12.ListCustomDomainsRequest]) (*connect.Response[v1alpha12.ListCustomDomainsResponse], error) {
+func (s *customDomainService) ListCustomDomains(ctx context.Context, req *connect.Request[v1alpha13.ListCustomDomainsRequest]) (*connect.Response[v1alpha13.ListCustomDomainsResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha12.ListCustomDomainsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha13.ListCustomDomainsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha12.CustomDomain))
+		out.Items = append(out.Items, item.(*v1alpha13.CustomDomain))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *customDomainService) WatchCustomDomains(ctx context.Context, req *connect.Request[v1alpha12.WatchCustomDomainsRequest], stream *connect.ServerStream[v1alpha12.WatchCustomDomainsResponse]) error {
+func (s *customDomainService) WatchCustomDomains(ctx context.Context, req *connect.Request[v1alpha13.WatchCustomDomainsRequest], stream *connect.ServerStream[v1alpha13.WatchCustomDomainsResponse]) error {
 	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha12.WatchCustomDomainsResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha13.WatchCustomDomainsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.CustomDomain = ev.Object.(*v1alpha12.CustomDomain)
+			out.CustomDomain = ev.Object.(*v1alpha13.CustomDomain)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *customDomainService) ApplyCustomDomain(ctx context.Context, req *connect.Request[v1alpha12.ApplyCustomDomainRequest]) (*connect.Response[v1alpha12.ApplyCustomDomainResponse], error) {
+func (s *customDomainService) ApplyCustomDomain(ctx context.Context, req *connect.Request[v1alpha13.ApplyCustomDomainRequest]) (*connect.Response[v1alpha13.ApplyCustomDomainResponse], error) {
 	in := req.Msg.GetCustomDomain()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("custom_domain is required"))
@@ -775,61 +981,61 @@ func (s *customDomainService) ApplyCustomDomain(ctx context.Context, req *connec
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.ApplyCustomDomainResponse{CustomDomain: res.Object.(*v1alpha12.CustomDomain), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha13.ApplyCustomDomainResponse{CustomDomain: res.Object.(*v1alpha13.CustomDomain), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *customDomainService) DeleteCustomDomain(ctx context.Context, req *connect.Request[v1alpha12.DeleteCustomDomainRequest]) (*connect.Response[v1alpha12.DeleteCustomDomainResponse], error) {
+func (s *customDomainService) DeleteCustomDomain(ctx context.Context, req *connect.Request[v1alpha13.DeleteCustomDomainRequest]) (*connect.Response[v1alpha13.DeleteCustomDomainResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.DeleteCustomDomainResponse{CustomDomain: obj.(*v1alpha12.CustomDomain)}), nil
+	return connect.NewResponse(&v1alpha13.DeleteCustomDomainResponse{CustomDomain: obj.(*v1alpha13.CustomDomain)}), nil
 }
 
-func (s *customDomainService) UpdateCustomDomainStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateCustomDomainStatusRequest]) (*connect.Response[v1alpha12.UpdateCustomDomainStatusResponse], error) {
+func (s *customDomainService) UpdateCustomDomainStatus(ctx context.Context, req *connect.Request[v1alpha13.UpdateCustomDomainStatusRequest]) (*connect.Response[v1alpha13.UpdateCustomDomainStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.UpdateCustomDomainStatusResponse{CustomDomain: obj.(*v1alpha12.CustomDomain)}), nil
+	return connect.NewResponse(&v1alpha13.UpdateCustomDomainStatusResponse{CustomDomain: obj.(*v1alpha13.CustomDomain)}), nil
 }
 
 type endpointServiceService struct {
 	b resource.Backend
 }
 
-func (s *endpointServiceService) GetEndpointService(ctx context.Context, req *connect.Request[v1alpha12.GetEndpointServiceRequest]) (*connect.Response[v1alpha12.GetEndpointServiceResponse], error) {
+func (s *endpointServiceService) GetEndpointService(ctx context.Context, req *connect.Request[v1alpha13.GetEndpointServiceRequest]) (*connect.Response[v1alpha13.GetEndpointServiceResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.GetEndpointServiceResponse{EndpointService: obj.(*v1alpha12.EndpointService)}), nil
+	return connect.NewResponse(&v1alpha13.GetEndpointServiceResponse{EndpointService: obj.(*v1alpha13.EndpointService)}), nil
 }
 
-func (s *endpointServiceService) ListEndpointServices(ctx context.Context, req *connect.Request[v1alpha12.ListEndpointServicesRequest]) (*connect.Response[v1alpha12.ListEndpointServicesResponse], error) {
+func (s *endpointServiceService) ListEndpointServices(ctx context.Context, req *connect.Request[v1alpha13.ListEndpointServicesRequest]) (*connect.Response[v1alpha13.ListEndpointServicesResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha12.ListEndpointServicesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha13.ListEndpointServicesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha12.EndpointService))
+		out.Items = append(out.Items, item.(*v1alpha13.EndpointService))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *endpointServiceService) WatchEndpointServices(ctx context.Context, req *connect.Request[v1alpha12.WatchEndpointServicesRequest], stream *connect.ServerStream[v1alpha12.WatchEndpointServicesResponse]) error {
+func (s *endpointServiceService) WatchEndpointServices(ctx context.Context, req *connect.Request[v1alpha13.WatchEndpointServicesRequest], stream *connect.ServerStream[v1alpha13.WatchEndpointServicesResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha12.WatchEndpointServicesResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha13.WatchEndpointServicesResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.EndpointService = ev.Object.(*v1alpha12.EndpointService)
+			out.EndpointService = ev.Object.(*v1alpha13.EndpointService)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *endpointServiceService) ApplyEndpointService(ctx context.Context, req *connect.Request[v1alpha12.ApplyEndpointServiceRequest]) (*connect.Response[v1alpha12.ApplyEndpointServiceResponse], error) {
+func (s *endpointServiceService) ApplyEndpointService(ctx context.Context, req *connect.Request[v1alpha13.ApplyEndpointServiceRequest]) (*connect.Response[v1alpha13.ApplyEndpointServiceResponse], error) {
 	in := req.Msg.GetEndpointService()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("endpoint_service is required"))
@@ -842,61 +1048,61 @@ func (s *endpointServiceService) ApplyEndpointService(ctx context.Context, req *
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.ApplyEndpointServiceResponse{EndpointService: res.Object.(*v1alpha12.EndpointService), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha13.ApplyEndpointServiceResponse{EndpointService: res.Object.(*v1alpha13.EndpointService), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *endpointServiceService) DeleteEndpointService(ctx context.Context, req *connect.Request[v1alpha12.DeleteEndpointServiceRequest]) (*connect.Response[v1alpha12.DeleteEndpointServiceResponse], error) {
+func (s *endpointServiceService) DeleteEndpointService(ctx context.Context, req *connect.Request[v1alpha13.DeleteEndpointServiceRequest]) (*connect.Response[v1alpha13.DeleteEndpointServiceResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.DeleteEndpointServiceResponse{EndpointService: obj.(*v1alpha12.EndpointService)}), nil
+	return connect.NewResponse(&v1alpha13.DeleteEndpointServiceResponse{EndpointService: obj.(*v1alpha13.EndpointService)}), nil
 }
 
-func (s *endpointServiceService) UpdateEndpointServiceStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateEndpointServiceStatusRequest]) (*connect.Response[v1alpha12.UpdateEndpointServiceStatusResponse], error) {
+func (s *endpointServiceService) UpdateEndpointServiceStatus(ctx context.Context, req *connect.Request[v1alpha13.UpdateEndpointServiceStatusRequest]) (*connect.Response[v1alpha13.UpdateEndpointServiceStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.UpdateEndpointServiceStatusResponse{EndpointService: obj.(*v1alpha12.EndpointService)}), nil
+	return connect.NewResponse(&v1alpha13.UpdateEndpointServiceStatusResponse{EndpointService: obj.(*v1alpha13.EndpointService)}), nil
 }
 
 type networkService struct {
 	b resource.Backend
 }
 
-func (s *networkService) GetNetwork(ctx context.Context, req *connect.Request[v1alpha12.GetNetworkRequest]) (*connect.Response[v1alpha12.GetNetworkResponse], error) {
+func (s *networkService) GetNetwork(ctx context.Context, req *connect.Request[v1alpha13.GetNetworkRequest]) (*connect.Response[v1alpha13.GetNetworkResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.GetNetworkResponse{Network: obj.(*v1alpha12.Network)}), nil
+	return connect.NewResponse(&v1alpha13.GetNetworkResponse{Network: obj.(*v1alpha13.Network)}), nil
 }
 
-func (s *networkService) ListNetworks(ctx context.Context, req *connect.Request[v1alpha12.ListNetworksRequest]) (*connect.Response[v1alpha12.ListNetworksResponse], error) {
+func (s *networkService) ListNetworks(ctx context.Context, req *connect.Request[v1alpha13.ListNetworksRequest]) (*connect.Response[v1alpha13.ListNetworksResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha12.ListNetworksResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha13.ListNetworksResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha12.Network))
+		out.Items = append(out.Items, item.(*v1alpha13.Network))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *networkService) WatchNetworks(ctx context.Context, req *connect.Request[v1alpha12.WatchNetworksRequest], stream *connect.ServerStream[v1alpha12.WatchNetworksResponse]) error {
+func (s *networkService) WatchNetworks(ctx context.Context, req *connect.Request[v1alpha13.WatchNetworksRequest], stream *connect.ServerStream[v1alpha13.WatchNetworksResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha12.WatchNetworksResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha13.WatchNetworksResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Network = ev.Object.(*v1alpha12.Network)
+			out.Network = ev.Object.(*v1alpha13.Network)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *networkService) ApplyNetwork(ctx context.Context, req *connect.Request[v1alpha12.ApplyNetworkRequest]) (*connect.Response[v1alpha12.ApplyNetworkResponse], error) {
+func (s *networkService) ApplyNetwork(ctx context.Context, req *connect.Request[v1alpha13.ApplyNetworkRequest]) (*connect.Response[v1alpha13.ApplyNetworkResponse], error) {
 	in := req.Msg.GetNetwork()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("network is required"))
@@ -909,61 +1115,61 @@ func (s *networkService) ApplyNetwork(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.ApplyNetworkResponse{Network: res.Object.(*v1alpha12.Network), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha13.ApplyNetworkResponse{Network: res.Object.(*v1alpha13.Network), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *networkService) DeleteNetwork(ctx context.Context, req *connect.Request[v1alpha12.DeleteNetworkRequest]) (*connect.Response[v1alpha12.DeleteNetworkResponse], error) {
+func (s *networkService) DeleteNetwork(ctx context.Context, req *connect.Request[v1alpha13.DeleteNetworkRequest]) (*connect.Response[v1alpha13.DeleteNetworkResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.DeleteNetworkResponse{Network: obj.(*v1alpha12.Network)}), nil
+	return connect.NewResponse(&v1alpha13.DeleteNetworkResponse{Network: obj.(*v1alpha13.Network)}), nil
 }
 
-func (s *networkService) UpdateNetworkStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateNetworkStatusRequest]) (*connect.Response[v1alpha12.UpdateNetworkStatusResponse], error) {
+func (s *networkService) UpdateNetworkStatus(ctx context.Context, req *connect.Request[v1alpha13.UpdateNetworkStatusRequest]) (*connect.Response[v1alpha13.UpdateNetworkStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.UpdateNetworkStatusResponse{Network: obj.(*v1alpha12.Network)}), nil
+	return connect.NewResponse(&v1alpha13.UpdateNetworkStatusResponse{Network: obj.(*v1alpha13.Network)}), nil
 }
 
 type networkEndpointService struct {
 	b resource.Backend
 }
 
-func (s *networkEndpointService) GetNetworkEndpoint(ctx context.Context, req *connect.Request[v1alpha12.GetNetworkEndpointRequest]) (*connect.Response[v1alpha12.GetNetworkEndpointResponse], error) {
+func (s *networkEndpointService) GetNetworkEndpoint(ctx context.Context, req *connect.Request[v1alpha13.GetNetworkEndpointRequest]) (*connect.Response[v1alpha13.GetNetworkEndpointResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.GetNetworkEndpointResponse{NetworkEndpoint: obj.(*v1alpha12.NetworkEndpoint)}), nil
+	return connect.NewResponse(&v1alpha13.GetNetworkEndpointResponse{NetworkEndpoint: obj.(*v1alpha13.NetworkEndpoint)}), nil
 }
 
-func (s *networkEndpointService) ListNetworkEndpoints(ctx context.Context, req *connect.Request[v1alpha12.ListNetworkEndpointsRequest]) (*connect.Response[v1alpha12.ListNetworkEndpointsResponse], error) {
+func (s *networkEndpointService) ListNetworkEndpoints(ctx context.Context, req *connect.Request[v1alpha13.ListNetworkEndpointsRequest]) (*connect.Response[v1alpha13.ListNetworkEndpointsResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha12.ListNetworkEndpointsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha13.ListNetworkEndpointsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha12.NetworkEndpoint))
+		out.Items = append(out.Items, item.(*v1alpha13.NetworkEndpoint))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *networkEndpointService) WatchNetworkEndpoints(ctx context.Context, req *connect.Request[v1alpha12.WatchNetworkEndpointsRequest], stream *connect.ServerStream[v1alpha12.WatchNetworkEndpointsResponse]) error {
+func (s *networkEndpointService) WatchNetworkEndpoints(ctx context.Context, req *connect.Request[v1alpha13.WatchNetworkEndpointsRequest], stream *connect.ServerStream[v1alpha13.WatchNetworkEndpointsResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha12.WatchNetworkEndpointsResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha13.WatchNetworkEndpointsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.NetworkEndpoint = ev.Object.(*v1alpha12.NetworkEndpoint)
+			out.NetworkEndpoint = ev.Object.(*v1alpha13.NetworkEndpoint)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *networkEndpointService) ApplyNetworkEndpoint(ctx context.Context, req *connect.Request[v1alpha12.ApplyNetworkEndpointRequest]) (*connect.Response[v1alpha12.ApplyNetworkEndpointResponse], error) {
+func (s *networkEndpointService) ApplyNetworkEndpoint(ctx context.Context, req *connect.Request[v1alpha13.ApplyNetworkEndpointRequest]) (*connect.Response[v1alpha13.ApplyNetworkEndpointResponse], error) {
 	in := req.Msg.GetNetworkEndpoint()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("network_endpoint is required"))
@@ -976,61 +1182,61 @@ func (s *networkEndpointService) ApplyNetworkEndpoint(ctx context.Context, req *
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.ApplyNetworkEndpointResponse{NetworkEndpoint: res.Object.(*v1alpha12.NetworkEndpoint), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha13.ApplyNetworkEndpointResponse{NetworkEndpoint: res.Object.(*v1alpha13.NetworkEndpoint), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *networkEndpointService) DeleteNetworkEndpoint(ctx context.Context, req *connect.Request[v1alpha12.DeleteNetworkEndpointRequest]) (*connect.Response[v1alpha12.DeleteNetworkEndpointResponse], error) {
+func (s *networkEndpointService) DeleteNetworkEndpoint(ctx context.Context, req *connect.Request[v1alpha13.DeleteNetworkEndpointRequest]) (*connect.Response[v1alpha13.DeleteNetworkEndpointResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.DeleteNetworkEndpointResponse{NetworkEndpoint: obj.(*v1alpha12.NetworkEndpoint)}), nil
+	return connect.NewResponse(&v1alpha13.DeleteNetworkEndpointResponse{NetworkEndpoint: obj.(*v1alpha13.NetworkEndpoint)}), nil
 }
 
-func (s *networkEndpointService) UpdateNetworkEndpointStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateNetworkEndpointStatusRequest]) (*connect.Response[v1alpha12.UpdateNetworkEndpointStatusResponse], error) {
+func (s *networkEndpointService) UpdateNetworkEndpointStatus(ctx context.Context, req *connect.Request[v1alpha13.UpdateNetworkEndpointStatusRequest]) (*connect.Response[v1alpha13.UpdateNetworkEndpointStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.UpdateNetworkEndpointStatusResponse{NetworkEndpoint: obj.(*v1alpha12.NetworkEndpoint)}), nil
+	return connect.NewResponse(&v1alpha13.UpdateNetworkEndpointStatusResponse{NetworkEndpoint: obj.(*v1alpha13.NetworkEndpoint)}), nil
 }
 
 type portForwardService struct {
 	b resource.Backend
 }
 
-func (s *portForwardService) GetPortForward(ctx context.Context, req *connect.Request[v1alpha12.GetPortForwardRequest]) (*connect.Response[v1alpha12.GetPortForwardResponse], error) {
+func (s *portForwardService) GetPortForward(ctx context.Context, req *connect.Request[v1alpha13.GetPortForwardRequest]) (*connect.Response[v1alpha13.GetPortForwardResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.GetPortForwardResponse{PortForward: obj.(*v1alpha12.PortForward)}), nil
+	return connect.NewResponse(&v1alpha13.GetPortForwardResponse{PortForward: obj.(*v1alpha13.PortForward)}), nil
 }
 
-func (s *portForwardService) ListPortForwards(ctx context.Context, req *connect.Request[v1alpha12.ListPortForwardsRequest]) (*connect.Response[v1alpha12.ListPortForwardsResponse], error) {
+func (s *portForwardService) ListPortForwards(ctx context.Context, req *connect.Request[v1alpha13.ListPortForwardsRequest]) (*connect.Response[v1alpha13.ListPortForwardsResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha12.ListPortForwardsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha13.ListPortForwardsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha12.PortForward))
+		out.Items = append(out.Items, item.(*v1alpha13.PortForward))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *portForwardService) WatchPortForwards(ctx context.Context, req *connect.Request[v1alpha12.WatchPortForwardsRequest], stream *connect.ServerStream[v1alpha12.WatchPortForwardsResponse]) error {
+func (s *portForwardService) WatchPortForwards(ctx context.Context, req *connect.Request[v1alpha13.WatchPortForwardsRequest], stream *connect.ServerStream[v1alpha13.WatchPortForwardsResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha12.WatchPortForwardsResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha13.WatchPortForwardsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.PortForward = ev.Object.(*v1alpha12.PortForward)
+			out.PortForward = ev.Object.(*v1alpha13.PortForward)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *portForwardService) ApplyPortForward(ctx context.Context, req *connect.Request[v1alpha12.ApplyPortForwardRequest]) (*connect.Response[v1alpha12.ApplyPortForwardResponse], error) {
+func (s *portForwardService) ApplyPortForward(ctx context.Context, req *connect.Request[v1alpha13.ApplyPortForwardRequest]) (*connect.Response[v1alpha13.ApplyPortForwardResponse], error) {
 	in := req.Msg.GetPortForward()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("port_forward is required"))
@@ -1043,61 +1249,61 @@ func (s *portForwardService) ApplyPortForward(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.ApplyPortForwardResponse{PortForward: res.Object.(*v1alpha12.PortForward), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha13.ApplyPortForwardResponse{PortForward: res.Object.(*v1alpha13.PortForward), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *portForwardService) DeletePortForward(ctx context.Context, req *connect.Request[v1alpha12.DeletePortForwardRequest]) (*connect.Response[v1alpha12.DeletePortForwardResponse], error) {
+func (s *portForwardService) DeletePortForward(ctx context.Context, req *connect.Request[v1alpha13.DeletePortForwardRequest]) (*connect.Response[v1alpha13.DeletePortForwardResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.DeletePortForwardResponse{PortForward: obj.(*v1alpha12.PortForward)}), nil
+	return connect.NewResponse(&v1alpha13.DeletePortForwardResponse{PortForward: obj.(*v1alpha13.PortForward)}), nil
 }
 
-func (s *portForwardService) UpdatePortForwardStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdatePortForwardStatusRequest]) (*connect.Response[v1alpha12.UpdatePortForwardStatusResponse], error) {
+func (s *portForwardService) UpdatePortForwardStatus(ctx context.Context, req *connect.Request[v1alpha13.UpdatePortForwardStatusRequest]) (*connect.Response[v1alpha13.UpdatePortForwardStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.UpdatePortForwardStatusResponse{PortForward: obj.(*v1alpha12.PortForward)}), nil
+	return connect.NewResponse(&v1alpha13.UpdatePortForwardStatusResponse{PortForward: obj.(*v1alpha13.PortForward)}), nil
 }
 
 type publicEndpointService struct {
 	b resource.Backend
 }
 
-func (s *publicEndpointService) GetPublicEndpoint(ctx context.Context, req *connect.Request[v1alpha12.GetPublicEndpointRequest]) (*connect.Response[v1alpha12.GetPublicEndpointResponse], error) {
+func (s *publicEndpointService) GetPublicEndpoint(ctx context.Context, req *connect.Request[v1alpha13.GetPublicEndpointRequest]) (*connect.Response[v1alpha13.GetPublicEndpointResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.GetPublicEndpointResponse{PublicEndpoint: obj.(*v1alpha12.PublicEndpoint)}), nil
+	return connect.NewResponse(&v1alpha13.GetPublicEndpointResponse{PublicEndpoint: obj.(*v1alpha13.PublicEndpoint)}), nil
 }
 
-func (s *publicEndpointService) ListPublicEndpoints(ctx context.Context, req *connect.Request[v1alpha12.ListPublicEndpointsRequest]) (*connect.Response[v1alpha12.ListPublicEndpointsResponse], error) {
+func (s *publicEndpointService) ListPublicEndpoints(ctx context.Context, req *connect.Request[v1alpha13.ListPublicEndpointsRequest]) (*connect.Response[v1alpha13.ListPublicEndpointsResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha12.ListPublicEndpointsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha13.ListPublicEndpointsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha12.PublicEndpoint))
+		out.Items = append(out.Items, item.(*v1alpha13.PublicEndpoint))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *publicEndpointService) WatchPublicEndpoints(ctx context.Context, req *connect.Request[v1alpha12.WatchPublicEndpointsRequest], stream *connect.ServerStream[v1alpha12.WatchPublicEndpointsResponse]) error {
+func (s *publicEndpointService) WatchPublicEndpoints(ctx context.Context, req *connect.Request[v1alpha13.WatchPublicEndpointsRequest], stream *connect.ServerStream[v1alpha13.WatchPublicEndpointsResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha12.WatchPublicEndpointsResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha13.WatchPublicEndpointsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.PublicEndpoint = ev.Object.(*v1alpha12.PublicEndpoint)
+			out.PublicEndpoint = ev.Object.(*v1alpha13.PublicEndpoint)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *publicEndpointService) ApplyPublicEndpoint(ctx context.Context, req *connect.Request[v1alpha12.ApplyPublicEndpointRequest]) (*connect.Response[v1alpha12.ApplyPublicEndpointResponse], error) {
+func (s *publicEndpointService) ApplyPublicEndpoint(ctx context.Context, req *connect.Request[v1alpha13.ApplyPublicEndpointRequest]) (*connect.Response[v1alpha13.ApplyPublicEndpointResponse], error) {
 	in := req.Msg.GetPublicEndpoint()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("public_endpoint is required"))
@@ -1110,61 +1316,61 @@ func (s *publicEndpointService) ApplyPublicEndpoint(ctx context.Context, req *co
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.ApplyPublicEndpointResponse{PublicEndpoint: res.Object.(*v1alpha12.PublicEndpoint), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha13.ApplyPublicEndpointResponse{PublicEndpoint: res.Object.(*v1alpha13.PublicEndpoint), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *publicEndpointService) DeletePublicEndpoint(ctx context.Context, req *connect.Request[v1alpha12.DeletePublicEndpointRequest]) (*connect.Response[v1alpha12.DeletePublicEndpointResponse], error) {
+func (s *publicEndpointService) DeletePublicEndpoint(ctx context.Context, req *connect.Request[v1alpha13.DeletePublicEndpointRequest]) (*connect.Response[v1alpha13.DeletePublicEndpointResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.DeletePublicEndpointResponse{PublicEndpoint: obj.(*v1alpha12.PublicEndpoint)}), nil
+	return connect.NewResponse(&v1alpha13.DeletePublicEndpointResponse{PublicEndpoint: obj.(*v1alpha13.PublicEndpoint)}), nil
 }
 
-func (s *publicEndpointService) UpdatePublicEndpointStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdatePublicEndpointStatusRequest]) (*connect.Response[v1alpha12.UpdatePublicEndpointStatusResponse], error) {
+func (s *publicEndpointService) UpdatePublicEndpointStatus(ctx context.Context, req *connect.Request[v1alpha13.UpdatePublicEndpointStatusRequest]) (*connect.Response[v1alpha13.UpdatePublicEndpointStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.UpdatePublicEndpointStatusResponse{PublicEndpoint: obj.(*v1alpha12.PublicEndpoint)}), nil
+	return connect.NewResponse(&v1alpha13.UpdatePublicEndpointStatusResponse{PublicEndpoint: obj.(*v1alpha13.PublicEndpoint)}), nil
 }
 
 type securityGroupService struct {
 	b resource.Backend
 }
 
-func (s *securityGroupService) GetSecurityGroup(ctx context.Context, req *connect.Request[v1alpha12.GetSecurityGroupRequest]) (*connect.Response[v1alpha12.GetSecurityGroupResponse], error) {
+func (s *securityGroupService) GetSecurityGroup(ctx context.Context, req *connect.Request[v1alpha13.GetSecurityGroupRequest]) (*connect.Response[v1alpha13.GetSecurityGroupResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.GetSecurityGroupResponse{SecurityGroup: obj.(*v1alpha12.SecurityGroup)}), nil
+	return connect.NewResponse(&v1alpha13.GetSecurityGroupResponse{SecurityGroup: obj.(*v1alpha13.SecurityGroup)}), nil
 }
 
-func (s *securityGroupService) ListSecurityGroups(ctx context.Context, req *connect.Request[v1alpha12.ListSecurityGroupsRequest]) (*connect.Response[v1alpha12.ListSecurityGroupsResponse], error) {
+func (s *securityGroupService) ListSecurityGroups(ctx context.Context, req *connect.Request[v1alpha13.ListSecurityGroupsRequest]) (*connect.Response[v1alpha13.ListSecurityGroupsResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha12.ListSecurityGroupsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha13.ListSecurityGroupsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha12.SecurityGroup))
+		out.Items = append(out.Items, item.(*v1alpha13.SecurityGroup))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *securityGroupService) WatchSecurityGroups(ctx context.Context, req *connect.Request[v1alpha12.WatchSecurityGroupsRequest], stream *connect.ServerStream[v1alpha12.WatchSecurityGroupsResponse]) error {
+func (s *securityGroupService) WatchSecurityGroups(ctx context.Context, req *connect.Request[v1alpha13.WatchSecurityGroupsRequest], stream *connect.ServerStream[v1alpha13.WatchSecurityGroupsResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha12.WatchSecurityGroupsResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha13.WatchSecurityGroupsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.SecurityGroup = ev.Object.(*v1alpha12.SecurityGroup)
+			out.SecurityGroup = ev.Object.(*v1alpha13.SecurityGroup)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *securityGroupService) ApplySecurityGroup(ctx context.Context, req *connect.Request[v1alpha12.ApplySecurityGroupRequest]) (*connect.Response[v1alpha12.ApplySecurityGroupResponse], error) {
+func (s *securityGroupService) ApplySecurityGroup(ctx context.Context, req *connect.Request[v1alpha13.ApplySecurityGroupRequest]) (*connect.Response[v1alpha13.ApplySecurityGroupResponse], error) {
 	in := req.Msg.GetSecurityGroup()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("security_group is required"))
@@ -1177,61 +1383,61 @@ func (s *securityGroupService) ApplySecurityGroup(ctx context.Context, req *conn
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.ApplySecurityGroupResponse{SecurityGroup: res.Object.(*v1alpha12.SecurityGroup), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha13.ApplySecurityGroupResponse{SecurityGroup: res.Object.(*v1alpha13.SecurityGroup), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *securityGroupService) DeleteSecurityGroup(ctx context.Context, req *connect.Request[v1alpha12.DeleteSecurityGroupRequest]) (*connect.Response[v1alpha12.DeleteSecurityGroupResponse], error) {
+func (s *securityGroupService) DeleteSecurityGroup(ctx context.Context, req *connect.Request[v1alpha13.DeleteSecurityGroupRequest]) (*connect.Response[v1alpha13.DeleteSecurityGroupResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.DeleteSecurityGroupResponse{SecurityGroup: obj.(*v1alpha12.SecurityGroup)}), nil
+	return connect.NewResponse(&v1alpha13.DeleteSecurityGroupResponse{SecurityGroup: obj.(*v1alpha13.SecurityGroup)}), nil
 }
 
-func (s *securityGroupService) UpdateSecurityGroupStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateSecurityGroupStatusRequest]) (*connect.Response[v1alpha12.UpdateSecurityGroupStatusResponse], error) {
+func (s *securityGroupService) UpdateSecurityGroupStatus(ctx context.Context, req *connect.Request[v1alpha13.UpdateSecurityGroupStatusRequest]) (*connect.Response[v1alpha13.UpdateSecurityGroupStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha12.UpdateSecurityGroupStatusResponse{SecurityGroup: obj.(*v1alpha12.SecurityGroup)}), nil
+	return connect.NewResponse(&v1alpha13.UpdateSecurityGroupStatusResponse{SecurityGroup: obj.(*v1alpha13.SecurityGroup)}), nil
 }
 
 type secretService struct {
 	b resource.Backend
 }
 
-func (s *secretService) GetSecret(ctx context.Context, req *connect.Request[v1alpha13.GetSecretRequest]) (*connect.Response[v1alpha13.GetSecretResponse], error) {
+func (s *secretService) GetSecret(ctx context.Context, req *connect.Request[v1alpha14.GetSecretRequest]) (*connect.Response[v1alpha14.GetSecretResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha13.GetSecretResponse{Secret: obj.(*v1alpha13.Secret)}), nil
+	return connect.NewResponse(&v1alpha14.GetSecretResponse{Secret: obj.(*v1alpha14.Secret)}), nil
 }
 
-func (s *secretService) ListSecrets(ctx context.Context, req *connect.Request[v1alpha13.ListSecretsRequest]) (*connect.Response[v1alpha13.ListSecretsResponse], error) {
+func (s *secretService) ListSecrets(ctx context.Context, req *connect.Request[v1alpha14.ListSecretsRequest]) (*connect.Response[v1alpha14.ListSecretsResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha13.ListSecretsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha14.ListSecretsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha13.Secret))
+		out.Items = append(out.Items, item.(*v1alpha14.Secret))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *secretService) WatchSecrets(ctx context.Context, req *connect.Request[v1alpha13.WatchSecretsRequest], stream *connect.ServerStream[v1alpha13.WatchSecretsResponse]) error {
+func (s *secretService) WatchSecrets(ctx context.Context, req *connect.Request[v1alpha14.WatchSecretsRequest], stream *connect.ServerStream[v1alpha14.WatchSecretsResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha13.WatchSecretsResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha14.WatchSecretsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Secret = ev.Object.(*v1alpha13.Secret)
+			out.Secret = ev.Object.(*v1alpha14.Secret)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *secretService) ApplySecret(ctx context.Context, req *connect.Request[v1alpha13.ApplySecretRequest]) (*connect.Response[v1alpha13.ApplySecretResponse], error) {
+func (s *secretService) ApplySecret(ctx context.Context, req *connect.Request[v1alpha14.ApplySecretRequest]) (*connect.Response[v1alpha14.ApplySecretResponse], error) {
 	in := req.Msg.GetSecret()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("secret is required"))
@@ -1244,61 +1450,61 @@ func (s *secretService) ApplySecret(ctx context.Context, req *connect.Request[v1
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha13.ApplySecretResponse{Secret: res.Object.(*v1alpha13.Secret), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha14.ApplySecretResponse{Secret: res.Object.(*v1alpha14.Secret), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *secretService) DeleteSecret(ctx context.Context, req *connect.Request[v1alpha13.DeleteSecretRequest]) (*connect.Response[v1alpha13.DeleteSecretResponse], error) {
+func (s *secretService) DeleteSecret(ctx context.Context, req *connect.Request[v1alpha14.DeleteSecretRequest]) (*connect.Response[v1alpha14.DeleteSecretResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha13.DeleteSecretResponse{Secret: obj.(*v1alpha13.Secret)}), nil
+	return connect.NewResponse(&v1alpha14.DeleteSecretResponse{Secret: obj.(*v1alpha14.Secret)}), nil
 }
 
-func (s *secretService) UpdateSecretStatus(ctx context.Context, req *connect.Request[v1alpha13.UpdateSecretStatusRequest]) (*connect.Response[v1alpha13.UpdateSecretStatusResponse], error) {
+func (s *secretService) UpdateSecretStatus(ctx context.Context, req *connect.Request[v1alpha14.UpdateSecretStatusRequest]) (*connect.Response[v1alpha14.UpdateSecretStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha13.UpdateSecretStatusResponse{Secret: obj.(*v1alpha13.Secret)}), nil
+	return connect.NewResponse(&v1alpha14.UpdateSecretStatusResponse{Secret: obj.(*v1alpha14.Secret)}), nil
 }
 
 type customImageService struct {
 	b resource.Backend
 }
 
-func (s *customImageService) GetCustomImage(ctx context.Context, req *connect.Request[v1alpha14.GetCustomImageRequest]) (*connect.Response[v1alpha14.GetCustomImageResponse], error) {
+func (s *customImageService) GetCustomImage(ctx context.Context, req *connect.Request[v1alpha15.GetCustomImageRequest]) (*connect.Response[v1alpha15.GetCustomImageResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.GetCustomImageResponse{CustomImage: obj.(*v1alpha14.CustomImage)}), nil
+	return connect.NewResponse(&v1alpha15.GetCustomImageResponse{CustomImage: obj.(*v1alpha15.CustomImage)}), nil
 }
 
-func (s *customImageService) ListCustomImages(ctx context.Context, req *connect.Request[v1alpha14.ListCustomImagesRequest]) (*connect.Response[v1alpha14.ListCustomImagesResponse], error) {
+func (s *customImageService) ListCustomImages(ctx context.Context, req *connect.Request[v1alpha15.ListCustomImagesRequest]) (*connect.Response[v1alpha15.ListCustomImagesResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha14.ListCustomImagesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha15.ListCustomImagesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha14.CustomImage))
+		out.Items = append(out.Items, item.(*v1alpha15.CustomImage))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *customImageService) WatchCustomImages(ctx context.Context, req *connect.Request[v1alpha14.WatchCustomImagesRequest], stream *connect.ServerStream[v1alpha14.WatchCustomImagesResponse]) error {
+func (s *customImageService) WatchCustomImages(ctx context.Context, req *connect.Request[v1alpha15.WatchCustomImagesRequest], stream *connect.ServerStream[v1alpha15.WatchCustomImagesResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha14.WatchCustomImagesResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha15.WatchCustomImagesResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.CustomImage = ev.Object.(*v1alpha14.CustomImage)
+			out.CustomImage = ev.Object.(*v1alpha15.CustomImage)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *customImageService) ApplyCustomImage(ctx context.Context, req *connect.Request[v1alpha14.ApplyCustomImageRequest]) (*connect.Response[v1alpha14.ApplyCustomImageResponse], error) {
+func (s *customImageService) ApplyCustomImage(ctx context.Context, req *connect.Request[v1alpha15.ApplyCustomImageRequest]) (*connect.Response[v1alpha15.ApplyCustomImageResponse], error) {
 	in := req.Msg.GetCustomImage()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("custom_image is required"))
@@ -1311,61 +1517,61 @@ func (s *customImageService) ApplyCustomImage(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.ApplyCustomImageResponse{CustomImage: res.Object.(*v1alpha14.CustomImage), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha15.ApplyCustomImageResponse{CustomImage: res.Object.(*v1alpha15.CustomImage), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *customImageService) DeleteCustomImage(ctx context.Context, req *connect.Request[v1alpha14.DeleteCustomImageRequest]) (*connect.Response[v1alpha14.DeleteCustomImageResponse], error) {
+func (s *customImageService) DeleteCustomImage(ctx context.Context, req *connect.Request[v1alpha15.DeleteCustomImageRequest]) (*connect.Response[v1alpha15.DeleteCustomImageResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.DeleteCustomImageResponse{CustomImage: obj.(*v1alpha14.CustomImage)}), nil
+	return connect.NewResponse(&v1alpha15.DeleteCustomImageResponse{CustomImage: obj.(*v1alpha15.CustomImage)}), nil
 }
 
-func (s *customImageService) UpdateCustomImageStatus(ctx context.Context, req *connect.Request[v1alpha14.UpdateCustomImageStatusRequest]) (*connect.Response[v1alpha14.UpdateCustomImageStatusResponse], error) {
+func (s *customImageService) UpdateCustomImageStatus(ctx context.Context, req *connect.Request[v1alpha15.UpdateCustomImageStatusRequest]) (*connect.Response[v1alpha15.UpdateCustomImageStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.UpdateCustomImageStatusResponse{CustomImage: obj.(*v1alpha14.CustomImage)}), nil
+	return connect.NewResponse(&v1alpha15.UpdateCustomImageStatusResponse{CustomImage: obj.(*v1alpha15.CustomImage)}), nil
 }
 
 type diskService struct {
 	b resource.Backend
 }
 
-func (s *diskService) GetDisk(ctx context.Context, req *connect.Request[v1alpha14.GetDiskRequest]) (*connect.Response[v1alpha14.GetDiskResponse], error) {
+func (s *diskService) GetDisk(ctx context.Context, req *connect.Request[v1alpha15.GetDiskRequest]) (*connect.Response[v1alpha15.GetDiskResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.GetDiskResponse{Disk: obj.(*v1alpha14.Disk)}), nil
+	return connect.NewResponse(&v1alpha15.GetDiskResponse{Disk: obj.(*v1alpha15.Disk)}), nil
 }
 
-func (s *diskService) ListDisks(ctx context.Context, req *connect.Request[v1alpha14.ListDisksRequest]) (*connect.Response[v1alpha14.ListDisksResponse], error) {
+func (s *diskService) ListDisks(ctx context.Context, req *connect.Request[v1alpha15.ListDisksRequest]) (*connect.Response[v1alpha15.ListDisksResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha14.ListDisksResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha15.ListDisksResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha14.Disk))
+		out.Items = append(out.Items, item.(*v1alpha15.Disk))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *diskService) WatchDisks(ctx context.Context, req *connect.Request[v1alpha14.WatchDisksRequest], stream *connect.ServerStream[v1alpha14.WatchDisksResponse]) error {
+func (s *diskService) WatchDisks(ctx context.Context, req *connect.Request[v1alpha15.WatchDisksRequest], stream *connect.ServerStream[v1alpha15.WatchDisksResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha14.WatchDisksResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha15.WatchDisksResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Disk = ev.Object.(*v1alpha14.Disk)
+			out.Disk = ev.Object.(*v1alpha15.Disk)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *diskService) ApplyDisk(ctx context.Context, req *connect.Request[v1alpha14.ApplyDiskRequest]) (*connect.Response[v1alpha14.ApplyDiskResponse], error) {
+func (s *diskService) ApplyDisk(ctx context.Context, req *connect.Request[v1alpha15.ApplyDiskRequest]) (*connect.Response[v1alpha15.ApplyDiskResponse], error) {
 	in := req.Msg.GetDisk()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("disk is required"))
@@ -1378,61 +1584,61 @@ func (s *diskService) ApplyDisk(ctx context.Context, req *connect.Request[v1alph
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.ApplyDiskResponse{Disk: res.Object.(*v1alpha14.Disk), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha15.ApplyDiskResponse{Disk: res.Object.(*v1alpha15.Disk), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *diskService) DeleteDisk(ctx context.Context, req *connect.Request[v1alpha14.DeleteDiskRequest]) (*connect.Response[v1alpha14.DeleteDiskResponse], error) {
+func (s *diskService) DeleteDisk(ctx context.Context, req *connect.Request[v1alpha15.DeleteDiskRequest]) (*connect.Response[v1alpha15.DeleteDiskResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.DeleteDiskResponse{Disk: obj.(*v1alpha14.Disk)}), nil
+	return connect.NewResponse(&v1alpha15.DeleteDiskResponse{Disk: obj.(*v1alpha15.Disk)}), nil
 }
 
-func (s *diskService) UpdateDiskStatus(ctx context.Context, req *connect.Request[v1alpha14.UpdateDiskStatusRequest]) (*connect.Response[v1alpha14.UpdateDiskStatusResponse], error) {
+func (s *diskService) UpdateDiskStatus(ctx context.Context, req *connect.Request[v1alpha15.UpdateDiskStatusRequest]) (*connect.Response[v1alpha15.UpdateDiskStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.UpdateDiskStatusResponse{Disk: obj.(*v1alpha14.Disk)}), nil
+	return connect.NewResponse(&v1alpha15.UpdateDiskStatusResponse{Disk: obj.(*v1alpha15.Disk)}), nil
 }
 
 type fileShareService struct {
 	b resource.Backend
 }
 
-func (s *fileShareService) GetFileShare(ctx context.Context, req *connect.Request[v1alpha14.GetFileShareRequest]) (*connect.Response[v1alpha14.GetFileShareResponse], error) {
+func (s *fileShareService) GetFileShare(ctx context.Context, req *connect.Request[v1alpha15.GetFileShareRequest]) (*connect.Response[v1alpha15.GetFileShareResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.GetFileShareResponse{FileShare: obj.(*v1alpha14.FileShare)}), nil
+	return connect.NewResponse(&v1alpha15.GetFileShareResponse{FileShare: obj.(*v1alpha15.FileShare)}), nil
 }
 
-func (s *fileShareService) ListFileShares(ctx context.Context, req *connect.Request[v1alpha14.ListFileSharesRequest]) (*connect.Response[v1alpha14.ListFileSharesResponse], error) {
+func (s *fileShareService) ListFileShares(ctx context.Context, req *connect.Request[v1alpha15.ListFileSharesRequest]) (*connect.Response[v1alpha15.ListFileSharesResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha14.ListFileSharesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha15.ListFileSharesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha14.FileShare))
+		out.Items = append(out.Items, item.(*v1alpha15.FileShare))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *fileShareService) WatchFileShares(ctx context.Context, req *connect.Request[v1alpha14.WatchFileSharesRequest], stream *connect.ServerStream[v1alpha14.WatchFileSharesResponse]) error {
+func (s *fileShareService) WatchFileShares(ctx context.Context, req *connect.Request[v1alpha15.WatchFileSharesRequest], stream *connect.ServerStream[v1alpha15.WatchFileSharesResponse]) error {
 	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha14.WatchFileSharesResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha15.WatchFileSharesResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.FileShare = ev.Object.(*v1alpha14.FileShare)
+			out.FileShare = ev.Object.(*v1alpha15.FileShare)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *fileShareService) ApplyFileShare(ctx context.Context, req *connect.Request[v1alpha14.ApplyFileShareRequest]) (*connect.Response[v1alpha14.ApplyFileShareResponse], error) {
+func (s *fileShareService) ApplyFileShare(ctx context.Context, req *connect.Request[v1alpha15.ApplyFileShareRequest]) (*connect.Response[v1alpha15.ApplyFileShareResponse], error) {
 	in := req.Msg.GetFileShare()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("file_share is required"))
@@ -1445,61 +1651,61 @@ func (s *fileShareService) ApplyFileShare(ctx context.Context, req *connect.Requ
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.ApplyFileShareResponse{FileShare: res.Object.(*v1alpha14.FileShare), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha15.ApplyFileShareResponse{FileShare: res.Object.(*v1alpha15.FileShare), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *fileShareService) DeleteFileShare(ctx context.Context, req *connect.Request[v1alpha14.DeleteFileShareRequest]) (*connect.Response[v1alpha14.DeleteFileShareResponse], error) {
+func (s *fileShareService) DeleteFileShare(ctx context.Context, req *connect.Request[v1alpha15.DeleteFileShareRequest]) (*connect.Response[v1alpha15.DeleteFileShareResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.DeleteFileShareResponse{FileShare: obj.(*v1alpha14.FileShare)}), nil
+	return connect.NewResponse(&v1alpha15.DeleteFileShareResponse{FileShare: obj.(*v1alpha15.FileShare)}), nil
 }
 
-func (s *fileShareService) UpdateFileShareStatus(ctx context.Context, req *connect.Request[v1alpha14.UpdateFileShareStatusRequest]) (*connect.Response[v1alpha14.UpdateFileShareStatusResponse], error) {
+func (s *fileShareService) UpdateFileShareStatus(ctx context.Context, req *connect.Request[v1alpha15.UpdateFileShareStatusRequest]) (*connect.Response[v1alpha15.UpdateFileShareStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.UpdateFileShareStatusResponse{FileShare: obj.(*v1alpha14.FileShare)}), nil
+	return connect.NewResponse(&v1alpha15.UpdateFileShareStatusResponse{FileShare: obj.(*v1alpha15.FileShare)}), nil
 }
 
 type imageService struct {
 	b resource.Backend
 }
 
-func (s *imageService) GetImage(ctx context.Context, req *connect.Request[v1alpha14.GetImageRequest]) (*connect.Response[v1alpha14.GetImageResponse], error) {
+func (s *imageService) GetImage(ctx context.Context, req *connect.Request[v1alpha15.GetImageRequest]) (*connect.Response[v1alpha15.GetImageResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.GetImageResponse{Image: obj.(*v1alpha14.Image)}), nil
+	return connect.NewResponse(&v1alpha15.GetImageResponse{Image: obj.(*v1alpha15.Image)}), nil
 }
 
-func (s *imageService) ListImages(ctx context.Context, req *connect.Request[v1alpha14.ListImagesRequest]) (*connect.Response[v1alpha14.ListImagesResponse], error) {
+func (s *imageService) ListImages(ctx context.Context, req *connect.Request[v1alpha15.ListImagesRequest]) (*connect.Response[v1alpha15.ListImagesResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha14.ListImagesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha15.ListImagesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha14.Image))
+		out.Items = append(out.Items, item.(*v1alpha15.Image))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *imageService) WatchImages(ctx context.Context, req *connect.Request[v1alpha14.WatchImagesRequest], stream *connect.ServerStream[v1alpha14.WatchImagesResponse]) error {
+func (s *imageService) WatchImages(ctx context.Context, req *connect.Request[v1alpha15.WatchImagesRequest], stream *connect.ServerStream[v1alpha15.WatchImagesResponse]) error {
 	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha14.WatchImagesResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha15.WatchImagesResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Image = ev.Object.(*v1alpha14.Image)
+			out.Image = ev.Object.(*v1alpha15.Image)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *imageService) ApplyImage(ctx context.Context, req *connect.Request[v1alpha14.ApplyImageRequest]) (*connect.Response[v1alpha14.ApplyImageResponse], error) {
+func (s *imageService) ApplyImage(ctx context.Context, req *connect.Request[v1alpha15.ApplyImageRequest]) (*connect.Response[v1alpha15.ApplyImageResponse], error) {
 	in := req.Msg.GetImage()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("image is required"))
@@ -1512,61 +1718,61 @@ func (s *imageService) ApplyImage(ctx context.Context, req *connect.Request[v1al
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.ApplyImageResponse{Image: res.Object.(*v1alpha14.Image), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha15.ApplyImageResponse{Image: res.Object.(*v1alpha15.Image), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *imageService) DeleteImage(ctx context.Context, req *connect.Request[v1alpha14.DeleteImageRequest]) (*connect.Response[v1alpha14.DeleteImageResponse], error) {
+func (s *imageService) DeleteImage(ctx context.Context, req *connect.Request[v1alpha15.DeleteImageRequest]) (*connect.Response[v1alpha15.DeleteImageResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.DeleteImageResponse{Image: obj.(*v1alpha14.Image)}), nil
+	return connect.NewResponse(&v1alpha15.DeleteImageResponse{Image: obj.(*v1alpha15.Image)}), nil
 }
 
-func (s *imageService) UpdateImageStatus(ctx context.Context, req *connect.Request[v1alpha14.UpdateImageStatusRequest]) (*connect.Response[v1alpha14.UpdateImageStatusResponse], error) {
+func (s *imageService) UpdateImageStatus(ctx context.Context, req *connect.Request[v1alpha15.UpdateImageStatusRequest]) (*connect.Response[v1alpha15.UpdateImageStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha14.UpdateImageStatusResponse{Image: obj.(*v1alpha14.Image)}), nil
+	return connect.NewResponse(&v1alpha15.UpdateImageStatusResponse{Image: obj.(*v1alpha15.Image)}), nil
 }
 
 type planService struct {
 	b resource.Backend
 }
 
-func (s *planService) GetPlan(ctx context.Context, req *connect.Request[v1alpha15.GetPlanRequest]) (*connect.Response[v1alpha15.GetPlanResponse], error) {
+func (s *planService) GetPlan(ctx context.Context, req *connect.Request[v1alpha16.GetPlanRequest]) (*connect.Response[v1alpha16.GetPlanResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.GetPlanResponse{Plan: obj.(*v1alpha15.Plan)}), nil
+	return connect.NewResponse(&v1alpha16.GetPlanResponse{Plan: obj.(*v1alpha16.Plan)}), nil
 }
 
-func (s *planService) ListPlans(ctx context.Context, req *connect.Request[v1alpha15.ListPlansRequest]) (*connect.Response[v1alpha15.ListPlansResponse], error) {
+func (s *planService) ListPlans(ctx context.Context, req *connect.Request[v1alpha16.ListPlansRequest]) (*connect.Response[v1alpha16.ListPlansResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha15.ListPlansResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha16.ListPlansResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha15.Plan))
+		out.Items = append(out.Items, item.(*v1alpha16.Plan))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *planService) WatchPlans(ctx context.Context, req *connect.Request[v1alpha15.WatchPlansRequest], stream *connect.ServerStream[v1alpha15.WatchPlansResponse]) error {
+func (s *planService) WatchPlans(ctx context.Context, req *connect.Request[v1alpha16.WatchPlansRequest], stream *connect.ServerStream[v1alpha16.WatchPlansResponse]) error {
 	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha15.WatchPlansResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha16.WatchPlansResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Plan = ev.Object.(*v1alpha15.Plan)
+			out.Plan = ev.Object.(*v1alpha16.Plan)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *planService) ApplyPlan(ctx context.Context, req *connect.Request[v1alpha15.ApplyPlanRequest]) (*connect.Response[v1alpha15.ApplyPlanResponse], error) {
+func (s *planService) ApplyPlan(ctx context.Context, req *connect.Request[v1alpha16.ApplyPlanRequest]) (*connect.Response[v1alpha16.ApplyPlanResponse], error) {
 	in := req.Msg.GetPlan()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("plan is required"))
@@ -1579,61 +1785,61 @@ func (s *planService) ApplyPlan(ctx context.Context, req *connect.Request[v1alph
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.ApplyPlanResponse{Plan: res.Object.(*v1alpha15.Plan), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha16.ApplyPlanResponse{Plan: res.Object.(*v1alpha16.Plan), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *planService) DeletePlan(ctx context.Context, req *connect.Request[v1alpha15.DeletePlanRequest]) (*connect.Response[v1alpha15.DeletePlanResponse], error) {
+func (s *planService) DeletePlan(ctx context.Context, req *connect.Request[v1alpha16.DeletePlanRequest]) (*connect.Response[v1alpha16.DeletePlanResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.DeletePlanResponse{Plan: obj.(*v1alpha15.Plan)}), nil
+	return connect.NewResponse(&v1alpha16.DeletePlanResponse{Plan: obj.(*v1alpha16.Plan)}), nil
 }
 
-func (s *planService) UpdatePlanStatus(ctx context.Context, req *connect.Request[v1alpha15.UpdatePlanStatusRequest]) (*connect.Response[v1alpha15.UpdatePlanStatusResponse], error) {
+func (s *planService) UpdatePlanStatus(ctx context.Context, req *connect.Request[v1alpha16.UpdatePlanStatusRequest]) (*connect.Response[v1alpha16.UpdatePlanStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.UpdatePlanStatusResponse{Plan: obj.(*v1alpha15.Plan)}), nil
+	return connect.NewResponse(&v1alpha16.UpdatePlanStatusResponse{Plan: obj.(*v1alpha16.Plan)}), nil
 }
 
 type projectService struct {
 	b resource.Backend
 }
 
-func (s *projectService) GetProject(ctx context.Context, req *connect.Request[v1alpha15.GetProjectRequest]) (*connect.Response[v1alpha15.GetProjectResponse], error) {
+func (s *projectService) GetProject(ctx context.Context, req *connect.Request[v1alpha16.GetProjectRequest]) (*connect.Response[v1alpha16.GetProjectResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.GetProjectResponse{Project: obj.(*v1alpha15.Project)}), nil
+	return connect.NewResponse(&v1alpha16.GetProjectResponse{Project: obj.(*v1alpha16.Project)}), nil
 }
 
-func (s *projectService) ListProjects(ctx context.Context, req *connect.Request[v1alpha15.ListProjectsRequest]) (*connect.Response[v1alpha15.ListProjectsResponse], error) {
+func (s *projectService) ListProjects(ctx context.Context, req *connect.Request[v1alpha16.ListProjectsRequest]) (*connect.Response[v1alpha16.ListProjectsResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha15.ListProjectsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha16.ListProjectsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha15.Project))
+		out.Items = append(out.Items, item.(*v1alpha16.Project))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *projectService) WatchProjects(ctx context.Context, req *connect.Request[v1alpha15.WatchProjectsRequest], stream *connect.ServerStream[v1alpha15.WatchProjectsResponse]) error {
+func (s *projectService) WatchProjects(ctx context.Context, req *connect.Request[v1alpha16.WatchProjectsRequest], stream *connect.ServerStream[v1alpha16.WatchProjectsResponse]) error {
 	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha15.WatchProjectsResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha16.WatchProjectsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Project = ev.Object.(*v1alpha15.Project)
+			out.Project = ev.Object.(*v1alpha16.Project)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *projectService) ApplyProject(ctx context.Context, req *connect.Request[v1alpha15.ApplyProjectRequest]) (*connect.Response[v1alpha15.ApplyProjectResponse], error) {
+func (s *projectService) ApplyProject(ctx context.Context, req *connect.Request[v1alpha16.ApplyProjectRequest]) (*connect.Response[v1alpha16.ApplyProjectResponse], error) {
 	in := req.Msg.GetProject()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("project is required"))
@@ -1646,61 +1852,61 @@ func (s *projectService) ApplyProject(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.ApplyProjectResponse{Project: res.Object.(*v1alpha15.Project), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha16.ApplyProjectResponse{Project: res.Object.(*v1alpha16.Project), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *projectService) DeleteProject(ctx context.Context, req *connect.Request[v1alpha15.DeleteProjectRequest]) (*connect.Response[v1alpha15.DeleteProjectResponse], error) {
+func (s *projectService) DeleteProject(ctx context.Context, req *connect.Request[v1alpha16.DeleteProjectRequest]) (*connect.Response[v1alpha16.DeleteProjectResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.DeleteProjectResponse{Project: obj.(*v1alpha15.Project)}), nil
+	return connect.NewResponse(&v1alpha16.DeleteProjectResponse{Project: obj.(*v1alpha16.Project)}), nil
 }
 
-func (s *projectService) UpdateProjectStatus(ctx context.Context, req *connect.Request[v1alpha15.UpdateProjectStatusRequest]) (*connect.Response[v1alpha15.UpdateProjectStatusResponse], error) {
+func (s *projectService) UpdateProjectStatus(ctx context.Context, req *connect.Request[v1alpha16.UpdateProjectStatusRequest]) (*connect.Response[v1alpha16.UpdateProjectStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.UpdateProjectStatusResponse{Project: obj.(*v1alpha15.Project)}), nil
+	return connect.NewResponse(&v1alpha16.UpdateProjectStatusResponse{Project: obj.(*v1alpha16.Project)}), nil
 }
 
 type tenantService struct {
 	b resource.Backend
 }
 
-func (s *tenantService) GetTenant(ctx context.Context, req *connect.Request[v1alpha15.GetTenantRequest]) (*connect.Response[v1alpha15.GetTenantResponse], error) {
+func (s *tenantService) GetTenant(ctx context.Context, req *connect.Request[v1alpha16.GetTenantRequest]) (*connect.Response[v1alpha16.GetTenantResponse], error) {
 	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.GetTenantResponse{Tenant: obj.(*v1alpha15.Tenant)}), nil
+	return connect.NewResponse(&v1alpha16.GetTenantResponse{Tenant: obj.(*v1alpha16.Tenant)}), nil
 }
 
-func (s *tenantService) ListTenants(ctx context.Context, req *connect.Request[v1alpha15.ListTenantsRequest]) (*connect.Response[v1alpha15.ListTenantsResponse], error) {
+func (s *tenantService) ListTenants(ctx context.Context, req *connect.Request[v1alpha16.ListTenantsRequest]) (*connect.Response[v1alpha16.ListTenantsResponse], error) {
 	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
 	if err != nil {
 		return nil, err
 	}
-	out := &v1alpha15.ListTenantsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	out := &v1alpha16.ListTenantsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
 	for _, item := range res.Items {
-		out.Items = append(out.Items, item.(*v1alpha15.Tenant))
+		out.Items = append(out.Items, item.(*v1alpha16.Tenant))
 	}
 	return connect.NewResponse(out), nil
 }
 
-func (s *tenantService) WatchTenants(ctx context.Context, req *connect.Request[v1alpha15.WatchTenantsRequest], stream *connect.ServerStream[v1alpha15.WatchTenantsResponse]) error {
+func (s *tenantService) WatchTenants(ctx context.Context, req *connect.Request[v1alpha16.WatchTenantsRequest], stream *connect.ServerStream[v1alpha16.WatchTenantsResponse]) error {
 	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
 	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
-		out := &v1alpha15.WatchTenantsResponse{Type: ev.Type, Revision: ev.Revision}
+		out := &v1alpha16.WatchTenantsResponse{Type: ev.Type, Revision: ev.Revision}
 		if ev.Object != nil {
-			out.Tenant = ev.Object.(*v1alpha15.Tenant)
+			out.Tenant = ev.Object.(*v1alpha16.Tenant)
 		}
 		return stream.Send(out)
 	})
 }
 
-func (s *tenantService) ApplyTenant(ctx context.Context, req *connect.Request[v1alpha15.ApplyTenantRequest]) (*connect.Response[v1alpha15.ApplyTenantResponse], error) {
+func (s *tenantService) ApplyTenant(ctx context.Context, req *connect.Request[v1alpha16.ApplyTenantRequest]) (*connect.Response[v1alpha16.ApplyTenantResponse], error) {
 	in := req.Msg.GetTenant()
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("tenant is required"))
@@ -1713,21 +1919,21 @@ func (s *tenantService) ApplyTenant(ctx context.Context, req *connect.Request[v1
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.ApplyTenantResponse{Tenant: res.Object.(*v1alpha15.Tenant), Warnings: res.Warnings, Created: res.Created}), nil
+	return connect.NewResponse(&v1alpha16.ApplyTenantResponse{Tenant: res.Object.(*v1alpha16.Tenant), Warnings: res.Warnings, Created: res.Created}), nil
 }
 
-func (s *tenantService) DeleteTenant(ctx context.Context, req *connect.Request[v1alpha15.DeleteTenantRequest]) (*connect.Response[v1alpha15.DeleteTenantResponse], error) {
+func (s *tenantService) DeleteTenant(ctx context.Context, req *connect.Request[v1alpha16.DeleteTenantRequest]) (*connect.Response[v1alpha16.DeleteTenantResponse], error) {
 	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.DeleteTenantResponse{Tenant: obj.(*v1alpha15.Tenant)}), nil
+	return connect.NewResponse(&v1alpha16.DeleteTenantResponse{Tenant: obj.(*v1alpha16.Tenant)}), nil
 }
 
-func (s *tenantService) UpdateTenantStatus(ctx context.Context, req *connect.Request[v1alpha15.UpdateTenantStatusRequest]) (*connect.Response[v1alpha15.UpdateTenantStatusResponse], error) {
+func (s *tenantService) UpdateTenantStatus(ctx context.Context, req *connect.Request[v1alpha16.UpdateTenantStatusRequest]) (*connect.Response[v1alpha16.UpdateTenantStatusResponse], error) {
 	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&v1alpha15.UpdateTenantStatusResponse{Tenant: obj.(*v1alpha15.Tenant)}), nil
+	return connect.NewResponse(&v1alpha16.UpdateTenantStatusResponse{Tenant: obj.(*v1alpha16.Tenant)}), nil
 }

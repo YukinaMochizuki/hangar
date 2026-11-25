@@ -30,6 +30,16 @@ func TestCredentialsContract(t *testing.T) {
 	})
 }
 
+func TestMeterContract(t *testing.T) {
+	storetest.RunMeter(t, func(t *testing.T) storetest.MeterStore {
+		s, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "hangar.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	})
+}
+
 func TestReopen(t *testing.T) {
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "hangar.db")

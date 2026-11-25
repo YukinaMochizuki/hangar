@@ -9,9 +9,9 @@ cloud, and some people fund the hardware and should see more of it.
 
 ## Decision
 
-- **Two levels.** A `Tenant` is who: members, identity, later billing. A
-  `Project` is where resources live: quotas, networks, boundaries. A project
-  records its tenant, which is immutable.
+- **Two levels.** A `Tenant` is who: members, identity, billing
+  (`billing.md`). A `Project` is where resources live: quotas, networks,
+  boundaries. A project records its tenant, which is immutable.
 - **Tenant and project names are IDs, never reused.** Like GCP project IDs,
   they are chosen by the user, globally unique, and stay claimed after the
   object is deleted, so a name can never come to mean someone else's object.

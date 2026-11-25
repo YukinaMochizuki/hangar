@@ -37,6 +37,28 @@ type Meta struct {
 	Value int64
 }
 
+type MeterHour struct {
+	Tenant   string
+	Uid      string
+	Item     string
+	Hour     int64
+	Quantity int64
+	Kind     string
+	Project  string
+	Name     string
+}
+
+type MeterMinute struct {
+	Tenant   string
+	Uid      string
+	Item     string
+	Minute   int64
+	Quantity int64
+	Kind     string
+	Project  string
+	Name     string
+}
+
 type Object struct {
 	Kind     string
 	Project  string

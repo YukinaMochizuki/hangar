@@ -1,0 +1,298 @@
+{
+  "$defs": {
+    "hangar.billing.v1alpha1.StatementLine": {
+      "additionalProperties": false,
+      "description": "StatementLine is one thing billed.",
+      "properties": {
+        "amount": {
+          "description": "quantity times unit_price, with six decimals.",
+          "type": "string"
+        },
+        "item": {
+          "description": "What it is: \"monthly_fee\", or a Prices field, such as \"cpu\".",
+          "type": "string"
+        },
+        "priceEffectiveTime": {
+          "description": "When the price took effect, for a PAY_AS_YOU_GO line.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "quantity": {
+          "description": "How much of it, in unit-hours with up to six decimals, such as \"1440.5\" vCPU-hours; \"1\" for a whole month's fee, a fraction for part.",
+          "type": "string"
+        },
+        "unit": {
+          "description": "The unit quantity counts, such as \"vCPU-hour\" or \"month\".",
+          "type": "string"
+        },
+        "unitPrice": {
+          "description": "The price of one unit, as the PriceList or the account gave it.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.billing.v1alpha1.StatementSpec": {
+      "additionalProperties": false,
+      "description": "StatementSpec is the bill, as the apiserver made it.",
+      "properties": {
+        "accountUid": {
+          "description": "The uid of the BillingAccount that made it.",
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "end": {
+          "description": "StatementEnd is why a period ended.\n\n- STATEMENT_END_PERIOD: It ran its length.\n- STATEMENT_END_AGREEMENT_CHANGED: The account's agreement changed.\n- STATEMENT_END_ACCOUNT_DELETED: The account was deleted, with its tenant or alone.",
+          "enum": [
+            "STATEMENT_END_PERIOD",
+            "STATEMENT_END_AGREEMENT_CHANGED",
+            "STATEMENT_END_ACCOUNT_DELETED"
+          ],
+          "type": "string"
+        },
+        "lines": {
+          "description": "What is billed, one line for the fee of a FIXED account, or one for each thing held at each price for a PAY_AS_YOU_GO one.",
+          "items": {
+            "$ref": "#/$defs/hangar.billing.v1alpha1.StatementLine"
+          },
+          "type": "array"
+        },
+        "metered": {
+          "description": "What the period's holdings came to at the account's PriceList, when a FIXED account names one; for the record, not billed.",
+          "type": "string"
+        },
+        "periodEndTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "periodStartTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "plan": {
+          "description": "The Plan whose fee a FIXED account paid.",
+          "type": "string"
+        },
+        "tenant": {
+          "description": "Name of the Tenant billed.",
+          "type": "string"
+        },
+        "total": {
+          "description": "The lines' amounts together, rounded to the currency's minor unit.",
+          "type": "string"
+        },
+        "type": {
+          "description": "BillingType is how a tenant pays.\n\n- BILLING_TYPE_FIXED: A fee each month, whatever the tenant holds.\n- BILLING_TYPE_PAY_AS_YOU_GO: What the tenant holds, minute by minute, at a PriceList's prices.",
+          "enum": [
+            "BILLING_TYPE_FIXED",
+            "BILLING_TYPE_PAY_AS_YOU_GO"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.billing.v1alpha1.StatementStatus": {
+      "additionalProperties": false,
+      "description": "StatementStatus says whether it is paid.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "paidRecordedBy": {
+          "description": "Who recorded it paid.",
+          "type": "string"
+        },
+        "paidTime": {
+          "description": "When it was paid, as the administrator recorded it; unset while it is not.",
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Statement is what a tenant owes for one period of its BillingAccount. The apiserver makes it as the period ends, and nothing changes it after but its payment, which a platform administrator records (StatementPaymentService). It outlives its tenant. Its name is the tenant's and the period's start, as \"acme-202611010000\". See docs/decisions/billing.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "billing.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Statement",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.billing.v1alpha1.StatementSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.billing.v1alpha1.StatementStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "Statement",
+  "type": "object"
+}

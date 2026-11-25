@@ -1,0 +1,274 @@
+{
+  "$defs": {
+    "hangar.billing.v1alpha1.PriceEntry": {
+      "additionalProperties": false,
+      "description": "PriceEntry is a set of prices and when it takes effect.",
+      "properties": {
+        "effectiveTime": {
+          "description": "When the prices take effect, on a whole minute.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "prices": {
+          "$ref": "#/$defs/hangar.billing.v1alpha1.Prices"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.billing.v1alpha1.PriceListSpec": {
+      "additionalProperties": false,
+      "description": "PriceListSpec is the currency and the prices over time.",
+      "properties": {
+        "currency": {
+          "description": "The ISO 4217 code every price is in, such as \"TWD\".",
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "entries": {
+          "description": "The prices, each from its effective_time on, until the next entry's, in order of effective_time. An entry whose time has come is never changed or removed: an apply may only add entries, at the end, that take effect now or later. A minute before the first entry is free.",
+          "items": {
+            "$ref": "#/$defs/hangar.billing.v1alpha1.PriceEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.billing.v1alpha1.PriceListStatus": {
+      "additionalProperties": false,
+      "description": "PriceListStatus is the observed state of a price list.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "hangar.billing.v1alpha1.Prices": {
+      "additionalProperties": false,
+      "description": "Prices are what holding one unit of each thing for an hour costs, as a decimal in the currency's units with at most six digits after the point, such as \"0.6\". A minute costs a sixtieth of the hour. A price left empty is free. cpu and memory count only while a machine runs; everything else counts while it exists, as the quota counts it (Limits).",
+      "properties": {
+        "addresses": {
+          "description": "Per public IPv6 Address.",
+          "type": "string"
+        },
+        "cpu": {
+          "description": "Per vCPU.",
+          "type": "string"
+        },
+        "disk": {
+          "description": "Per GiB of disk.",
+          "type": "string"
+        },
+        "domains": {
+          "description": "Per CustomDomain.",
+          "type": "string"
+        },
+        "fileShares": {
+          "description": "Per FileShare, besides its disk.",
+          "type": "string"
+        },
+        "memory": {
+          "description": "Per GiB of memory.",
+          "type": "string"
+        },
+        "networkEndpoints": {
+          "description": "Per NetworkEndpoint.",
+          "type": "string"
+        },
+        "portForwards": {
+          "description": "Per PortForward.",
+          "type": "string"
+        },
+        "publicEndpoints": {
+          "description": "Per PublicEndpoint.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "PriceList is what Hangar charges for each thing a tenant holds, by the hour, each price from the time it takes effect. A pay-as-you-go BillingAccount is rated by one, minute by minute, at the prices in effect in that minute, so a new price never changes what was already used. Platform administrators keep price lists; everyone allowed to use Hangar reads them. See docs/decisions/billing.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "billing.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "PriceList",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.billing.v1alpha1.PriceListSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.billing.v1alpha1.PriceListStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "PriceList",
+  "type": "object"
+}

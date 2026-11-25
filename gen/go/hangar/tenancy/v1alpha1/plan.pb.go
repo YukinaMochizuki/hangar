@@ -108,7 +108,11 @@ type PlanSpec struct {
 	DisplayName string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	// A field left unset has no limit, but for machine_calls, which is then
 	// 64.
-	Limits        *Limits `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`
+	Limits *Limits `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`
+	// What a tenant on the plan pays each month when its BillingAccount is
+	// FIXED; unset, no FIXED account may be on it. A changed price applies
+	// from each such account's next period. See docs/decisions/billing.md.
+	Price         *PlanPrice `protobuf:"bytes,3,opt,name=price,proto3" json:"price,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -157,6 +161,68 @@ func (x *PlanSpec) GetLimits() *Limits {
 	return nil
 }
 
+func (x *PlanSpec) GetPrice() *PlanPrice {
+	if x != nil {
+		return x.Price
+	}
+	return nil
+}
+
+// PlanPrice is a plan's monthly fee.
+type PlanPrice struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A decimal in the currency's units, such as "300"; "0" is free.
+	MonthlyFee string `protobuf:"bytes,1,opt,name=monthly_fee,json=monthlyFee,proto3" json:"monthly_fee,omitempty"`
+	// The ISO 4217 code of the fee, such as "TWD".
+	Currency      string `protobuf:"bytes,2,opt,name=currency,proto3" json:"currency,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanPrice) Reset() {
+	*x = PlanPrice{}
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanPrice) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanPrice) ProtoMessage() {}
+
+func (x *PlanPrice) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanPrice.ProtoReflect.Descriptor instead.
+func (*PlanPrice) Descriptor() ([]byte, []int) {
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PlanPrice) GetMonthlyFee() string {
+	if x != nil {
+		return x.MonthlyFee
+	}
+	return ""
+}
+
+func (x *PlanPrice) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
 // PlanStatus is the observed state of a plan.
 type PlanStatus struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -168,7 +234,7 @@ type PlanStatus struct {
 
 func (x *PlanStatus) Reset() {
 	*x = PlanStatus{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[2]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -180,7 +246,7 @@ func (x *PlanStatus) String() string {
 func (*PlanStatus) ProtoMessage() {}
 
 func (x *PlanStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[2]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -193,7 +259,7 @@ func (x *PlanStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanStatus.ProtoReflect.Descriptor instead.
 func (*PlanStatus) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{2}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *PlanStatus) GetObservedGeneration() int64 {
@@ -259,7 +325,7 @@ type Limits struct {
 
 func (x *Limits) Reset() {
 	*x = Limits{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[3]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -271,7 +337,7 @@ func (x *Limits) String() string {
 func (*Limits) ProtoMessage() {}
 
 func (x *Limits) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[3]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -284,7 +350,7 @@ func (x *Limits) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Limits.ProtoReflect.Descriptor instead.
 func (*Limits) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{3}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Limits) GetCpu() string {
@@ -416,7 +482,7 @@ type Usage struct {
 
 func (x *Usage) Reset() {
 	*x = Usage{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[4]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -428,7 +494,7 @@ func (x *Usage) String() string {
 func (*Usage) ProtoMessage() {}
 
 func (x *Usage) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[4]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -441,7 +507,7 @@ func (x *Usage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Usage.ProtoReflect.Descriptor instead.
 func (*Usage) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{4}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Usage) GetCpu() string {
@@ -551,7 +617,7 @@ type GetPlanRequest struct {
 
 func (x *GetPlanRequest) Reset() {
 	*x = GetPlanRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[5]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -563,7 +629,7 @@ func (x *GetPlanRequest) String() string {
 func (*GetPlanRequest) ProtoMessage() {}
 
 func (x *GetPlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[5]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -576,7 +642,7 @@ func (x *GetPlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanRequest.ProtoReflect.Descriptor instead.
 func (*GetPlanRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{5}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetPlanRequest) GetName() string {
@@ -595,7 +661,7 @@ type GetPlanResponse struct {
 
 func (x *GetPlanResponse) Reset() {
 	*x = GetPlanResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[6]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -607,7 +673,7 @@ func (x *GetPlanResponse) String() string {
 func (*GetPlanResponse) ProtoMessage() {}
 
 func (x *GetPlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[6]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -620,7 +686,7 @@ func (x *GetPlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPlanResponse.ProtoReflect.Descriptor instead.
 func (*GetPlanResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{6}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetPlanResponse) GetPlan() *Plan {
@@ -641,7 +707,7 @@ type ListPlansRequest struct {
 
 func (x *ListPlansRequest) Reset() {
 	*x = ListPlansRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[7]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -653,7 +719,7 @@ func (x *ListPlansRequest) String() string {
 func (*ListPlansRequest) ProtoMessage() {}
 
 func (x *ListPlansRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[7]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -666,7 +732,7 @@ func (x *ListPlansRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlansRequest.ProtoReflect.Descriptor instead.
 func (*ListPlansRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{7}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListPlansRequest) GetLabelSelector() string {
@@ -701,7 +767,7 @@ type ListPlansResponse struct {
 
 func (x *ListPlansResponse) Reset() {
 	*x = ListPlansResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[8]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -713,7 +779,7 @@ func (x *ListPlansResponse) String() string {
 func (*ListPlansResponse) ProtoMessage() {}
 
 func (x *ListPlansResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[8]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -726,7 +792,7 @@ func (x *ListPlansResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlansResponse.ProtoReflect.Descriptor instead.
 func (*ListPlansResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{8}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListPlansResponse) GetItems() []*Plan {
@@ -760,7 +826,7 @@ type WatchPlansRequest struct {
 
 func (x *WatchPlansRequest) Reset() {
 	*x = WatchPlansRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[9]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -772,7 +838,7 @@ func (x *WatchPlansRequest) String() string {
 func (*WatchPlansRequest) ProtoMessage() {}
 
 func (x *WatchPlansRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[9]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -785,7 +851,7 @@ func (x *WatchPlansRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchPlansRequest.ProtoReflect.Descriptor instead.
 func (*WatchPlansRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{9}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *WatchPlansRequest) GetLabelSelector() string {
@@ -813,7 +879,7 @@ type WatchPlansResponse struct {
 
 func (x *WatchPlansResponse) Reset() {
 	*x = WatchPlansResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[10]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -825,7 +891,7 @@ func (x *WatchPlansResponse) String() string {
 func (*WatchPlansResponse) ProtoMessage() {}
 
 func (x *WatchPlansResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[10]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -838,7 +904,7 @@ func (x *WatchPlansResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchPlansResponse.ProtoReflect.Descriptor instead.
 func (*WatchPlansResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{10}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WatchPlansResponse) GetType() v1.EventType {
@@ -873,7 +939,7 @@ type ApplyPlanRequest struct {
 
 func (x *ApplyPlanRequest) Reset() {
 	*x = ApplyPlanRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[11]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -885,7 +951,7 @@ func (x *ApplyPlanRequest) String() string {
 func (*ApplyPlanRequest) ProtoMessage() {}
 
 func (x *ApplyPlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[11]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -898,7 +964,7 @@ func (x *ApplyPlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyPlanRequest.ProtoReflect.Descriptor instead.
 func (*ApplyPlanRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{11}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ApplyPlanRequest) GetPlan() *Plan {
@@ -926,7 +992,7 @@ type ApplyPlanResponse struct {
 
 func (x *ApplyPlanResponse) Reset() {
 	*x = ApplyPlanResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[12]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -938,7 +1004,7 @@ func (x *ApplyPlanResponse) String() string {
 func (*ApplyPlanResponse) ProtoMessage() {}
 
 func (x *ApplyPlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[12]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -951,7 +1017,7 @@ func (x *ApplyPlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyPlanResponse.ProtoReflect.Descriptor instead.
 func (*ApplyPlanResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{12}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ApplyPlanResponse) GetPlan() *Plan {
@@ -985,7 +1051,7 @@ type DeletePlanRequest struct {
 
 func (x *DeletePlanRequest) Reset() {
 	*x = DeletePlanRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[13]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -997,7 +1063,7 @@ func (x *DeletePlanRequest) String() string {
 func (*DeletePlanRequest) ProtoMessage() {}
 
 func (x *DeletePlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[13]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1010,7 +1076,7 @@ func (x *DeletePlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePlanRequest.ProtoReflect.Descriptor instead.
 func (*DeletePlanRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{13}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DeletePlanRequest) GetName() string {
@@ -1036,7 +1102,7 @@ type DeletePlanResponse struct {
 
 func (x *DeletePlanResponse) Reset() {
 	*x = DeletePlanResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[14]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1048,7 +1114,7 @@ func (x *DeletePlanResponse) String() string {
 func (*DeletePlanResponse) ProtoMessage() {}
 
 func (x *DeletePlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[14]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1061,7 +1127,7 @@ func (x *DeletePlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeletePlanResponse.ProtoReflect.Descriptor instead.
 func (*DeletePlanResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{14}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DeletePlanResponse) GetPlan() *Plan {
@@ -1082,7 +1148,7 @@ type UpdatePlanStatusRequest struct {
 
 func (x *UpdatePlanStatusRequest) Reset() {
 	*x = UpdatePlanStatusRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[15]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1094,7 +1160,7 @@ func (x *UpdatePlanStatusRequest) String() string {
 func (*UpdatePlanStatusRequest) ProtoMessage() {}
 
 func (x *UpdatePlanStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[15]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1107,7 +1173,7 @@ func (x *UpdatePlanStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePlanStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePlanStatusRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{15}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UpdatePlanStatusRequest) GetName() string {
@@ -1140,7 +1206,7 @@ type UpdatePlanStatusResponse struct {
 
 func (x *UpdatePlanStatusResponse) Reset() {
 	*x = UpdatePlanStatusResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[16]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1152,7 +1218,7 @@ func (x *UpdatePlanStatusResponse) String() string {
 func (*UpdatePlanStatusResponse) ProtoMessage() {}
 
 func (x *UpdatePlanStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[16]
+	mi := &file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1165,7 +1231,7 @@ func (x *UpdatePlanStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePlanStatusResponse.ProtoReflect.Descriptor instead.
 func (*UpdatePlanStatusResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{16}
+	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UpdatePlanStatusResponse) GetPlan() *Plan {
@@ -1187,10 +1253,15 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x125\n" +
 	"\x04spec\x18\x04 \x01(\v2!.hangar.tenancy.v1alpha1.PlanSpecR\x04spec\x12;\n" +
 	"\x06status\x18\x05 \x01(\v2#.hangar.tenancy.v1alpha1.PlanStatusR\x06status:\x13\x8a\xb5\x18\x0f\n" +
-	"\x04Plan\x12\x05plans \x02\"f\n" +
+	"\x04Plan\x12\x05plans \x02\"\xa0\x01\n" +
 	"\bPlanSpec\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x127\n" +
-	"\x06limits\x18\x02 \x01(\v2\x1f.hangar.tenancy.v1alpha1.LimitsR\x06limits\"x\n" +
+	"\x06limits\x18\x02 \x01(\v2\x1f.hangar.tenancy.v1alpha1.LimitsR\x06limits\x128\n" +
+	"\x05price\x18\x03 \x01(\v2\".hangar.tenancy.v1alpha1.PlanPriceR\x05price\"H\n" +
+	"\tPlanPrice\x12\x1f\n" +
+	"\vmonthly_fee\x18\x01 \x01(\tR\n" +
+	"monthlyFee\x12\x1a\n" +
+	"\bcurrency\x18\x02 \x01(\tR\bcurrency\"x\n" +
 	"\n" +
 	"PlanStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
@@ -1314,61 +1385,63 @@ func file_hangar_tenancy_v1alpha1_plan_proto_rawDescGZIP() []byte {
 	return file_hangar_tenancy_v1alpha1_plan_proto_rawDescData
 }
 
-var file_hangar_tenancy_v1alpha1_plan_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_hangar_tenancy_v1alpha1_plan_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_hangar_tenancy_v1alpha1_plan_proto_goTypes = []any{
 	(*Plan)(nil),                     // 0: hangar.tenancy.v1alpha1.Plan
 	(*PlanSpec)(nil),                 // 1: hangar.tenancy.v1alpha1.PlanSpec
-	(*PlanStatus)(nil),               // 2: hangar.tenancy.v1alpha1.PlanStatus
-	(*Limits)(nil),                   // 3: hangar.tenancy.v1alpha1.Limits
-	(*Usage)(nil),                    // 4: hangar.tenancy.v1alpha1.Usage
-	(*GetPlanRequest)(nil),           // 5: hangar.tenancy.v1alpha1.GetPlanRequest
-	(*GetPlanResponse)(nil),          // 6: hangar.tenancy.v1alpha1.GetPlanResponse
-	(*ListPlansRequest)(nil),         // 7: hangar.tenancy.v1alpha1.ListPlansRequest
-	(*ListPlansResponse)(nil),        // 8: hangar.tenancy.v1alpha1.ListPlansResponse
-	(*WatchPlansRequest)(nil),        // 9: hangar.tenancy.v1alpha1.WatchPlansRequest
-	(*WatchPlansResponse)(nil),       // 10: hangar.tenancy.v1alpha1.WatchPlansResponse
-	(*ApplyPlanRequest)(nil),         // 11: hangar.tenancy.v1alpha1.ApplyPlanRequest
-	(*ApplyPlanResponse)(nil),        // 12: hangar.tenancy.v1alpha1.ApplyPlanResponse
-	(*DeletePlanRequest)(nil),        // 13: hangar.tenancy.v1alpha1.DeletePlanRequest
-	(*DeletePlanResponse)(nil),       // 14: hangar.tenancy.v1alpha1.DeletePlanResponse
-	(*UpdatePlanStatusRequest)(nil),  // 15: hangar.tenancy.v1alpha1.UpdatePlanStatusRequest
-	(*UpdatePlanStatusResponse)(nil), // 16: hangar.tenancy.v1alpha1.UpdatePlanStatusResponse
-	(*v1.ObjectMeta)(nil),            // 17: hangar.meta.v1.ObjectMeta
-	(*v1.Condition)(nil),             // 18: hangar.meta.v1.Condition
-	(v1.EventType)(0),                // 19: hangar.meta.v1.EventType
+	(*PlanPrice)(nil),                // 2: hangar.tenancy.v1alpha1.PlanPrice
+	(*PlanStatus)(nil),               // 3: hangar.tenancy.v1alpha1.PlanStatus
+	(*Limits)(nil),                   // 4: hangar.tenancy.v1alpha1.Limits
+	(*Usage)(nil),                    // 5: hangar.tenancy.v1alpha1.Usage
+	(*GetPlanRequest)(nil),           // 6: hangar.tenancy.v1alpha1.GetPlanRequest
+	(*GetPlanResponse)(nil),          // 7: hangar.tenancy.v1alpha1.GetPlanResponse
+	(*ListPlansRequest)(nil),         // 8: hangar.tenancy.v1alpha1.ListPlansRequest
+	(*ListPlansResponse)(nil),        // 9: hangar.tenancy.v1alpha1.ListPlansResponse
+	(*WatchPlansRequest)(nil),        // 10: hangar.tenancy.v1alpha1.WatchPlansRequest
+	(*WatchPlansResponse)(nil),       // 11: hangar.tenancy.v1alpha1.WatchPlansResponse
+	(*ApplyPlanRequest)(nil),         // 12: hangar.tenancy.v1alpha1.ApplyPlanRequest
+	(*ApplyPlanResponse)(nil),        // 13: hangar.tenancy.v1alpha1.ApplyPlanResponse
+	(*DeletePlanRequest)(nil),        // 14: hangar.tenancy.v1alpha1.DeletePlanRequest
+	(*DeletePlanResponse)(nil),       // 15: hangar.tenancy.v1alpha1.DeletePlanResponse
+	(*UpdatePlanStatusRequest)(nil),  // 16: hangar.tenancy.v1alpha1.UpdatePlanStatusRequest
+	(*UpdatePlanStatusResponse)(nil), // 17: hangar.tenancy.v1alpha1.UpdatePlanStatusResponse
+	(*v1.ObjectMeta)(nil),            // 18: hangar.meta.v1.ObjectMeta
+	(*v1.Condition)(nil),             // 19: hangar.meta.v1.Condition
+	(v1.EventType)(0),                // 20: hangar.meta.v1.EventType
 }
 var file_hangar_tenancy_v1alpha1_plan_proto_depIdxs = []int32{
-	17, // 0: hangar.tenancy.v1alpha1.Plan.metadata:type_name -> hangar.meta.v1.ObjectMeta
+	18, // 0: hangar.tenancy.v1alpha1.Plan.metadata:type_name -> hangar.meta.v1.ObjectMeta
 	1,  // 1: hangar.tenancy.v1alpha1.Plan.spec:type_name -> hangar.tenancy.v1alpha1.PlanSpec
-	2,  // 2: hangar.tenancy.v1alpha1.Plan.status:type_name -> hangar.tenancy.v1alpha1.PlanStatus
-	3,  // 3: hangar.tenancy.v1alpha1.PlanSpec.limits:type_name -> hangar.tenancy.v1alpha1.Limits
-	18, // 4: hangar.tenancy.v1alpha1.PlanStatus.conditions:type_name -> hangar.meta.v1.Condition
-	0,  // 5: hangar.tenancy.v1alpha1.GetPlanResponse.plan:type_name -> hangar.tenancy.v1alpha1.Plan
-	0,  // 6: hangar.tenancy.v1alpha1.ListPlansResponse.items:type_name -> hangar.tenancy.v1alpha1.Plan
-	19, // 7: hangar.tenancy.v1alpha1.WatchPlansResponse.type:type_name -> hangar.meta.v1.EventType
-	0,  // 8: hangar.tenancy.v1alpha1.WatchPlansResponse.plan:type_name -> hangar.tenancy.v1alpha1.Plan
-	0,  // 9: hangar.tenancy.v1alpha1.ApplyPlanRequest.plan:type_name -> hangar.tenancy.v1alpha1.Plan
-	0,  // 10: hangar.tenancy.v1alpha1.ApplyPlanResponse.plan:type_name -> hangar.tenancy.v1alpha1.Plan
-	0,  // 11: hangar.tenancy.v1alpha1.DeletePlanResponse.plan:type_name -> hangar.tenancy.v1alpha1.Plan
-	2,  // 12: hangar.tenancy.v1alpha1.UpdatePlanStatusRequest.status:type_name -> hangar.tenancy.v1alpha1.PlanStatus
-	0,  // 13: hangar.tenancy.v1alpha1.UpdatePlanStatusResponse.plan:type_name -> hangar.tenancy.v1alpha1.Plan
-	5,  // 14: hangar.tenancy.v1alpha1.PlanService.GetPlan:input_type -> hangar.tenancy.v1alpha1.GetPlanRequest
-	7,  // 15: hangar.tenancy.v1alpha1.PlanService.ListPlans:input_type -> hangar.tenancy.v1alpha1.ListPlansRequest
-	9,  // 16: hangar.tenancy.v1alpha1.PlanService.WatchPlans:input_type -> hangar.tenancy.v1alpha1.WatchPlansRequest
-	11, // 17: hangar.tenancy.v1alpha1.PlanService.ApplyPlan:input_type -> hangar.tenancy.v1alpha1.ApplyPlanRequest
-	13, // 18: hangar.tenancy.v1alpha1.PlanService.DeletePlan:input_type -> hangar.tenancy.v1alpha1.DeletePlanRequest
-	15, // 19: hangar.tenancy.v1alpha1.PlanService.UpdatePlanStatus:input_type -> hangar.tenancy.v1alpha1.UpdatePlanStatusRequest
-	6,  // 20: hangar.tenancy.v1alpha1.PlanService.GetPlan:output_type -> hangar.tenancy.v1alpha1.GetPlanResponse
-	8,  // 21: hangar.tenancy.v1alpha1.PlanService.ListPlans:output_type -> hangar.tenancy.v1alpha1.ListPlansResponse
-	10, // 22: hangar.tenancy.v1alpha1.PlanService.WatchPlans:output_type -> hangar.tenancy.v1alpha1.WatchPlansResponse
-	12, // 23: hangar.tenancy.v1alpha1.PlanService.ApplyPlan:output_type -> hangar.tenancy.v1alpha1.ApplyPlanResponse
-	14, // 24: hangar.tenancy.v1alpha1.PlanService.DeletePlan:output_type -> hangar.tenancy.v1alpha1.DeletePlanResponse
-	16, // 25: hangar.tenancy.v1alpha1.PlanService.UpdatePlanStatus:output_type -> hangar.tenancy.v1alpha1.UpdatePlanStatusResponse
-	20, // [20:26] is the sub-list for method output_type
-	14, // [14:20] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	3,  // 2: hangar.tenancy.v1alpha1.Plan.status:type_name -> hangar.tenancy.v1alpha1.PlanStatus
+	4,  // 3: hangar.tenancy.v1alpha1.PlanSpec.limits:type_name -> hangar.tenancy.v1alpha1.Limits
+	2,  // 4: hangar.tenancy.v1alpha1.PlanSpec.price:type_name -> hangar.tenancy.v1alpha1.PlanPrice
+	19, // 5: hangar.tenancy.v1alpha1.PlanStatus.conditions:type_name -> hangar.meta.v1.Condition
+	0,  // 6: hangar.tenancy.v1alpha1.GetPlanResponse.plan:type_name -> hangar.tenancy.v1alpha1.Plan
+	0,  // 7: hangar.tenancy.v1alpha1.ListPlansResponse.items:type_name -> hangar.tenancy.v1alpha1.Plan
+	20, // 8: hangar.tenancy.v1alpha1.WatchPlansResponse.type:type_name -> hangar.meta.v1.EventType
+	0,  // 9: hangar.tenancy.v1alpha1.WatchPlansResponse.plan:type_name -> hangar.tenancy.v1alpha1.Plan
+	0,  // 10: hangar.tenancy.v1alpha1.ApplyPlanRequest.plan:type_name -> hangar.tenancy.v1alpha1.Plan
+	0,  // 11: hangar.tenancy.v1alpha1.ApplyPlanResponse.plan:type_name -> hangar.tenancy.v1alpha1.Plan
+	0,  // 12: hangar.tenancy.v1alpha1.DeletePlanResponse.plan:type_name -> hangar.tenancy.v1alpha1.Plan
+	3,  // 13: hangar.tenancy.v1alpha1.UpdatePlanStatusRequest.status:type_name -> hangar.tenancy.v1alpha1.PlanStatus
+	0,  // 14: hangar.tenancy.v1alpha1.UpdatePlanStatusResponse.plan:type_name -> hangar.tenancy.v1alpha1.Plan
+	6,  // 15: hangar.tenancy.v1alpha1.PlanService.GetPlan:input_type -> hangar.tenancy.v1alpha1.GetPlanRequest
+	8,  // 16: hangar.tenancy.v1alpha1.PlanService.ListPlans:input_type -> hangar.tenancy.v1alpha1.ListPlansRequest
+	10, // 17: hangar.tenancy.v1alpha1.PlanService.WatchPlans:input_type -> hangar.tenancy.v1alpha1.WatchPlansRequest
+	12, // 18: hangar.tenancy.v1alpha1.PlanService.ApplyPlan:input_type -> hangar.tenancy.v1alpha1.ApplyPlanRequest
+	14, // 19: hangar.tenancy.v1alpha1.PlanService.DeletePlan:input_type -> hangar.tenancy.v1alpha1.DeletePlanRequest
+	16, // 20: hangar.tenancy.v1alpha1.PlanService.UpdatePlanStatus:input_type -> hangar.tenancy.v1alpha1.UpdatePlanStatusRequest
+	7,  // 21: hangar.tenancy.v1alpha1.PlanService.GetPlan:output_type -> hangar.tenancy.v1alpha1.GetPlanResponse
+	9,  // 22: hangar.tenancy.v1alpha1.PlanService.ListPlans:output_type -> hangar.tenancy.v1alpha1.ListPlansResponse
+	11, // 23: hangar.tenancy.v1alpha1.PlanService.WatchPlans:output_type -> hangar.tenancy.v1alpha1.WatchPlansResponse
+	13, // 24: hangar.tenancy.v1alpha1.PlanService.ApplyPlan:output_type -> hangar.tenancy.v1alpha1.ApplyPlanResponse
+	15, // 25: hangar.tenancy.v1alpha1.PlanService.DeletePlan:output_type -> hangar.tenancy.v1alpha1.DeletePlanResponse
+	17, // 26: hangar.tenancy.v1alpha1.PlanService.UpdatePlanStatus:output_type -> hangar.tenancy.v1alpha1.UpdatePlanStatusResponse
+	21, // [21:27] is the sub-list for method output_type
+	15, // [15:21] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_hangar_tenancy_v1alpha1_plan_proto_init() }
@@ -1376,16 +1449,16 @@ func file_hangar_tenancy_v1alpha1_plan_proto_init() {
 	if File_hangar_tenancy_v1alpha1_plan_proto != nil {
 		return
 	}
-	file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[3].OneofWrappers = []any{}
-	file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[13].OneofWrappers = []any{}
-	file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[15].OneofWrappers = []any{}
+	file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[4].OneofWrappers = []any{}
+	file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[14].OneofWrappers = []any{}
+	file_hangar_tenancy_v1alpha1_plan_proto_msgTypes[16].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_tenancy_v1alpha1_plan_proto_rawDesc), len(file_hangar_tenancy_v1alpha1_plan_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

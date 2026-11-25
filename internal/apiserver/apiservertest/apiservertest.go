@@ -104,7 +104,7 @@ func start(t *testing.T, configure func(*apiserver.Config), oidc *apiserver.OIDC
 	// Tests size machines and open tenants freely, unless configure sets
 	// limits.
 	cfg := apiserver.Config{Store: st, BootstrapAdmin: Root, Nodes: []string{Node},
-		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000, Credentials: st,
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000, Credentials: st, Meter: st,
 		BookmarkInterval: 10 * time.Millisecond}
 	if configure != nil {
 		configure(&cfg)

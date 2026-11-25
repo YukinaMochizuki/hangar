@@ -26,6 +26,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/billing"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
@@ -755,13 +756,26 @@ func (s *Server) ownedTenants(ctx context.Context, p auth.Principal) (int64, err
 }
 
 // validatePlan checks a plan's limits.
-func validatePlan(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.Message) error {
-	ls, err := parseLimits(obj.(*tenancyv1alpha1.Plan).GetSpec().GetLimits())
+func validatePlan(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
+	plan := obj.(*tenancyv1alpha1.Plan)
+	ls, err := parseLimits(plan.GetSpec().GetLimits())
 	if err != nil {
 		return invalid("spec.limits.%v", err)
 	}
 	if ls.machineCallsSet && (ls.machineCalls < 1 || ls.machineCalls > MaxMachineCalls) {
 		return invalid("spec.limits.machine_calls: %d is not from 1 to %d", ls.machineCalls, MaxMachineCalls)
+	}
+	if price := plan.GetSpec().GetPrice(); price != nil {
+		if _, err := billing.ParseMoney(price.GetMonthlyFee()); err != nil {
+			return invalid("spec.price.monthly_fee: %v", err)
+		}
+		if !billing.ValidCurrency(price.GetCurrency()) {
+			return invalid("spec.price.currency: %q is not an ISO 4217 code such as TWD", price.GetCurrency())
+		}
+	}
+	if old != nil {
+		// Under planLock, which a billing account's writes hold too.
+		return s.checkPlanStillPriced(ctx, plan)
 	}
 	return nil
 }

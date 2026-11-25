@@ -247,7 +247,7 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 		PublicEndpoints: apiserver.PublicEndpointsConfig{
 			Domain: f.endpointDomain, ControlPlaneDomain: controlPlaneDomain(f.publicURL), Resolvers: f.domainResolvers,
 		},
-		DefaultMaxOwnedTenants: f.maxOwnedTenants, Credentials: st, MaxUploadSize: int64(maxUpload),
+		DefaultMaxOwnedTenants: f.maxOwnedTenants, Credentials: st, Meter: st, MaxUploadSize: int64(maxUpload),
 		Monitoring: apiserver.MonitoringConfig{PrometheusURL: f.prometheusURL, AlertmanagerURL: f.alertmanagerURL},
 	})
 	public, err := publicChain(f, srv, st)

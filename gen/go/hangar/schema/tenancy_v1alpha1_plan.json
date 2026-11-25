@@ -216,6 +216,21 @@
       },
       "type": "object"
     },
+    "hangar.tenancy.v1alpha1.PlanPrice": {
+      "additionalProperties": false,
+      "description": "PlanPrice is a plan's monthly fee.",
+      "properties": {
+        "currency": {
+          "description": "The ISO 4217 code of the fee, such as \"TWD\".",
+          "type": "string"
+        },
+        "monthlyFee": {
+          "description": "A decimal in the currency's units, such as \"300\"; \"0\" is free.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "hangar.tenancy.v1alpha1.PlanSpec": {
       "additionalProperties": false,
       "description": "PlanSpec is the desired state of a plan.",
@@ -226,6 +241,10 @@
         "limits": {
           "$ref": "#/$defs/hangar.tenancy.v1alpha1.Limits",
           "description": "A field left unset has no limit, but for machine_calls, which is then 64."
+        },
+        "price": {
+          "$ref": "#/$defs/hangar.tenancy.v1alpha1.PlanPrice",
+          "description": "What a tenant on the plan pays each month when its BillingAccount is FIXED; unset, no FIXED account may be on it. A changed price applies from each such account's next period. See docs/decisions/billing.md."
         }
       },
       "type": "object"

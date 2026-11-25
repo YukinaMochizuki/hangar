@@ -25,8 +25,8 @@ import (
 )
 
 func (a *app) adminCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "admin", Short: "Run the platform: invite people (platform.root)"}
-	cmd.AddCommand(a.inviteCmd(), a.invitationsCmd(), a.revokeCmd())
+	cmd := &cobra.Command{Use: "admin", Short: "Run the platform: invite people, record payments (platform.root)"}
+	cmd.AddCommand(a.inviteCmd(), a.invitationsCmd(), a.revokeCmd(), a.payCmd())
 	return cmd
 }
 

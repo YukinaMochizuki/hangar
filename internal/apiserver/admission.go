@@ -216,6 +216,10 @@ type kindHooks struct {
 	// asks: a Secret's values. It is applied to every object answered, by
 	// every call and event.
 	redact func(obj proto.Message)
+	// forReader, if set, clears in place what of obj p may not read, though
+	// it reads the rest; it is applied to every object answered to anyone
+	// but the apiserver, as redact is.
+	forReader func(s *Server, p auth.Principal, obj proto.Message)
 	// warn, if set, returns what the caller of a successful apply should
 	// know about the stored object, which the answer carries as warnings.
 	warn func(s *Server, obj proto.Message) []string
@@ -575,6 +579,48 @@ func hooksFor(r registry.Resource) kindHooks {
 			beforeDelete: refuseDeletingPlanInUse,
 			writeLocks:   only(planLock),
 		}
+	case registry.BillingAccount.Kind:
+		// The platform's, as a Plan is: no tenant role writes it, though
+		// tenant.owner writes every kind at its tenant. The tenant's own
+		// people read it. It goes with its tenant, once the billing
+		// controller has billed its open period (docs/decisions/billing.md).
+		return kindHooks{
+			target: platformTarget,
+			// Who may read it is the tenant's people too, whom only the
+			// object names.
+			targetNeedsObject: true,
+			readableBy:        readsBillingOf(accountTenant),
+			forReader:         hideListValue,
+			owner:             billingAccountOwner,
+			validate:          validateBillingAccount,
+			finalizers:        []string{BillingFinalizer},
+			// Plan's lock first, as everyone holding both takes them.
+			writeLocks:      func(s *Server) []*sync.Mutex { return []*sync.Mutex{planLock(s), billingLock(s)} },
+			hiddenFromNodes: true,
+		}
+	case registry.PriceList.Kind:
+		// Platform administrators keep the prices; everyone reads them.
+		return kindHooks{
+			target:          platformTarget,
+			readableByAll:   true,
+			validate:        validatePriceList,
+			beforeDelete:    refuseDeletingPriceListInUse,
+			writeLocks:      only(billingLock),
+			hiddenFromNodes: true,
+		}
+	case registry.Statement.Kind:
+		// Only the billing controller writes one, and only a payment
+		// changes it after (StatementPaymentService). Its tenant's people
+		// read it; it outlives the tenant, so it has no owner.
+		return kindHooks{
+			target:            platformTarget,
+			targetNeedsObject: true,
+			readableBy:        readsBillingOf(statementTenant),
+			forReader:         hideListValue,
+			systemManaged:     true,
+			validate:          validateStatement,
+			hiddenFromNodes:   true,
+		}
 	case registry.Node.Kind:
 		return kindHooks{
 			target:        platformTarget,
@@ -705,7 +751,13 @@ func validateTenant(ctx context.Context, s *Server, p auth.Principal, old, obj p
 	if plan != oldPlan && !admin {
 		return denied("only platform administrators set spec.plan")
 	}
-	return s.requirePlan(ctx, oldPlan, plan)
+	if err := s.requirePlan(ctx, oldPlan, plan); err != nil {
+		return err
+	}
+	if old != nil && plan != oldPlan {
+		return s.checkTenantPlanPriced(ctx, t.GetMetadata().GetName(), plan)
+	}
+	return nil
 }
 
 // requireLive checks that an object an incoming one depends on exists and is
