@@ -233,6 +233,7 @@ func (s *Server) newControllers() []*controller.Controller {
 			},
 		},
 		s.usageController(),
+		s.billingController(),
 	}
 }
 

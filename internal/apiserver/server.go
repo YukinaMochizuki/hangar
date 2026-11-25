@@ -115,6 +115,12 @@ type Config struct {
 	// people who sign in. Nil issues none, and ServiceTokenIssuerService
 	// fails.
 	Credentials store.Credentials
+	// Meter keeps what billed tenants hold, minute by minute; nil meters
+	// and bills nobody (docs/decisions/billing.md).
+	Meter store.Meter
+	// MeterInterval is how often the meter reads what billed tenants hold;
+	// zero means DefaultMeterInterval.
+	MeterInterval time.Duration
 	// Monitoring is where MonitoringService asks; unset, its calls fail
 	// with Unavailable.
 	Monitoring MonitoringConfig
@@ -197,6 +203,8 @@ type Server struct {
 	// billing serializes every apply and delete of a BillingAccount or a
 	// PriceList, so no account comes to name a price list being deleted.
 	billing sync.Mutex
+	// meterRead keeps the meter to one reading a tenant a minute.
+	meterRead meterRead
 	// nameSuffix makes the random part of the name signing up gives a
 	// person's first tenant and project.
 	nameSuffix func() string
@@ -250,6 +258,9 @@ func New(cfg Config) *Server {
 	}
 	if cfg.EventRetention == 0 {
 		cfg.EventRetention = 10000
+	}
+	if cfg.MeterInterval == 0 {
+		cfg.MeterInterval = DefaultMeterInterval
 	}
 	if cfg.CompactInterval == 0 {
 		cfg.CompactInterval = 10 * time.Minute
@@ -409,6 +420,9 @@ func (s *Server) Run(ctx context.Context) error {
 	g.Go(func() error { return s.bootWatch.Run(gctx) })
 	g.Go(func() error { return s.runGC(gctx) })
 	g.Go(func() error { return s.runCompaction(gctx) })
+	if s.cfg.Meter != nil && !s.cfg.DisableControllers {
+		g.Go(func() error { return s.runMeter(gctx) })
+	}
 	if s.sessions != nil {
 		g.Go(func() error { return s.sessions.Run(gctx) })
 		g.Go(func() error { return s.recordTokenUses(gctx) })
