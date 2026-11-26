@@ -1139,8 +1139,9 @@ after a first layout of one figure and a table read as too flat
 - **The platform's Billing page** (`/platform/billing`) leads with what is
   outstanding across tenants, what the open periods have come to, and the
   accounts counted by type; then each account with its period's progress,
-  what it has come to, a fixed account's worth at list prices, and what it
-  owes; then the statements due, and the price lists. It is listed in the
+  what it has come to, its worth at list prices (a fixed account's
+  holdings, a pay-as-you-go one's before promotions, so a free trial still
+  shows what it is worth), and what it owes; then the statements due, and the price lists. It is listed in the
   platform's sidebar and the palette only where TestPermissions holds
   `billing.billingaccounts.list` at the platform, and states a refusal
   otherwise.

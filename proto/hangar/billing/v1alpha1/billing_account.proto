@@ -97,7 +97,8 @@ message BillingAccountStatus {
   // it, up to accrued_time.
   string accrued = 6;
   // What the open period's holdings come to at price_list's prices, for an
-  // account that names one; for a PAY_AS_YOU_GO account, it is accrued.
+  // account that names one; for a PAY_AS_YOU_GO account, it is accrued
+  // before promotions.
   string metered = 7;
   google.protobuf.Timestamp accrued_time = 8;
   // The agreement the open period started under: its type, and its fee and

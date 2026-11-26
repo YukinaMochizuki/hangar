@@ -352,7 +352,8 @@ type BillingAccountStatus struct {
 	// it, up to accrued_time.
 	Accrued string `protobuf:"bytes,6,opt,name=accrued,proto3" json:"accrued,omitempty"`
 	// What the open period's holdings come to at price_list's prices, for an
-	// account that names one; for a PAY_AS_YOU_GO account, it is accrued.
+	// account that names one; for a PAY_AS_YOU_GO account, it is accrued
+	// before promotions.
 	Metered     string                 `protobuf:"bytes,7,opt,name=metered,proto3" json:"metered,omitempty"`
 	AccruedTime *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=accrued_time,json=accruedTime,proto3" json:"accrued_time,omitempty"`
 	// The agreement the open period started under: its type, and its fee and
