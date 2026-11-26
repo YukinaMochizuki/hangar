@@ -104,8 +104,9 @@ func TestTheNoCloudSerialSaysNet(t *testing.T) {
 
 // TestAFirmwareVMBootsItsOwnKernel: Cloud Hypervisor gets the firmware,
 // its volumes, the root first, as vda and on, the NoCloud serial number, an
-// API socket, its serial console, and the balloon its freed memory goes
-// back through; no platform kernel, boot disk, vsock or virtio console.
+// API socket, its serial console, the balloon its freed memory goes back
+// through, and nested virtualization; no platform kernel, boot disk, vsock
+// or virtio console.
 func TestAFirmwareVMBootsItsOwnKernel(t *testing.T) {
 	l, dir := firmwareDir(t, "exit:0")
 	if got := runFor(t, l, t.Context(), "m1"); got != 0 {
@@ -115,6 +116,7 @@ func TestAFirmwareVMBootsItsOwnKernel(t *testing.T) {
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
 		"--firmware /fw/CLOUDHV.fd",
+		"--cpus boot=2,nested=on",
 		"--balloon size=0,free_page_reporting=on",
 		`--platform system_serial_number="ds=nocloud;s=http://169.254.169.254/nocloud/;dsmode=net"`,
 		"--disk path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw,direct=on path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw,direct=on --net",

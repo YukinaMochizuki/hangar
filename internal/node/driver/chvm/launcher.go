@@ -808,6 +808,24 @@ func diskCount(ln launch) int {
 // on the host until the VM stops (docs/decisions/node-agent.md).
 const freePageReporting = "size=0,free_page_reporting=on"
 
+// netOffloads turns on the virtio-net offloads Cloud Hypervisor v54 turned
+// off by default: without them guest-to-guest TCP fell from about 40 to
+// about 3 Gbit/s on the testbed (docs/decisions/networking.md).
+const netOffloads = ",offload_csum=on,offload_tso=on,offload_ufo=on"
+
+// netArgs is the --net of the launch's first taps interfaces, on fds 3 and
+// on, as the launcher passes them, each with netOffloads; none without taps.
+func netArgs(s driver.VMSpec, taps int) []string {
+	if taps == 0 {
+		return nil
+	}
+	args := []string{"--net"}
+	for n, i := range s.Interfaces[:taps] {
+		args = append(args, fmt.Sprintf("fd=%d,mac=%s", 3+n, i.MAC)+netOffloads)
+	}
+	return args
+}
+
 // zvolDisk is the --disk option of the zvol at node, opened with O_DIRECT:
 // its page cache would be charged to the VM's unit and, at its MemoryMax,
 // push the guest's memory into swap (docs/decisions/node-agent.md).
@@ -855,12 +873,7 @@ func chArgs(ln launch, dir string, taps int) []string {
 		// The unit binds it read-only; every such VM shares it.
 		args = append(args, "path="+ln.TailscaleDisk+",image_type=raw,readonly=on")
 	}
-	if taps > 0 {
-		args = append(args, "--net")
-		for n, i := range s.Interfaces[:taps] {
-			args = append(args, fmt.Sprintf("fd=%d,mac=%s", 3+n, i.MAC))
-		}
-	}
+	args = append(args, netArgs(s, taps)...)
 	return append(args,
 		"--vsock", "cid=3,socket="+filepath.Join(dir, vsockFile),
 		"--console", "tty",

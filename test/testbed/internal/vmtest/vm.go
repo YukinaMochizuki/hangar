@@ -182,7 +182,8 @@ func (v *VM) Start() {
 		"--disk",
 	}
 	args = append(append(args, disks...),
-		"--net", fmt.Sprintf("tap=%s%d,ip=%s,mask=255.255.255.0,mac=%s", tapPrefix, v.n, gw, mac),
+		// The offloads the node turns on (chvm's netOffloads).
+		"--net", fmt.Sprintf("tap=%s%d,ip=%s,mask=255.255.255.0,mac=%s,offload_csum=on,offload_tso=on,offload_ufo=on", tapPrefix, v.n, gw, mac),
 		"--vsock", fmt.Sprintf("cid=%d,socket=%s", GuestCID, v.Path("vsock")),
 		"--console", "file="+v.Path("console"),
 		"--serial", "file="+v.Path("serial"),

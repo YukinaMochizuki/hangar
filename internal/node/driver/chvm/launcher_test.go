@@ -406,7 +406,7 @@ func TestTheLauncherExitsAsTheContainer(t *testing.T) {
 				t.Error("the legacy socket was left")
 			}
 			for _, want := range []string{
-				"boot=2", "size=512M", "path=" + filepath.Join(dir, diskNode) + ",image_type=raw,direct=on,id=" + rootDiskID, "fd=3,mac=02:00:00:00:00:01", "tty",
+				"boot=2", "size=512M", "path=" + filepath.Join(dir, diskNode) + ",image_type=raw,direct=on,id=" + rootDiskID, "fd=3,mac=02:00:00:00:00:01,offload_csum=on,offload_tso=on,offload_ufo=on", "tty",
 				"size=0,free_page_reporting=on", "path=" + filepath.Join(dir, apiFile),
 			} {
 				if !slices.Contains(ch.Args, want) {

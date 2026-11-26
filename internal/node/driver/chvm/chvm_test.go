@@ -978,6 +978,57 @@ func TestVolumesAreWhereTheirDevicesSay(t *testing.T) {
 	}
 }
 
+// TestEveryNetHasItsOffloads: each tap of a container, a firmware VM and a
+// file share's server is a --net with the checksum, TSO and UFO offloads
+// on, which Cloud Hypervisor v54 turned off by default; a firmware VM alone
+// gets nested virtualization, and a converter no --net at all.
+func TestEveryNetHasItsOffloads(t *testing.T) {
+	ctr := testSpec("m1", driver.RestartAlways)
+	ctr.Interfaces = append(slices.Clone(ctr.Interfaces), driver.Interface{MachineUID: "m1", Name: "eth1", NetworkUID: "n2", MAC: "02:00:00:00:00:02"})
+	fw := ctr
+	fw.Firmware = true
+	srv := serverSpec("s1")
+	conv := converterSpec("/f", "/t")
+	for name, c := range map[string]struct {
+		args   []string
+		nets   []string
+		nested bool
+	}{
+		"container": {chArgs(launch{Spec: ctr}, "/d", 2), []string{
+			"fd=3,mac=02:00:00:00:00:01,offload_csum=on,offload_tso=on,offload_ufo=on",
+			"fd=4,mac=02:00:00:00:00:02,offload_csum=on,offload_tso=on,offload_ufo=on",
+		}, false},
+		"firmware VM": {firmwareArgs(launch{Spec: fw}, "/d", 2), []string{
+			"fd=3,mac=02:00:00:00:00:01,offload_csum=on,offload_tso=on,offload_ufo=on",
+			"fd=4,mac=02:00:00:00:00:02,offload_csum=on,offload_tso=on,offload_ufo=on",
+		}, true},
+		"file share server": {chArgs(launch{Spec: srv}, "/d", 1), []string{
+			"fd=3,mac=02:00:00:00:00:01,offload_csum=on,offload_tso=on,offload_ufo=on",
+		}, false},
+		"converter": {chArgs(launch{Spec: conv}, "/d", 0), nil, false},
+	} {
+		var nets []string
+		if i := slices.Index(c.args, "--net"); i >= 0 {
+			for _, a := range c.args[i+1:] {
+				if strings.HasPrefix(a, "--") {
+					break
+				}
+				nets = append(nets, a)
+			}
+		}
+		if !slices.Equal(nets, c.nets) {
+			t.Errorf("%s: --net %q, want %q", name, nets, c.nets)
+		}
+		cpus := c.args[slices.Index(c.args, "--cpus")+1]
+		if got := strings.HasSuffix(cpus, ",nested=on"); got != c.nested {
+			t.Errorf("%s: --cpus %q, nested=on %v, want %v", name, cpus, got, c.nested)
+		}
+		if strings.Count(strings.Join(c.args, " "), "nested") > 1 {
+			t.Errorf("%s: nested more than once in %q", name, c.args)
+		}
+	}
+}
+
 // TestEveryContainerGetsTheTailscaleDisk: every container VM, joining a
 // tailnet or not, gets the host's tailscale disk, read-only, after its
 // volumes, so their devices stay where they were, at the device its boot
