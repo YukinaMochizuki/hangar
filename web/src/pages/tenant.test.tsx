@@ -49,6 +49,8 @@ type Setup = {
   taken?: boolean;
   /** The caller holds platform.monitoring.read at the platform, as an administrator does. */
   platform?: boolean;
+  /** The plan's memory_limit_percent, with 8Gi of memory, and the memory of the machines asked to run. */
+  pool?: { percent: number; ceiling: string };
 };
 
 function api(s: Setup = {}): Api {
@@ -58,8 +60,8 @@ function api(s: Setup = {}): Api {
     spec: { displayName: names[name] },
     status: {
       plan: "default",
-      limits: { cpu: "8", memory: "16Gi", disk: "100Gi", machines: 10, projects: 5 },
-      usage: { cpu: "5", memory: "5Gi", disk: "30Gi", machines: 3, projects: s.used ?? 2 },
+      limits: { cpu: "8", memory: s.pool ? "8Gi" : "16Gi", disk: "100Gi", machines: 10, projects: 5, memoryLimitPercent: s.pool?.percent },
+      usage: { cpu: "5", memory: "5Gi", disk: "30Gi", machines: 3, projects: s.used ?? 2, memoryCeiling: s.pool?.ceiling ?? "5Gi" },
     },
   });
   return fakeApi((r) => {
@@ -186,6 +188,50 @@ describe("TenantOverview", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Edit limits/ }));
     expect(await screen.findByText("Limits of Agents")).toBeTruthy();
     expect((screen.getByLabelText("vCPU") as HTMLInputElement).value).toBe("2");
+  });
+});
+
+describe("TenantOverview's memory with a pool", () => {
+  function show(s: Setup) {
+    render(<TenantOverview />, { wrapper: withApi(api(s), { kind: "tenant", name: "acme" }) });
+  }
+  /** The Memory tile, by its label, and its bar's fill. */
+  const tile = () => screen.getAllByText("Memory")[0].parentElement!;
+  const fill = () => tile().querySelector(".rounded-full > .rounded-full")!;
+
+  it("counts the memory of machines asked to run against the plan's, says by how much it is past, and colours the bar by the real cap", async () => {
+    show({ pool: { percent: 200, ceiling: "11Gi" } });
+    await waitFor(() => expect(within(tile()).getByText("11")).toBeTruthy());
+    expect(within(tile()).getByText("/ 8 GiB")).toBeTruthy();
+    expect(within(tile()).getByText("3 GiB over plan · shared")).toBeTruthy();
+    // Full on the plan's scale, and 11 of the 16 GiB cap is not near it.
+    expect((fill() as HTMLElement).style.width).toBe("100%");
+    expect(fill().className).toContain("bg-foreground/70");
+    // No percent is shown anywhere.
+    expect(screen.queryByText(/200/)).toBeNull();
+    expect(within(screen.getByRole("table")).getByText("Memory (reserved)")).toBeTruthy();
+  });
+
+  it("looks as any limit's does while within the plan, its colour still by the cap", async () => {
+    show({ pool: { percent: 200, ceiling: "7Gi" } });
+    await waitFor(() => expect(within(tile()).getByText("7")).toBeTruthy());
+    expect(within(tile()).queryByText(/over plan|shared/)).toBeNull();
+    // 7 of 8 would be near a limit; it is 7 of a 16 GiB cap.
+    expect(fill().className).toContain("bg-foreground/70");
+  });
+
+  it("turns the bar amber from 80% of the cap", async () => {
+    show({ pool: { percent: 200, ceiling: "13Gi" } });
+    expect(await screen.findByText("5 GiB over plan · shared")).toBeTruthy();
+    expect(fill().className).toContain("bg-pending");
+  });
+
+  it("keeps today's tile and header without a pool", async () => {
+    show({ pool: { percent: 100, ceiling: "5Gi" } });
+    expect(await screen.findByText("Plan default")).toBeTruthy();
+    expect(within(tile()).getByText("5")).toBeTruthy();
+    expect(within(screen.getByRole("table")).getByText("Memory")).toBeTruthy();
+    expect(screen.queryByText("Memory (reserved)")).toBeNull();
   });
 });
 

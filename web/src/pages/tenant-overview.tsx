@@ -10,6 +10,7 @@ import { RowMenu } from "@/components/menu";
 import { ProjectLimitsDialog, useMaySetLimits } from "@/components/project-limits-dialog";
 import { limitDims, limitValue, ownLimitCount, type LimitKey } from "@/lib/project-limits";
 import { OtherLimits, computeTiles, otherTiles, QuotaTiles } from "@/components/quota";
+import { usePoolTile } from "@/lib/memory-pool";
 import { Topbar, useTenantName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
 import { Button, Card, CardHeader, CopyButton } from "@/components/ui";
@@ -46,7 +47,7 @@ function ProjectRowMenu({ p, may }: { p: Project; may: boolean }) {
   );
 }
 
-function Projects({ tenant }: { tenant: string }) {
+function Projects({ tenant, pooled }: { tenant: string; pooled: boolean }) {
   const { projects, loading, error, refetch } = useProjects();
   const own = projects.filter((p) => p.spec?.tenant === tenant);
   const [creating, setCreating] = useState(false);
@@ -79,7 +80,7 @@ function Projects({ tenant }: { tenant: string }) {
               <th className="px-4 py-2 font-medium">Project</th>
               <th className="px-4 py-2 text-right font-medium">Machines</th>
               <th className="px-4 py-2 text-right font-medium">vCPU</th>
-              <th className="px-4 py-2 text-right font-medium">Memory</th>
+              <th className="px-4 py-2 text-right font-medium">{pooled ? "Memory (reserved)" : "Memory"}</th>
               <th className="px-4 py-2 text-right font-medium">Disk</th>
               <th className="w-12 px-2 py-2" aria-label="Actions" />
             </tr>
@@ -128,6 +129,7 @@ export function TenantOverview() {
   const tenant = useTenantName();
   const q = useQuery(TenantService.method.getTenant, { name: tenant }, { refetchInterval: 15_000, retry: false });
   const t = q.data?.tenant;
+  const pool = usePoolTile(tenant, t?.status?.limits, t?.status?.usage);
   const missing = !!q.error && isNotFound(q.error);
   const denied = !!q.error && isPermissionDenied(q.error);
   const hidden = missing || denied;
@@ -162,11 +164,11 @@ export function TenantOverview() {
         ) : q.error ? (
           <ErrorNotice error={q.error} title="The tenant did not load" onRetry={() => void q.refetch()} className="p-0" />
         ) : (
-          <QuotaTiles tiles={computeTiles(t?.status?.limits, t?.status?.usage)} loading={q.isPending} />
+          <QuotaTiles tiles={computeTiles(t?.status?.limits, t?.status?.usage)} loading={q.isPending} pool={pool} />
         )}
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0">
-            <Projects tenant={tenant} />
+            <Projects tenant={tenant} pooled={!!pool} />
           </div>
           {!hidden && !q.error && <OtherLimits tiles={otherTiles(t?.status?.limits, t?.status?.usage, true)} loading={q.isPending} />}
         </div>

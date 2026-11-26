@@ -40,6 +40,8 @@ export function toUsage(r: UsageResponse, kind: MachineKind): Usage {
       r.memoryKind === MachineMemoryKind.GUEST_USED ? "guest" : r.memoryKind === MachineMemoryKind.HOST_HELD ? "host" : kind === "Container" ? "guest" : "host",
     cpu: { unit: "ratio", capacity: 1, ...series((p) => p.cpu) },
     memory: { unit: "bytes", ...(r.memoryLimitBytes > 0n ? { capacity: Number(r.memoryLimitBytes) } : {}), ...series(mem) },
+    // What its pool leaves its guest now: its memory less its balloon, when the node can tell.
+    ...(r.balloonBytes !== undefined && r.memoryLimitBytes > 0n ? { sizeNowBytes: Number(r.memoryLimitBytes - r.balloonBytes) } : {}),
   };
 }
 

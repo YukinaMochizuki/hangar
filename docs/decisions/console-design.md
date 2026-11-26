@@ -601,6 +601,65 @@ Settled with the owner on screenshots before the dialogs sent anything.
   `prefers-reduced-motion` nothing sweeps and the host replaces the empty
   body at once.
 
+### Memory pools
+
+Settled with the owner on mock screens before they were built
+(`memory-pool.md` for what a pool is). The words are Dedicated and Shared
+for a machine, "reserved" for what a machine keeps and "limit" for its
+memory, chosen to read plainly to people whose English is a second
+language; the plan's percent is never shown.
+
+- **The console treats a tenant as pooled** when its plan's
+  `memory_limit_percent`, read from the project's or the tenant's
+  `status.limits`, is above 100 with a memory limit, and its
+  BillingAccount, read only where the caller may, is not PAY_AS_YOU_GO
+  (`web/src/lib/memory-pool.ts`). Without a pool nothing below is drawn
+  and every screen is as before.
+- **The machine form asks Dedicated or Shared under the size**
+  (`web/src/components/memory-share.tsx`), Dedicated first, each with one
+  line: "All 4 GiB reserved." or "2 GiB reserved, up to 4 GiB while Acme's
+  other machines leave memory free." Shared reserves memory ÷ the plan's
+  percent in 256 MiB steps, following the size, until "Change reserved
+  memory" opens a field; the summary says "Shared memory, 2 GiB reserved"
+  and the manifest carries `memoryReserved`. The quota check counts the
+  reservation against the memory limit and the memory against the plan's
+  percent of it ("shared memory"); a Dedicated size past the memory limit
+  adds "Shared counts only its reserved 2 GiB." to its notice, the one
+  place the choice is pointed at. An edit lists a reservation's change as
+  restarting nothing, or as "Takes effect at the next restart" for a
+  running machine whose Machine names no pool yet: the API does not say
+  whether a running machine has joined its pool's slice, and that is the
+  case it can tell. An edit writes the reservation shown whenever it
+  differs from the stored one, so a resize never keeps a stale one.
+- **The Overview's Memory tile counts the memory of machines asked to run**
+  (`usage.memory_ceiling`) against the plan's memory, as every tile counts
+  against its limit, so it can read "11 / 8 GiB": the bar is then full and
+  a note in amber beside the number says by how much, in the longest of "3
+  GiB over plan · shared", "+3 GiB shared" or "+3 GiB" that fits, measured
+  rather than set by width. The bar's colour follows the real cap, the
+  plan's memory times its percent, from 80% of it, so 7 of 8 with a 16 GiB
+  cap is not amber. The tile keeps its neighbours' height: settled with the
+  owner on screenshots, after a taller tile with two bars, and then a note
+  under the number, left space under the others. A tenant's Projects table
+  heads its memory column "Memory (reserved)", which is what it counts.
+- **A Shared machine is marked "Shared"** beside its size in its list's row
+  and its page's head. Its page's Summary has a Memory row, "Shared · 4 GiB
+  limit · 2.6 GiB available now · 2 GiB reserved", what is available being
+  its memory less its balloon from its node's Usage; its Usage card draws
+  that as a dashed line on the memory plot. What the node says is shown
+  where it happened: a VM killed for its pool's memory (`OOMKilled`) is a
+  banner and a line under the row's state for a day after the kill, its
+  time read from the condition's message, then only the condition. A
+  balloon that does not follow (`BalloonResponsive` False) reads "Not
+  sharing memory" under the row's state, and on the page "<name> isn't
+  sharing its memory" with why in plain words: its memory driver has not
+  responded for how long, so it cannot give back memory it is not using and
+  the tenant's other Shared machines cannot use it; it keeps running, and a
+  restart fixes it. It hides what is available, which it makes untrue.
+  Settled with the owner, over "not giving memory back", which said what
+  happens but not why. A kill that left the machine down already has its
+  Failed banner, so it gets no second one.
+
 ### Disks and images
 
 Settled with the owner on the screens, before they read the API.

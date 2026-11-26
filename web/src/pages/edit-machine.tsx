@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/states";
 import { applyMachineAt, useReadMachine } from "@/lib/actions";
 import type { MachineObject } from "@/lib/machine-edit";
 import { useMachines, type MachineKind, type MachineView } from "@/lib/machines";
+import { outsidePool } from "@/lib/memory-pool";
 import { useMayApplyMachine } from "@/lib/permissions";
 import { wholeGiB } from "@/lib/quantity";
 import { MachineForm } from "@/pages/create-machine";
@@ -30,6 +31,7 @@ function EditForm({ m }: { m: MachineView }) {
         placedDiskGi: placedDisk ? wholeGiB(placedDisk) : undefined,
         write: (o) => applyMachineAt(transport, o),
         reload: { pending: read.isPending, error: read.error, run: () => read.mutate(undefined, { onSuccess: setBase }) },
+        outsidePool: outsidePool(m),
       }}
     />
   );

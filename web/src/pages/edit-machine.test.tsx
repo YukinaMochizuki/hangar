@@ -58,12 +58,12 @@ const size = (name: string, cpu: string, memory: string, disk: string, order: nu
 type Fake = {
   container?: () => Container;
   vm?: () => VirtualMachine;
-  /** The container's Machine: on node, holding disk. */
-  machine?: { node: string; disk: string };
+  /** The container's Machine: on node, holding disk, in its tenant's memory pool when pool is set. */
+  machine?: { node: string; disk: string; pool?: boolean };
   /** What ApplyContainer and ApplyVirtualMachine fail with, when set. */
   fail?: () => ConnectError | undefined;
   perms?: () => Promise<string[]> | string[];
-  quota?: { limits: { memory?: string }; usage: { memory?: string } };
+  quota?: { limits: { memory?: string; memoryLimitPercent?: number }; usage: { memory?: string; memoryCeiling?: string } };
   /** The project's port forwards; none unless set. */
   forwards?: PortForward[];
 };
@@ -96,7 +96,11 @@ function api(f: Fake = {}) {
           ? [
               create(MachineSchema, {
                 metadata: { name: "m-web", project: "demo", uid: "m-u-web", ownerReferences: [{ kind: "Container", name: "web", controller: true }] },
-                spec: { node: f.machine.node, resources: { cpu: "1", memory: "512Mi", disk: f.machine.disk } },
+                spec: {
+                  node: f.machine.node,
+                  resources: { cpu: "1", memory: "512Mi", disk: f.machine.disk },
+                  memoryPool: f.machine.pool ? { name: "acme", size: "8192Mi" } : undefined,
+                },
               }),
             ]
           : [],
@@ -532,5 +536,51 @@ describe("the edit page's port forwards and a VM's fields", () => {
     const sent = applies(a)[0]!.obj as VirtualMachine;
     expect(sent.spec?.platform?.serialNumber).toBe("ARX-0042");
     expect(sent.spec?.tpm?.enabled).toBe(true);
+  });
+});
+
+describe("the edit page's memory in a pool", () => {
+  // Acme's plan: 8 GiB, its machines' memory together up to 200% of it.
+  const quota = { limits: { memory: "8Gi", memoryLimitPercent: 200 }, usage: { memory: "2Gi", memoryCeiling: "4Gi" } };
+  const running = (reserved: string) => () =>
+    create(ContainerSchema, {
+      metadata: { name: "web", project: "demo", uid: "u-web", resourceVersion: 21n },
+      spec: { image: "nginx:1", resources: { cpu: "2", memory: "4Gi", memoryReserved: reserved }, runState: ContainerRunState.RUNNING },
+    });
+  const memoryChoice = () => screen.getByRole("radiogroup", { name: "Memory" });
+
+  it("opens a Shared machine on its reservation, and going Dedicated restarts nothing", async () => {
+    const a = await openEdit("Container", { container: running("2Gi"), machine: { node: "n1", disk: "10Gi", pool: true }, quota });
+    await waitFor(() => expect(within(memoryChoice()).getByRole("radio", { name: "Shared" }).getAttribute("aria-checked")).toBe("true"));
+    expect((screen.getByLabelText("Reserved memory, GiB") as HTMLInputElement).value).toBe("2");
+    expect(applyButton().textContent).toBe("No change");
+    fireEvent.click(within(memoryChoice()).getByRole("radio", { name: "Dedicated" }));
+    expect(screen.getByText("Restarts nothing")).toBeTruthy();
+    expect(screen.getByText("Shared, 2 GiB reserved → Dedicated")).toBeTruthy();
+    expect(screen.queryByText("Takes effect at the next restart")).toBeNull();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    expect((applies(a)[0]!.obj as Container).spec?.resources).toMatchObject({ cpu: "2", memory: "4Gi", memoryReserved: "" });
+  });
+
+  it("says a running machine not in its pool yet takes a reservation at its next restart", async () => {
+    await openEdit("Container", { container: running(""), machine: { node: "n1", disk: "10Gi" }, quota });
+    await waitFor(() => expect(within(memoryChoice()).getByRole("radio", { name: "Dedicated" }).getAttribute("aria-checked")).toBe("true"));
+    fireEvent.click(within(memoryChoice()).getByRole("radio", { name: "Shared" }));
+    expect(screen.getByText("Takes effect at the next restart")).toBeTruthy();
+    expect(screen.getByText("Dedicated → Shared, 2 GiB reserved")).toBeTruthy();
+    expect(screen.queryByText(/^Restarts /)).toBeNull();
+  });
+
+  it("writes the reservation with a resize, which would otherwise drop it", async () => {
+    const a = await openEdit("Container", { container: running("2Gi"), machine: { node: "n1", disk: "10Gi", pool: true }, quota });
+    await waitFor(() => expect(within(memoryChoice()).getByRole("radio", { name: "Shared" }).getAttribute("aria-checked")).toBe("true"));
+    fireEvent.click(sizeCard("S"));
+    // S is 2 GiB, of which 1 is reserved.
+    fireEvent.change(screen.getByLabelText("Reserved memory, GiB"), { target: { value: "1" } });
+    expect(screen.getByText("Shared memory, 1 GiB reserved")).toBeTruthy();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    expect((applies(a)[0]!.obj as Container).spec?.resources).toMatchObject({ cpu: "1", memory: "2Gi", memoryReserved: "1Gi" });
   });
 });

@@ -15,6 +15,7 @@ import { machinePath, useMachines, type MachineKind, type MachineView } from "@/
 import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
 import { machinePermKey, machinePerms, useMachineCan } from "@/lib/permissions";
 import { formatNumber } from "@/lib/quantity";
+import { MemoryStateLine, SharedBadge } from "@/components/machine-memory";
 
 type StatusFilter = "all" | "running" | "stopped" | "failed";
 
@@ -54,6 +55,7 @@ export function MachineStatusCell({ m }: { m: MachineView }) {
         {m.deleting ? "Deleting" : phaseLabel(m.phase, m.waitingForRoom !== undefined)}
       </span>
       {m.phase === MachinePhase.FAILED && <span className="block text-[11.5px] text-fail">{notReadyReason(m)}</span>}
+      <MemoryStateLine m={m} />
     </>
   );
 }
@@ -177,6 +179,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
                           <span className="text-muted tabular">
                             {formatNumber(m.cpu)} vCPU · {formatNumber(m.memoryGi)} GiB
                           </span>
+                          <SharedBadge m={m} />
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px]">

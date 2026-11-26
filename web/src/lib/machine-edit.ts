@@ -30,7 +30,7 @@ import {
 } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import type { Advanced, Restart } from "@/components/container-advanced";
 import type { VolumeRow } from "@/components/volume-picker";
-import { formatNumber, quantityCPU, quantityGiB } from "@/lib/quantity";
+import { formatNumber, parseQuantity, quantityCPU, quantityGiB } from "@/lib/quantity";
 import { joinWords } from "@/lib/shell-words";
 
 export type MachineObject = Container | VirtualMachine;
@@ -136,6 +136,8 @@ export type FormSpec = {
   volumes?: VolumeRow[];
   cpu?: string;
   memory?: string;
+  /** The memory reserved in its tenant's pool; empty is all of memory (Dedicated). */
+  memoryReserved?: string;
   disk?: string;
   /** A container's root disk growing by itself; null turns it off. */
   diskGrow?: { max: string; threshold: string; step: string } | null;
@@ -165,10 +167,11 @@ export function editedObject(base: MachineObject, changed: FormSpec): MachineObj
     if (changed.restartPolicy !== undefined) s.restartPolicy = changed.restartPolicy;
     if (changed.interfaces !== undefined) s.interfaces = changed.interfaces;
     if (changed.volumes !== undefined) s.volumes = volumesOf(changed.volumes, (base as Container).spec?.volumes);
-    if (changed.cpu !== undefined || changed.memory !== undefined || changed.disk !== undefined || changed.diskGrow !== undefined) {
+    if (changed.cpu !== undefined || changed.memory !== undefined || changed.memoryReserved !== undefined || changed.disk !== undefined || changed.diskGrow !== undefined) {
       s.resources = create(ResourcesSchema, {
         cpu: changed.cpu ?? s.resources?.cpu ?? "",
         memory: changed.memory ?? s.resources?.memory ?? "",
+        memoryReserved: changed.memoryReserved ?? s.resources?.memoryReserved ?? "",
         disk: changed.disk ?? s.resources?.disk ?? "",
         diskGrow: changed.diskGrow === null ? undefined : (changed.diskGrow ?? s.resources?.diskGrow),
       });
@@ -183,17 +186,21 @@ export function editedObject(base: MachineObject, changed: FormSpec): MachineObj
   if (changed.sshAuthorizedKeys !== undefined) s.sshAuthorizedKeys = changed.sshAuthorizedKeys;
   if (changed.userData !== undefined) s.userData = changed.userData;
   if (changed.serialNumber !== undefined) s.platform = changed.serialNumber ? create(VirtualMachinePlatformSchema, { serialNumber: changed.serialNumber }) : undefined;
-  if (changed.cpu !== undefined || changed.memory !== undefined) {
+  if (changed.cpu !== undefined || changed.memory !== undefined || changed.memoryReserved !== undefined) {
     s.resources = create(VirtualMachineResourcesSchema, {
       cpu: changed.cpu ?? s.resources?.cpu ?? "",
       memory: changed.memory ?? s.resources?.memory ?? "",
+      memoryReserved: changed.memoryReserved ?? s.resources?.memoryReserved ?? "",
     });
   }
   return o;
 }
 
-/** What a change does once applied, as the field's comment in the proto says. */
-export type Effect = "rebuild" | "restart" | "nothing";
+/**
+ * What a change does once applied, as the field's comment in the proto says;
+ * "next-restart" restarts nothing but waits for the machine's next start.
+ */
+export type Effect = "rebuild" | "restart" | "next-restart" | "nothing";
 
 export type Change = { field: string; label: string; detail: string; effect: Effect };
 
@@ -249,6 +256,24 @@ function listDetail(a: JsonValue | undefined, b: JsonValue | undefined, key: (x:
   return out.join(", ") || "reordered";
 }
 
+/** A reservation as a change shows it: Dedicated, all of memory reserved, or Shared with what it keeps. */
+function reservedText(reserved: JsonValue | undefined, memory: string): string {
+  const r = String(reserved ?? "");
+  return !r || parseQuantity(r) >= parseQuantity(memory) ? "Dedicated" : `Shared, ${formatNumber(parseQuantity(r) / 2 ** 30)} GiB reserved`;
+}
+
+/**
+ * A reservation change. It restarts nothing: it follows while the machine
+ * runs in its pool (docs/decisions/memory-pool.md); a running machine not
+ * in its pool yet joins it when it starts again.
+ */
+function addReserved(ra: Json, rb: Json, memA: string, memB: string, outside: boolean, out: Change[]) {
+  const a = reservedText(ra.memoryReserved, memA);
+  const b = reservedText(rb.memoryReserved, memB);
+  if (a === b) return;
+  out.push({ field: "memoryReserved", label: "Memory", effect: outside ? "next-restart" : "nothing", detail: `${a} → ${b}` });
+}
+
 const restartText = (v: JsonValue | undefined) =>
   ({ RESTART_POLICY_ON_FAILURE: "on-failure", RESTART_POLICY_NEVER: "no" } as Record<string, string>)[String(v)] ?? "always";
 
@@ -272,7 +297,7 @@ function growText(g: Json | undefined): string {
  * (the metadata service, cloud-init's first boot) restart nothing. Either
  * kind's interfaces whose aliases alone changed restart nothing.
  */
-export function changesOf(base: MachineObject, next: MachineObject): Change[] {
+export function changesOf(base: MachineObject, next: MachineObject, opts: { outsidePool?: boolean } = {}): Change[] {
   const a = specJson(base);
   const b = specJson(next);
   const out: Change[] = [];
@@ -292,6 +317,7 @@ export function changesOf(base: MachineObject, next: MachineObject): Change[] {
     const rb = (b.resources ?? {}) as Json;
     const cpuA = String(ra.cpu || d.cpu), memA = String(ra.memory || d.memory), cpuB = String(rb.cpu || d.cpu), memB = String(rb.memory || d.memory);
     if (!same(ra.cpu, rb.cpu) || !same(ra.memory, rb.memory)) out.push({ field: "size", label: "Size", effect: "restart", detail: `${sizeText(cpuA, memA)} → ${sizeText(cpuB, memB)}` });
+    addReserved(ra, rb, memA, memB, !!opts.outsidePool, out);
     // A root disk grows while its container runs (docs/decisions/disk-autogrow.md).
     if (!same(ra.disk, rb.disk)) {
       out.push({ field: "disk", label: "Disk", effect: "nothing", detail: `${formatNumber(quantityGiB(String(ra.disk || d.disk)))} → ${formatNumber(quantityGiB(String(rb.disk || d.disk)))} GiB` });
@@ -304,9 +330,10 @@ export function changesOf(base: MachineObject, next: MachineObject): Change[] {
     const d = vmDefaults;
     const ra = (a.resources ?? {}) as Json;
     const rb = (b.resources ?? {}) as Json;
-    if (!same(ra, rb)) {
+    if (!same(ra.cpu, rb.cpu) || !same(ra.memory, rb.memory)) {
       out.push({ field: "size", label: "Size", effect: "restart", detail: `${sizeText(String(ra.cpu || d.cpu), String(ra.memory || d.memory))} → ${sizeText(String(rb.cpu || d.cpu), String(rb.memory || d.memory))}` });
     }
+    addReserved(ra, rb, String(ra.memory || d.memory), String(rb.memory || d.memory), !!opts.outsidePool, out);
     addInterfaces(a, b, out);
     add("disks", "Data disks", "restart", listDetail(a.disks, b.disks, (d) => String(d.disk ?? "")));
     add("fileShares", "File shares", "nothing", listDetail(a.fileShares, b.fileShares, (s) => String(s.name ?? "")));
@@ -318,16 +345,22 @@ export function changesOf(base: MachineObject, next: MachineObject): Change[] {
   return out;
 }
 
-/** How much more of each limit an edit takes: the new resources less the old, never the machine's whole size. */
-export function quotaDelta(base: MachineObject, next: MachineObject): { cpu: number; memoryGi: number; diskGi: number } {
+/**
+ * How much more of each limit an edit takes: the new resources less the old,
+ * never the machine's whole size. With a pool, memory counts what is
+ * reserved, as the quota does (docs/decisions/memory-pool.md).
+ */
+export function quotaDelta(base: MachineObject, next: MachineObject, opts: { pooled?: boolean } = {}): { cpu: number; memoryGi: number; diskGi: number } {
+  const mem = (x: { memory?: string; memoryReserved?: string } | undefined, d: string) =>
+    quantityGiB((opts.pooled && x?.memoryReserved) || x?.memory || d);
   const r = (o: MachineObject) => {
     if (o.$typeName === ContainerSchema.typeName) {
       const x = (o as Container).spec?.resources;
       const d = containerDefaults;
-      return { cpu: quantityCPU(x?.cpu || d.cpu), memoryGi: quantityGiB(x?.memory || d.memory), diskGi: quantityGiB(x?.disk || d.disk) };
+      return { cpu: quantityCPU(x?.cpu || d.cpu), memoryGi: mem(x, d.memory), diskGi: quantityGiB(x?.disk || d.disk) };
     }
     const x = (o as VirtualMachine).spec?.resources;
-    return { cpu: quantityCPU(x?.cpu || vmDefaults.cpu), memoryGi: quantityGiB(x?.memory || vmDefaults.memory), diskGi: 0 };
+    return { cpu: quantityCPU(x?.cpu || vmDefaults.cpu), memoryGi: mem(x, vmDefaults.memory), diskGi: 0 };
   };
   const a = r(base);
   const b = r(next);

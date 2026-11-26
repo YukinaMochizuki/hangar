@@ -17,6 +17,7 @@ import { DiskSchema, DiskService, type Disk } from "@hangar/api/hangar/storage/v
 import { FileShareSchema, FileShareService, type FileShare } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
 import { ImageSchema, ImageService, type Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
+import { BillingAccountService, BillingType } from "@hangar/api/hangar/billing/v1alpha1/billing_account_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -63,7 +64,12 @@ type Fake = {
   /** Answers ListMachineSizes instead, when set. */
   sizesAnswer?: () => Promise<{ items: MachineSize[] }>;
   /** The project's limits and usage; none unless set. */
-  quota?: { limits: { cpu?: string; memory?: string; disk?: string }; usage: { cpu?: string; memory?: string; disk?: string } };
+  quota?: {
+    limits: { cpu?: string; memory?: string; disk?: string; memoryLimitPercent?: number };
+    usage: { cpu?: string; memory?: string; disk?: string; memoryCeiling?: string };
+  };
+  /** The tenant's billing account's type; it has none unless set. */
+  billing?: BillingType;
   /** The platform's images; debian-13, of no stated smallest disk, unless set. */
   images?: Image[];
   /** The project's disks, file shares and port forwards; none unless set. */
@@ -111,10 +117,16 @@ function api(f: Fake) {
       },
     });
     r.service(ProjectService, {
-      getProject: () => ({ project: { metadata: { name: "demo" }, status: f.quota ?? { limits: {}, usage: {} } } }),
+      getProject: () => ({ project: { metadata: { name: "demo" }, spec: { tenant: "acme" }, status: f.quota ?? { limits: {}, usage: {} } } }),
       listProjects: () => ({ items: [] }),
     });
-    r.service(TenantService, { listTenants: () => ({ items: [] }) });
+    r.service(TenantService, { listTenants: () => ({ items: [{ metadata: { name: "acme" }, spec: { displayName: "Acme" } }] }) });
+    r.service(BillingAccountService, {
+      getBillingAccount: () => {
+        if (f.billing === undefined) throw new ConnectError("no billing account", Code.NotFound);
+        return { billingAccount: { metadata: { name: "acme" }, spec: { type: f.billing } } };
+      },
+    });
     r.service(NetworkService, { listNetworks: () => ({ items: [{ metadata: { name: "default" }, spec: { ipv4Cidr: "10.0.0.0/24" } }] }) });
     r.service(SecurityGroupService, { listSecurityGroups: () => ({ items: [] }) });
     r.service(ImageService, { listImages: () => ({ items: f.images ?? [catalogImage("debian-13", "debian")] }) });
@@ -842,5 +854,106 @@ describe("CreateMachine's VM fields and port forwards", () => {
     expect(await screen.findByText(/Port forward 1: 70000 is not a port/)).toBeTruthy();
     expect(submitButton().disabled).toBe(true);
     void a;
+  });
+});
+
+describe("CreateMachine's memory in a pool", () => {
+  // Acme's plan: 8 GiB, its machines' memory together up to 200% of it.
+  const pooled = (usage: { memory?: string; memoryCeiling?: string } = {}) => ({
+    limits: { memory: "8Gi", memoryLimitPercent: 200 },
+    usage: { memory: "0", memoryCeiling: "0", ...usage },
+  });
+  const memoryChoice = () => screen.queryByRole("radiogroup", { name: "Memory" });
+  const choose = (label: "Dedicated" | "Shared") => fireEvent.click(within(memoryChoice()!).getByRole("radio", { name: label }));
+
+  it("offers no choice to a tenant without a pool, and sends no reservation", async () => {
+    const a = api({ containers: async () => ({ items: [] }), quota: { limits: { memory: "8Gi", memoryLimitPercent: 100 }, usage: {} } });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await screen.findByRole("radio", { name: "Size M" });
+    await createAllowed(a, "api");
+    expect(memoryChoice()).toBeNull();
+    expect(sentResources(a).memoryReserved).toBe("");
+    // Nobody asked about billing: the plan already says there is no pool.
+    expect(a.calls).not.toContain("GetBillingAccount");
+  });
+
+  it("offers no choice to a tenant paying as it goes, whatever its plan", async () => {
+    const a = api({ containers: async () => ({ items: [] }), quota: pooled(), billing: BillingType.PAY_AS_YOU_GO });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(a.calls).toContain("GetBillingAccount"));
+    await createAllowed(a, "api");
+    expect(memoryChoice()).toBeNull();
+  });
+
+  it("starts Dedicated, all of the memory reserved, and sends no reservation", async () => {
+    const a = api({ containers: async () => ({ items: [] }), quota: pooled(), billing: BillingType.FIXED });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(memoryChoice()).not.toBeNull());
+    expect(within(memoryChoice()!).getByRole("radio", { name: "Dedicated" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("All 4 GiB reserved.")).toBeTruthy();
+    await createAllowed(a, "api");
+    expect(sentResources(a).memoryReserved).toBe("");
+  });
+
+  it("reserves memory ÷ the plan's percent when Shared, and says so in the summary and the manifest", async () => {
+    const a = api({ containers: async () => ({ items: [] }), quota: pooled() });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(memoryChoice()).not.toBeNull());
+    choose("Shared");
+    expect(screen.getByText("2 GiB reserved, up to 4 GiB while Acme's other machines leave memory free.")).toBeTruthy();
+    expect(screen.getByText("Shared memory, 2 GiB reserved")).toBeTruthy();
+    expect(manifest()).toContain("memoryReserved: 2Gi");
+    // Another size follows: 8 GiB reserves 4.
+    fireEvent.click(screen.getByRole("radio", { name: "Size L" }));
+    expect(screen.getByText("Shared memory, 4 GiB reserved")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Size M" }));
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ memory: "4Gi", memoryReserved: "2Gi" });
+  });
+
+  it("takes a reservation typed in 256 MiB steps up to the memory, and sends nothing else", async () => {
+    const a = api({ containers: async () => ({ items: [] }), quota: pooled() });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(memoryChoice()).not.toBeNull());
+    choose("Shared");
+    fireEvent.click(screen.getByRole("button", { name: "Change reserved memory" }));
+    const field = screen.getByLabelText("Reserved memory, GiB") as HTMLInputElement;
+    expect(field.value).toBe("2");
+    fireEvent.change(field, { target: { value: "4.5" } });
+    expect(screen.getAllByText("Reserved memory is at most the machine's memory.").length).toBeGreaterThan(0);
+    fill("api");
+    await waitFor(() => expect(submitButton().disabled).toBe(true));
+    submit();
+    fireEvent.change(field, { target: { value: "1.5" } });
+    expect(screen.getByText("1.5 GiB reserved, up to 4 GiB while Acme's other machines leave memory free.")).toBeTruthy();
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ memory: "4Gi", memoryReserved: "1536Mi" });
+  });
+
+  it("counts a Shared size's reservation against the memory limit, and says so of a Dedicated one past it", async () => {
+    // 6 of 8 GiB reserved: M Dedicated needs 4, Shared 2.
+    const a = api({ containers: async () => ({ items: [] }), quota: pooled({ memory: "6Gi", memoryCeiling: "10Gi" }) });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(memoryChoice()).not.toBeNull());
+    fill("api");
+    await screen.findByText("Over the project's memory limit");
+    expect(screen.getByText("Shared counts only its reserved 2 GiB.")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Size M" }).textContent).toContain("Over quota");
+    choose("Shared");
+    await waitFor(() => expect(screen.queryByText("Over the project's memory limit")).toBeNull());
+    expect(screen.getByRole("radio", { name: "Size M" }).textContent).not.toContain("Over quota");
+    await createAllowed(a, "api2");
+    expect(sentResources(a)).toMatchObject({ memoryReserved: "2Gi" });
+  });
+
+  it("holds the memory of running machines to the plan's percent of the limit", async () => {
+    // 14 of the 16 GiB the plan's 200% allows: M Shared reserves 2, but its 4 GiB do not fit.
+    const a = api({ containers: async () => ({ items: [] }), quota: pooled({ memory: "4Gi", memoryCeiling: "14Gi" }) });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(memoryChoice()).not.toBeNull());
+    choose("Shared");
+    fill("api");
+    expect(await screen.findByText("Over the project's shared memory limit")).toBeTruthy();
+    expect(submitButton().disabled).toBe(true);
   });
 });
