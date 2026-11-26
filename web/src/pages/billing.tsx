@@ -621,7 +621,7 @@ export function PlatformBilling() {
                           </td>
                           <td className="px-4 py-3 text-right font-mono tabular">{formatMoney(a.status?.accrued, a.spec?.currency)}</td>
                           <td className="hidden px-4 py-3 text-right font-mono text-muted tabular lg:table-cell">
-                            {a.status?.periodType === BillingType.FIXED && a.status?.periodPriceList ? formatMoney(a.status.metered, a.spec?.currency) : "—"}
+                            {a.status?.periodPriceList ? formatMoney(a.status.metered, a.spec?.currency) : "—"}
                           </td>
                           <td className={cn("px-4 py-3 text-right font-mono tabular", theirs.count > 0 ? "font-medium text-pending" : "text-subtle")}>
                             {theirs.count === 0 ? "—" : formatMoney(theirs.total.toFixed(2), a.spec?.currency)}

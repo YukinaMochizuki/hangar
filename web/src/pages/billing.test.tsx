@@ -142,4 +142,15 @@ describe("promotions", () => {
     expect(within(stat("This period so far")).getByText("TWD 0.00")).toBeTruthy();
     expect(within(stat("This period so far")).getByText(/TWD 9,025.84 before promotions/)).toBeTruthy();
   });
+
+  it("shows the platform a pay-as-you-go account's worth at list prices under a full promotion", async () => {
+    const a = paygAccount();
+    a.status!.accrued = "0";
+    a.status!.discount = "9025.84";
+    render(<PlatformBilling />, { wrapper: withApi(billingApi({ perms: ["billing.billingaccounts.list"], accounts: [a] }), platform) });
+    const row = () => screen.getAllByRole("row").find((r) => r.querySelector("td")?.textContent === "acme") as HTMLElement;
+    await waitFor(() => expect(row()).toBeTruthy());
+    expect(within(row()).getByText("TWD 0.00")).toBeTruthy();
+    expect(within(row()).getByText("TWD 9,025.84")).toBeTruthy();
+  });
 });

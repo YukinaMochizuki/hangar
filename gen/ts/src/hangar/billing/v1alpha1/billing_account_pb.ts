@@ -222,7 +222,8 @@ export type BillingAccountStatus = Message<"hangar.billing.v1alpha1.BillingAccou
 
   /**
    * What the open period's holdings come to at price_list's prices, for an
-   * account that names one; for a PAY_AS_YOU_GO account, it is accrued.
+   * account that names one; for a PAY_AS_YOU_GO account, it is accrued
+   * before promotions.
    *
    * @generated from field: string metered = 7;
    */
