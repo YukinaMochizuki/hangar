@@ -869,13 +869,13 @@ const freePageReporting = "size=0,free_page_reporting=on"
 
 // balloonArg is the VM's --balloon: never inflated as it boots but for a
 // Shared VM of a memory pool's, which boots with its guest at its
-// guarantee, what its pool always has room for, until the squeeze gives
+// reservation, what its pool always has room for, until the squeeze gives
 // it its allowance.
 func balloonArg(s driver.VMSpec) string {
-	if s.MemoryPool == nil || s.Guaranteed() >= s.MemoryMiB {
+	if s.MemoryPool == nil || s.Reserved() >= s.MemoryMiB {
 		return freePageReporting
 	}
-	return fmt.Sprintf("size=%dM,free_page_reporting=on", s.MemoryMiB-s.Guaranteed())
+	return fmt.Sprintf("size=%dM,free_page_reporting=on", s.MemoryMiB-s.Reserved())
 }
 
 // netOffloads turns on the virtio-net offloads Cloud Hypervisor v54 turned

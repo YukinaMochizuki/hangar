@@ -35,45 +35,45 @@ func (w *world) pooled(memory string) {
 	}
 }
 
-func guaranteedContainer(name, memory, guaranteed string) *computev1alpha1.Container {
+func reservedContainer(name, memory, reserved string) *computev1alpha1.Container {
 	c := container(name, "nginx")
-	c.Spec.Resources = &computev1alpha1.Resources{Memory: memory, MemoryGuaranteed: guaranteed}
+	c.Spec.Resources = &computev1alpha1.Resources{Memory: memory, MemoryReserved: reserved}
 	return c
 }
 
 // TestAPoolsChangesReachItsRunningMachines: a pool's size, or a machine's
-// guarantee, changing restarts nothing: each VM runs as it was launched,
+// reservation, changing restarts nothing: each VM runs as it was launched,
 // its node given what follows them while it runs, and the pool's slice
-// held to its size, or what its machines are guaranteed together if more,
+// held to its size, or what its machines have reserved together if more,
 // by the squeeze.
 func TestAPoolsChangesReachItsRunningMachines(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	w.pooled("4Gi")
-	w.apply(guaranteedContainer("a", "2Gi", "1Gi"))
-	w.apply(guaranteedContainer("b", "2Gi", "1Gi"))
+	w.apply(reservedContainer("a", "2Gi", "1Gi"))
+	w.apply(reservedContainer("b", "2Gi", "1Gi"))
 	w.waitReason("a", "Running")
 	w.waitReason("b", "Running")
 	uids := map[string]string{"a": w.machine("a").GetMetadata().GetUid(), "b": w.machine("b").GetMetadata().GetUid()}
 	launched := map[string]fake.VMView{}
 	for name, uid := range uids {
 		vm := w.host.Snapshot().VMs[uid]
-		if p := vm.Spec.MemoryPool; p == nil || p.Name != apiservertest.Tenant || p.SizeMiB != 4096 || vm.Spec.GuaranteedMiB != 1024 {
-			t.Fatalf("%s launched in %+v, guaranteed %d; want acme of 4096, 1024", name, p, vm.Spec.GuaranteedMiB)
+		if p := vm.Spec.MemoryPool; p == nil || p.Name != apiservertest.Tenant || p.SizeMiB != 4096 || vm.Spec.ReservedMiB != 1024 {
+			t.Fatalf("%s launched in %+v, reserved %d; want acme of 4096, 1024", name, p, vm.Spec.ReservedMiB)
 		}
 		launched[name] = vm
 	}
-	// Booted at their guarantees, then given the pool.
+	// Booted at their reservations, then given the pool.
 	testutil.Eventually(t, "the guests given the pool", func() (bool, string) {
 		a, b := w.host.BalloonOf(uids["a"]), w.host.BalloonOf(uids["b"])
 		size, _ := w.host.MemoryPool(apiservertest.Tenant)
 		return a == 0 && b == 0 && size == 4096, fmt.Sprintf("balloons %d, %d; pool %d", a, b, size)
 	})
 
-	// Its plan lowered past what they are guaranteed together.
+	// Its plan lowered past what they have reserved together.
 	w.pooled("1Gi")
-	w.apply(guaranteedContainer("b", "2Gi", "512Mi"))
-	testutil.Eventually(t, "the node given the new pool and guarantee", func() (bool, string) {
+	w.apply(reservedContainer("b", "2Gi", "512Mi"))
+	testutil.Eventually(t, "the node given the new pool and reservation", func() (bool, string) {
 		pa, ga, _ := w.host.MemoryShare(uids["a"])
 		pb, gb, _ := w.host.MemoryShare(uids["b"])
 		size, _ := w.host.MemoryPool(apiservertest.Tenant)

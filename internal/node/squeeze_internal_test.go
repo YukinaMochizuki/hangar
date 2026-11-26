@@ -91,7 +91,7 @@ func (h *poolHost) SetMemoryPool(_ context.Context, name string, guestMiB int64)
 func (h *poolHost) MemoryEvents() <-chan struct{} { return nil }
 
 // newPoolAgent is an agent on a host running, in pool acme of 4096 with
-// guarantees of 1024, a and s, each of 4096 at 2048, the balloon the
+// reservations of 1024, a and s, each of 4096 at 2048, the balloon the
 // rest: a using all but 148 of it, in need, s 100.
 func newPoolAgent(t *testing.T) (*Agent, *poolHost) {
 	t.Helper()
@@ -100,7 +100,7 @@ func newPoolAgent(t *testing.T) (*Agent, *poolHost) {
 	for uid, use := range map[string]int64{"a": 1900, "s": 100} {
 		h.vms[uid] = &poolVM{
 			launched: driver.PoolVM{
-				MachineUID: uid, Pool: driver.MemoryPool{Name: "acme", SizeMiB: 4096}, MemoryMiB: 4096, GuaranteedMiB: 1024,
+				MachineUID: uid, Pool: driver.MemoryPool{Name: "acme", SizeMiB: 4096}, MemoryMiB: 4096, ReservedMiB: 1024,
 				Started: clock.Now().Add(-time.Hour),
 			},
 			inSlice: true, balloonMiB: 2048, useMiB: use,
@@ -117,9 +117,9 @@ func newPoolAgent(t *testing.T) (*Agent, *poolHost) {
 }
 
 // share is a machine's spec's share of its memory: of memoryMiB, in pool
-// (of sizeMiB) if named, guaranteed guaranteedMiB.
-func share(uid, pool string, sizeMiB, memoryMiB, guaranteedMiB int64) memoryShare {
-	s := memoryShare{key: controller.Key{Project: "p", Name: uid}, memoryMiB: memoryMiB, guaranteedMiB: guaranteedMiB}
+// (of sizeMiB) if named, reserved reservedMiB.
+func share(uid, pool string, sizeMiB, memoryMiB, reservedMiB int64) memoryShare {
+	s := memoryShare{key: controller.Key{Project: "p", Name: uid}, memoryMiB: memoryMiB, reservedMiB: reservedMiB}
 	if pool != "" {
 		s.pool = &driver.MemoryPool{Name: pool, SizeMiB: sizeMiB}
 	}
@@ -151,7 +151,7 @@ func TestAMemberCountsAsLaunchedUntilItsUnitIsGone(t *testing.T) {
 		if !a.squeeze(t.Context(), false) {
 			t.Errorf("%s: not hot", name)
 		}
-		// S to its floor, its guarantee, a step; A grows into nothing yet.
+		// S to its floor, its reservation, a step; A grows into nothing yet.
 		if got, want := balloons(h), map[string]int64{"a": 2048, "s": 2048 + squeeze.StepMiB}; !maps.Equal(got, want) || h.limits["acme"] != 4096 {
 			t.Errorf("%s: balloons %v, limit %d; want %v, 4096", name, got, h.limits["acme"], want)
 		}
@@ -191,14 +191,14 @@ func TestAMemberThatLeftItsPoolIsGivenBackItsMemory(t *testing.T) {
 // TestAPoolsLimitComesDownOnlyOnceItsGuestsFit: a pool's size lowered, its
 // slice's limit stays at what its guests have until their balloons bring
 // them under it; and a pool is never smaller than what its members are
-// guaranteed together.
+// reserved together.
 func TestAPoolsLimitComesDownOnlyOnceItsGuestsFit(t *testing.T) {
 	t.Parallel()
 	a, h := newPoolAgent(t)
 	a.memoryShares = map[string]memoryShare{"a": share("a", "acme", 1024, 4096, 1024), "s": share("s", "acme", 1024, 4096, 1024)}
 	plans := planPools(must(h.PoolVMs(t.Context())), must(h.VMs(t.Context())), a.memoryShares)
 	if got := plans["acme"].sizeMiB; got != 2048 {
-		t.Errorf("a pool of 1024 guaranteeing 2048 is of %d, want 2048", got)
+		t.Errorf("a pool of 1024 reserving 2048 is of %d, want 2048", got)
 	}
 	a.squeeze(t.Context(), false)
 	if h.limits["acme"] != 4096 {
@@ -248,7 +248,7 @@ func TestABalloonThatDoesNotFollowIsReported(t *testing.T) {
 	if len(a.memoryConditions("a", nil)) != 0 {
 		t.Errorf("a's conditions %v, want none", a.memoryConditions("a", nil))
 	}
-	// A at its guarantee, S at all it has.
+	// A at its reservation, S at all it has.
 	if got := balloons(h); got["a"] != 3072 || h.limits["acme"] != 1024+2048 {
 		t.Errorf("balloons %v, limit %d; want a at 3072, limit 3072", got, h.limits["acme"])
 	}

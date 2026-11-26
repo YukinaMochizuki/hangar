@@ -136,7 +136,7 @@ func (h *Hypervisor) PoolVMs(ctx context.Context) ([]driver.PoolVM, error) {
 		for _, m := range members {
 			out = append(out, driver.PoolVM{
 				MachineUID: m.uid, Pool: *m.spec.MemoryPool, MemoryMiB: m.spec.MemoryMiB,
-				GuaranteedMiB: m.spec.Guaranteed(), Started: m.started,
+				ReservedMiB: m.spec.Reserved(), Started: m.started,
 			})
 		}
 	}
@@ -277,10 +277,10 @@ func hasChildCgroup(dir string) bool {
 
 // SetMemoryShare sets a running VM's unit's CPUWeight, and its processes'
 // OOM score, as its unit would have them started with the pool and the
-// guarantee, where they differ. Its unit's memory.oom.group is set again,
+// reservation, where they differ. Its unit's memory.oom.group is set again,
 // as systemd clears it whenever it sets a property of a unit started
 // without OOMPolicy=kill.
-func (h *Hypervisor) SetMemoryShare(ctx context.Context, uid string, pool *driver.MemoryPool, guaranteedMiB int64) error {
+func (h *Hypervisor) SetMemoryShare(ctx context.Context, uid string, pool *driver.MemoryPool, reservedMiB int64) error {
 	if err := checkUID(uid); err != nil {
 		return err
 	}
@@ -289,7 +289,7 @@ func (h *Hypervisor) SetMemoryShare(ctx context.Context, uid string, pool *drive
 		return fmt.Errorf("machine %s has no running VM: %w", uid, err)
 	}
 	spec := ln.Spec
-	spec.MemoryPool, spec.GuaranteedMiB = pool, guaranteedMiB
+	spec.MemoryPool, spec.ReservedMiB = pool, reservedMiB
 	cg := h.unitCgroup(ln.Spec, uid)
 	have, err := readUint(filepath.Join(cg, "cpu.weight"))
 	if errors.Is(err, os.ErrNotExist) {

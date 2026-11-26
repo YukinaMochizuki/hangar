@@ -280,11 +280,11 @@ type vm struct {
 	cpu      time.Duration
 	spin     float64
 	spinFrom time.Time
-	// balloon is what its balloon holds, and pool and guaranteed what
+	// balloon is what its balloon holds, and pool and reserved what
 	// SetMemoryShare, or its start, last gave it (pool.go).
-	balloon    uint64
-	pool       *driver.MemoryPool
-	guaranteed int64
+	balloon  uint64
+	pool     *driver.MemoryPool
+	reserved int64
 }
 
 // New returns an empty host.
@@ -1673,7 +1673,7 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		},
 		spec:  spec,
 		boots: boots,
-		pool:  spec.MemoryPool, guaranteed: spec.GuaranteedMiB,
+		pool:  spec.MemoryPool, reserved: spec.ReservedMiB,
 	}
 	if p := spec.MemoryPool; p != nil {
 		if _, ok := d.h.pools[p.Name]; !ok {
@@ -1698,12 +1698,12 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 // when the VM started: as hangar-init does, whatever it was told in an
 // earlier boot. A container's is its public IPv6, a share's server's its
 // export. Its balloon is what it boots with: as chvm's, a pool's Shared
-// guest's holds all but its guarantee.
+// guest's holds all but its reservation.
 func (h *Host) bootGuest(v *vm) {
 	v.cpu, v.spin = bootCPU, 0
 	v.balloon = 0
-	if v.spec.MemoryPool != nil && v.spec.Guaranteed() < v.spec.MemoryMiB {
-		v.balloon = uint64(v.spec.MemoryMiB-v.spec.Guaranteed()) << 20
+	if v.spec.MemoryPool != nil && v.spec.Reserved() < v.spec.MemoryMiB {
+		v.balloon = uint64(v.spec.MemoryMiB-v.spec.Reserved()) << 20
 	}
 	switch {
 	case v.spec.FileShareServer != nil:

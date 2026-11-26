@@ -22,11 +22,11 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
-// pooledSpec is a VM of 1 GiB in the pool acme-corp of 2 GiB, guaranteed
-// guaranteedMiB of its memory, zero for all of it.
-func pooledSpec(uid string, guaranteedMiB int64) driver.VMSpec {
+// pooledSpec is a VM of 1 GiB in the pool acme-corp of 2 GiB, reserved
+// reservedMiB of its memory, zero for all of it.
+func pooledSpec(uid string, reservedMiB int64) driver.VMSpec {
 	spec := testSpec(uid, driver.RestartAlways)
-	spec.MemoryMiB, spec.GuaranteedMiB = 1024, guaranteedMiB
+	spec.MemoryMiB, spec.ReservedMiB = 1024, reservedMiB
 	spec.MemoryPool = &driver.MemoryPool{Name: "acme-corp", SizeMiB: 2048}
 	return spec
 }
@@ -43,15 +43,15 @@ func (f *fakeSystemd) propsOf(name string) []sd.Property {
 }
 
 // TestAPoolsVMsRunInItsSlice: a pool's VM's unit runs in its pool's slice,
-// weighed by its guarantee, and one guaranteed less than its memory is the
+// weighed by its reservation, and one with less than its memory reserved is the
 // OOM killer's first; the slice holds them to the pool's size past their
 // units' overheads, at their weights together. A VM in no pool keeps its
-// memory's weight and machinesSlice, whatever guarantee its spec carries.
+// memory's weight and machinesSlice, whatever reservation its spec carries.
 func TestAPoolsVMsRunInItsSlice(t *testing.T) {
 	s := newFakeSystemd()
 	h := newDriverWith(t, shortDir(t), s, &fakeGuest{}, func(c *Config) { c.cgroupRoot = t.TempDir() })
 	alone := testSpec("alone", driver.RestartAlways)
-	alone.MemoryMiB, alone.GuaranteedMiB = 1024, 256
+	alone.MemoryMiB, alone.ReservedMiB = 1024, 256
 	for _, spec := range []driver.VMSpec{pooledSpec("shared", 256), pooledSpec("dedicated", 0), alone} {
 		if err := h.Start(t.Context(), spec); err != nil {
 			t.Fatal(err)
@@ -209,8 +209,8 @@ func TestPoolVMsAreAsStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	pool := driver.MemoryPool{Name: "acme-corp", SizeMiB: 2048}
-	if len(vms) != 2 || vms[0].MachineUID != "a" || vms[0].Pool != pool || vms[0].MemoryMiB != 1024 || vms[0].GuaranteedMiB != 256 ||
-		vms[1].MachineUID != "b" || vms[1].GuaranteedMiB != 1024 || vms[0].Started.IsZero() {
+	if len(vms) != 2 || vms[0].MachineUID != "a" || vms[0].Pool != pool || vms[0].MemoryMiB != 1024 || vms[0].ReservedMiB != 256 ||
+		vms[1].MachineUID != "b" || vms[1].ReservedMiB != 1024 || vms[0].Started.IsZero() {
 		t.Errorf("pool VMs %+v", vms)
 	}
 	s.exit(t, h, "b", 0)
@@ -252,11 +252,11 @@ func TestTheSweepStopsOnlyEmptyPoolSlices(t *testing.T) {
 	}
 }
 
-// TestSetMemoryShareFollowsTheGuarantee: a running VM's weight and its
-// processes' OOM score follow the guarantee it is given, its unit's
+// TestSetMemoryShareFollowsTheReservation: a running VM's weight and its
+// processes' OOM score follow the reservation it is given, its unit's
 // memory.oom.group set again with the weight; a weight that is right
 // already is not set again.
-func TestSetMemoryShareFollowsTheGuarantee(t *testing.T) {
+func TestSetMemoryShareFollowsTheReservation(t *testing.T) {
 	s := newFakeSystemd()
 	root := t.TempDir()
 	h := newDriverWith(t, shortDir(t), s, &fakeGuest{}, func(c *Config) { c.cgroupRoot = root })
@@ -295,7 +295,7 @@ func TestSetMemoryShareFollowsTheGuarantee(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := prop(s.propsOf(unitName("m1")), "CPUWeight"); got != uint64(1) {
-		t.Errorf("guaranteed 256 MiB, it weighs %v, want 1", got)
+		t.Errorf("reserved 256 MiB, it weighs %v, want 1", got)
 	}
 	if b, _ := os.ReadFile(filepath.Join(cg, "memory.oom.group")); string(b) != "1" {
 		t.Errorf("memory.oom.group is %q, want 1", b)
@@ -352,11 +352,11 @@ func TestAPoolsVMStartingOrItsSliceFullWakesTheSqueeze(t *testing.T) {
 	}
 }
 
-// TestASharedVMBootsAtItsGuarantee: a Shared VM's balloon is inflated as it
-// boots to leave its guest its guarantee, which its boot disk says, for a
+// TestASharedVMBootsAtItsReservation: a Shared VM's balloon is inflated as it
+// boots to leave its guest its reservation, which its boot disk says, for a
 // container's guest to wait for; any other VM's is not, and its boot disk
 // says nothing of it.
-func TestASharedVMBootsAtItsGuarantee(t *testing.T) {
+func TestASharedVMBootsAtItsReservation(t *testing.T) {
 	for name, c := range map[string]struct {
 		spec    driver.VMSpec
 		want    string

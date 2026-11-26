@@ -34,8 +34,8 @@ const machinesSliceDescription = "Hangar's virtual machines"
 // would wait on it at the weight of its memory.
 const shareServerWeight = 100
 
-// cpuWeight is a VM's CPUWeight: one per 256 MiB of what it is guaranteed
-// of its memory, all of it outside a pool, within what systemd takes, so
+// cpuWeight is a VM's CPUWeight: one per 256 MiB of what of its memory
+// is reserved, all of it outside a pool, within what systemd takes, so
 // under full load each VM's share of the slice's CPUs follows its memory,
 // and a pool letting its machines' memory add up past its size does not
 // add up their shares too; shareServerWeight for a FileShare's server.
@@ -43,7 +43,7 @@ func cpuWeight(spec driver.VMSpec) uint64 {
 	if spec.FileShareServer != nil {
 		return shareServerWeight
 	}
-	return clampWeight(uint64(max(spec.Guaranteed()/256, 1)))
+	return clampWeight(uint64(max(spec.Reserved()/256, 1)))
 }
 
 // clampWeight is w within the CPUWeight systemd takes.

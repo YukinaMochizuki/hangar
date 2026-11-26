@@ -87,23 +87,23 @@ GiB nobody measured.
   (`node-agent.md`, "Memory pools"). The units of a pool's machines run in
   a slice of their own whose `MemoryMax` is the pool's size plus their
   overheads, a backstop only. The node shares the pool's size among them,
-  or their guarantees together if more, as the scheduler holds it; a
-  machine counts in its pool as it was started until its VM is gone. A machine guaranteed all its memory
-  (Dedicated) is never squeezed nor slowed, and its whole memory is held
-  for it, used or not. Each machine guaranteed less (Shared) is held by its
+  or their reservations together if more, as the scheduler holds it; a
+  machine counts in its pool as it was started until its VM is gone. A
+  machine with all its memory reserved (Dedicated) is never squeezed nor
+  slowed, and its whole memory is held for it, used or not. Each machine with less reserved (Shared) is held by its
   balloon at an allowance of what that leaves, so the pool cannot be
   overrun: what it uses, read from its balloon statistics, and a margin,
   and a share of what is left, given first to those whose guests are short
-  of memory; when the pool is short, down to its guarantee, where the guest
+  of memory; when the pool is short, down to its reservation, where the guest
   may kill a process of its own. A balloon is given back only into room
   the others' balloons have already freed. A Shared machine boots at its
-  guarantee; a container's guest waits for that before it runs anything of
+  reservation; a container's guest waits for that before it runs anything of
   the container's. As the backstop, a pooled VM's unit kills as a whole (`memory.oom.group`), a
   Shared machine before a Dedicated one, and the node reports it on the
-  machine as `OOMKilled`, `OutOfMemory`, whatever its restart policy. A machine's CPU weight follows its guarantee
+  machine as `OOMKilled`, `OutOfMemory`, whatever its restart policy. A machine's CPU weight follows its reservation
   rather than its memory, so a pool of 200% does not double its tenant's
   share of the CPUs. A machine joins a pool's slice, or leaves it, as it
-  starts; its guarantee's effects follow while it runs.
+  starts; its reservation's effects follow while it runs.
 
 ## Consequences
 
@@ -119,7 +119,7 @@ GiB nobody measured.
 - A FileShare's server is in no pool: its node holds its memory whole,
   as before pools.
 - A Shared machine's guest sees its memory move as its tenant's other
-  machines use the pool: past its guarantee, none of it is sure, page
+  machines use the pool: past its reservation, none of it is sure, page
   cache or not. A Shared container starts some seconds later than it
   would (3.9 to 5.7 s measured), its guest waiting for its boot balloon.
 - A Shared firmware VM has a boot window: its operating system does not

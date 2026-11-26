@@ -17,14 +17,14 @@ import (
 // in it, at the size it started with or SetMemoryPool last set, and until
 // SweepMemoryPools finds no running VM started in it.
 
-func (d hypervisor) SetMemoryShare(_ context.Context, machineUID string, pool *driver.MemoryPool, guaranteedMiB int64) error {
+func (d hypervisor) SetMemoryShare(_ context.Context, machineUID string, pool *driver.MemoryPool, reservedMiB int64) error {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	v, ok := d.h.vms[machineUID]
 	if !ok || v.State != driver.VMRunning {
 		return fmt.Errorf("machine %s: %w", machineUID, errUnknownVM)
 	}
-	v.pool, v.guaranteed = pool, guaranteedMiB
+	v.pool, v.reserved = pool, reservedMiB
 	return nil
 }
 
@@ -54,7 +54,7 @@ func (d hypervisor) PoolVMs(context.Context) ([]driver.PoolVM, error) {
 		}
 		out = append(out, driver.PoolVM{
 			MachineUID: uid, Pool: *v.spec.MemoryPool, MemoryMiB: v.spec.MemoryMiB,
-			GuaranteedMiB: v.spec.Guaranteed(), Started: v.Started,
+			ReservedMiB: v.spec.Reserved(), Started: v.Started,
 		})
 	}
 	return out, nil
@@ -171,16 +171,16 @@ func (h *Host) MemoryPool(name string) (int64, bool) {
 	return size, ok
 }
 
-// MemoryShare is the pool and guarantee the machine's running VM was last
+// MemoryShare is the pool and reservation the machine's running VM was last
 // given; ok is false with no running VM.
-func (h *Host) MemoryShare(machineUID string) (pool *driver.MemoryPool, guaranteedMiB int64, ok bool) {
+func (h *Host) MemoryShare(machineUID string) (pool *driver.MemoryPool, reservedMiB int64, ok bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	v, found := h.vms[machineUID]
 	if !found || v.State != driver.VMRunning {
 		return nil, 0, false
 	}
-	return v.pool, v.guaranteed, true
+	return v.pool, v.reserved, true
 }
 
 // BalloonOf is what the machine's VM's balloon holds.

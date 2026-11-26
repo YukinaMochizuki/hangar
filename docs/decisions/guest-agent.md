@@ -27,7 +27,7 @@ to boot again.
   readable by any process in the guest; not files written into the image.
 - **A Shared container of a memory pool waits for its boot balloon**
   (`memory-pool.md`): its boot disk says the memory it boots with
-  (`boot_memory_mib`), its guarantee, which its balloon, inflated by the
+  (`boot_memory_mib`), its reservation, which its balloon, inflated by the
   guest's driver as it boots, leaves it, and hangar-init reads MemTotal every
   50 ms until it is down to that and 64 MiB, before the network, the volumes
   and the process: nothing the container does can take more memory first.

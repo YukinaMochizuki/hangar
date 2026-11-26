@@ -24,9 +24,9 @@ const DefaultSqueezePoll = 5 * time.Second
 // reconcile read it: its pool, if any, and the least of its memory it is
 // left when the pool is short.
 type memoryShare struct {
-	key                      controller.Key
-	pool                     *driver.MemoryPool
-	memoryMiB, guaranteedMiB int64
+	key                    controller.Key
+	pool                   *driver.MemoryPool
+	memoryMiB, reservedMiB int64
 }
 
 // wantedShare is what a machine's spec says of its memory, nil for one
@@ -47,9 +47,9 @@ func wantedShare(m *computev1alpha1.Machine) *memoryShare {
 }
 
 // shareOf reads what a machine's spec says of its memory, of memoryMiB:
-// outside a pool it is guaranteed all of it.
+// outside a pool all of it is reserved.
 func shareOf(m *computev1alpha1.Machine, memoryMiB int64) (memoryShare, error) {
-	s := memoryShare{key: controller.Key{Project: m.GetMetadata().GetProject(), Name: m.GetMetadata().GetName()}, memoryMiB: memoryMiB, guaranteedMiB: memoryMiB}
+	s := memoryShare{key: controller.Key{Project: m.GetMetadata().GetProject(), Name: m.GetMetadata().GetName()}, memoryMiB: memoryMiB, reservedMiB: memoryMiB}
 	p := m.GetSpec().GetMemoryPool()
 	if p == nil {
 		return s, nil
@@ -59,34 +59,34 @@ func shareOf(m *computev1alpha1.Machine, memoryMiB int64) (memoryShare, error) {
 		return s, fmt.Errorf("memory pool %s's size: %w", p.GetName(), err)
 	}
 	s.pool = &driver.MemoryPool{Name: p.GetName(), SizeMiB: int64(size / quantity.MiB)}
-	if g := m.GetSpec().GetResources().GetMemoryGuaranteed(); g != "" {
+	if g := m.GetSpec().GetResources().GetMemoryReserved(); g != "" {
 		b, err := quantity.Bytes(g)
 		if err != nil {
-			return s, fmt.Errorf("memory_guaranteed: %w", err)
+			return s, fmt.Errorf("memory_reserved: %w", err)
 		}
-		s.guaranteedMiB = min(int64(b/quantity.MiB), memoryMiB)
+		s.reservedMiB = min(int64(b/quantity.MiB), memoryMiB)
 	}
 	return s, nil
 }
 
 // withMemoryShare is spec, of machine m, with its memory pool and
-// guarantee as m's spec says.
+// reservation as m's spec says.
 func withMemoryShare(spec driver.VMSpec, m *computev1alpha1.Machine) (driver.VMSpec, error) {
 	s, err := shareOf(m, spec.MemoryMiB)
 	if err != nil {
 		return spec, blocked(computeapi.ReasonBootFailed, err)
 	}
-	spec.MemoryPool, spec.GuaranteedMiB = s.pool, s.specGuaranteed()
+	spec.MemoryPool, spec.ReservedMiB = s.pool, s.specReserved()
 	return spec, nil
 }
 
-// specGuaranteed is GuaranteedMiB of a VMSpec of the share: zero for all
+// specReserved is ReservedMiB of a VMSpec of the share: zero for all
 // of its memory.
-func (s memoryShare) specGuaranteed() int64 {
-	if s.pool == nil || s.guaranteedMiB >= s.memoryMiB {
+func (s memoryShare) specReserved() int64 {
+	if s.pool == nil || s.reservedMiB >= s.memoryMiB {
 		return 0
 	}
-	return s.guaranteedMiB
+	return s.reservedMiB
 }
 
 // trackMemory keeps what a machine on the node, wanted running, says of
@@ -100,9 +100,9 @@ func (a *Agent) trackMemory(uid string, s *memoryShare) {
 }
 
 // applyMemoryShare gives the machine's running VM what follows its pool
-// and guarantee while it runs.
+// and reservation while it runs.
 func (a *Agent) applyMemoryShare(ctx context.Context, uid string, s memoryShare) {
-	if err := a.cfg.Drivers.Hypervisor.SetMemoryShare(ctx, uid, s.pool, s.specGuaranteed()); err != nil {
+	if err := a.cfg.Drivers.Hypervisor.SetMemoryShare(ctx, uid, s.pool, s.specReserved()); err != nil {
 		a.cfg.Log.Warn("setting the machine's share of the CPUs and its OOM score", "machine_uid", uid, "error", err)
 	}
 }
@@ -158,7 +158,7 @@ type poolPlan struct {
 	name    string
 	members []squeeze.Member
 	// sizeMiB is what the members share: the pool's size, or its members'
-	// guarantees if more, and the memory of those in its slice that left it.
+	// reservations if more, and the memory of those in its slice that left it.
 	sizeMiB int64
 	// inSlice are the members in its slice; the others run outside it, as
 	// started before their machines joined the pool.
@@ -185,29 +185,29 @@ func planPools(inPools []driver.PoolVM, vms []driver.VM, shares map[string]memor
 			m[name] = size
 		}
 	}
-	guaranteed, left := map[string]int64{}, map[string]int64{}
+	reserved, left := map[string]int64{}, map[string]int64{}
 	inSlice := map[string]bool{}
 	for _, v := range inPools {
 		name := v.Pool.Name
 		p := planOf(name)
 		p.inSlice[v.MachineUID] = true
 		inSlice[v.MachineUID] = true
-		m := squeeze.Member{UID: v.MachineUID, MemoryMiB: v.MemoryMiB, GuaranteedMiB: v.GuaranteedMiB, Started: v.Started}
+		m := squeeze.Member{UID: v.MachineUID, MemoryMiB: v.MemoryMiB, ReservedMiB: v.ReservedMiB, Started: v.Started}
 		s, read := shares[v.MachineUID]
 		switch {
 		case !read:
 			least(startedSize, name, v.Pool.SizeMiB)
 		case s.pool != nil && s.pool.Name == name:
 			least(specSize, name, s.pool.SizeMiB)
-			m.GuaranteedMiB = min(s.guaranteedMiB, v.MemoryMiB)
+			m.ReservedMiB = min(s.reservedMiB, v.MemoryMiB)
 		default:
-			m.GuaranteedMiB = v.MemoryMiB
+			m.ReservedMiB = v.MemoryMiB
 			left[name] += v.MemoryMiB
 			p.members = append(p.members, m)
 			continue
 		}
 		p.belongs = true
-		guaranteed[name] += m.GuaranteedMiB
+		reserved[name] += m.ReservedMiB
 		p.members = append(p.members, m)
 	}
 	for _, vm := range vms {
@@ -219,15 +219,15 @@ func planPools(inPools []driver.PoolVM, vms []driver.VM, shares map[string]memor
 		p := planOf(name)
 		p.belongs = true
 		least(specSize, name, s.pool.SizeMiB)
-		guaranteed[name] += s.guaranteedMiB
-		p.members = append(p.members, squeeze.Member{UID: vm.MachineUID, MemoryMiB: s.memoryMiB, GuaranteedMiB: s.memoryMiB, Started: vm.Started})
+		reserved[name] += s.reservedMiB
+		p.members = append(p.members, squeeze.Member{UID: vm.MachineUID, MemoryMiB: s.memoryMiB, ReservedMiB: s.memoryMiB, Started: vm.Started})
 	}
 	for name, p := range plans {
 		size, ok := specSize[name]
 		if !ok {
 			size = startedSize[name]
 		}
-		p.sizeMiB = max(size, guaranteed[name]) + left[name]
+		p.sizeMiB = max(size, reserved[name]) + left[name]
 	}
 	return plans
 }

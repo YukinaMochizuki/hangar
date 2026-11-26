@@ -62,9 +62,9 @@ func TestAPollTellsAGuestReclaiming(t *testing.T) {
 		set: map[string]uint64{},
 	}
 	members := []squeeze.Member{
-		{UID: "a", MemoryMiB: 4096, GuaranteedMiB: 1024},
-		{UID: "c", MemoryMiB: 4096, GuaranteedMiB: 1024},
-		{UID: "d", MemoryMiB: 2048, GuaranteedMiB: 2048},
+		{UID: "a", MemoryMiB: 4096, ReservedMiB: 1024},
+		{UID: "c", MemoryMiB: 4096, ReservedMiB: 1024},
+		{UID: "d", MemoryMiB: 2048, ReservedMiB: 2048},
 	}
 	q := squeeze.NewSqueezer()
 	log := slog.New(slog.DiscardHandler)
@@ -107,8 +107,8 @@ func TestABalloonThatDoesNotFollowIsAskedNoMore(t *testing.T) {
 		set:      map[string]uint64{},
 	}
 	members := []squeeze.Member{
-		{UID: "a", MemoryMiB: 4096, GuaranteedMiB: 1024, Started: start},
-		{UID: "d", MemoryMiB: 2048, GuaranteedMiB: 2048, Started: start},
+		{UID: "a", MemoryMiB: 4096, ReservedMiB: 1024, Started: start},
+		{UID: "d", MemoryMiB: 2048, ReservedMiB: 2048, Started: start},
 	}
 	q := squeeze.NewSqueezer()
 	log := slog.New(slog.DiscardHandler)
@@ -146,7 +146,7 @@ func TestABalloonThatDoesNotFollowIsAskedNoMore(t *testing.T) {
 }
 
 // TestAGuestGrownAfterItBootedIsSqueezed: a Shared guest seen at its boot
-// size, its guarantee, has booted: grown past it within squeeze.BootWindow
+// size, its reservation, has booted: grown past it within squeeze.BootWindow
 // of its start, it is squeezed as any, not left to a balloon it no longer
 // inflates.
 func TestAGuestGrownAfterItBootedIsSqueezed(t *testing.T) {
@@ -162,8 +162,8 @@ func TestAGuestGrownAfterItBootedIsSqueezed(t *testing.T) {
 		h.balloons[uid] = driver.Balloon{Actual: (4096 - sizeMiB) * mib, Total: sizeMiB * mib, Available: (sizeMiB - inUseMiB) * mib, Updated: now}
 	}
 	members := []squeeze.Member{
-		{UID: "a", MemoryMiB: 4096, GuaranteedMiB: 1024, Started: now},
-		{UID: "c", MemoryMiB: 4096, GuaranteedMiB: 1024, Started: now.Add(-time.Hour)},
+		{UID: "a", MemoryMiB: 4096, ReservedMiB: 1024, Started: now},
+		{UID: "c", MemoryMiB: 4096, ReservedMiB: 1024, Started: now.Add(-time.Hour)},
 	}
 	q := squeeze.NewSqueezer()
 	log := slog.New(slog.DiscardHandler)

@@ -47,7 +47,7 @@ const (
 	// BootWindow is how long after its VM started a Shared guest may still
 	// be inflating the balloon it boots with: hangar-init's wait for it
 	// (boot.BalloonTimeout), after which it runs, and counts at what it has.
-	// BootSlackMiB is how far above its guarantee its size may be once
+	// BootSlackMiB is how far above its reservation its size may be once
 	// inflated (boot.BalloonSlackMiB).
 	BootWindow   = 15 * time.Second
 	BootSlackMiB = 64
@@ -57,17 +57,17 @@ const (
 	StaleStats = 30 * time.Second
 )
 
-// Member is a running machine of a pool, by its spec: its memory, and the
-// least of it it is guaranteed, in MiB. One guaranteed all of it is
-// Dedicated, one guaranteed less Shared. Started is when its VM's running
+// Member is a running machine of a pool, by its spec: its memory, and how
+// much of it is reserved, in MiB. One with all of it reserved is
+// Dedicated, one with less Shared. Started is when its VM's running
 // boot started.
 type Member struct {
-	UID                      string
-	MemoryMiB, GuaranteedMiB int64
-	Started                  time.Time
+	UID                    string
+	MemoryMiB, ReservedMiB int64
+	Started                time.Time
 }
 
-func (m Member) shared() bool { return m.GuaranteedMiB < m.MemoryMiB }
+func (m Member) shared() bool { return m.ReservedMiB < m.MemoryMiB }
 
 // Stage is what a poll does to a pool.
 type Stage int
@@ -75,11 +75,11 @@ type Stage int
 const (
 	// Hold changes no balloon.
 	Hold Stage = iota
-	// Safe inflates balloons, none below its guest's safe floor; Guarantee
-	// one below it, toward its guarantee, where its guest may kill a
+	// Safe inflates balloons, none below its guest's safe floor; Reserve
+	// one below it, toward its reservation, where its guest may kill a
 	// process of its own, the pool being short.
 	Safe
-	Guarantee
+	Reserve
 	// Deflate only gives memory back.
 	Deflate
 )
@@ -88,8 +88,8 @@ func (s Stage) String() string {
 	switch s {
 	case Safe:
 		return "safe"
-	case Guarantee:
-		return "guarantee"
+	case Reserve:
+		return "reserve"
 	case Deflate:
 		return "deflate"
 	}
@@ -191,7 +191,7 @@ func (q *Squeezer) Poll(ctx context.Context, hv driver.Hypervisor, log *slog.Log
 			if newly {
 				stuck = append(stuck, mb.UID)
 			}
-			m.booted = q.booted(mb.UID, m.size() <= m.GuaranteedMiB+BootSlackMiB)
+			m.booted = q.booted(mb.UID, m.size() <= m.ReservedMiB+BootSlackMiB)
 		}
 		states = append(states, m)
 	}
@@ -327,11 +327,11 @@ type state struct {
 func (m state) size() int64 { return m.MemoryMiB - m.balloonMiB }
 
 // booting reports a Shared guest still inflating the balloon it boots
-// with, which leaves it its guarantee: its balloon is left to it, its
+// with, which leaves it its reservation: its balloon is left to it, its
 // container's process not started yet (docs/decisions/guest-agent.md);
 // one seen at its boot size since was grown, and has booted.
 func (m state) booting() bool {
-	return m.shared() && !m.noBalloon && !m.booted && m.now.Sub(m.Started) < BootWindow && m.size() > m.GuaranteedMiB+BootSlackMiB
+	return m.shared() && !m.noBalloon && !m.booted && m.now.Sub(m.Started) < BootWindow && m.size() > m.ReservedMiB+BootSlackMiB
 }
 
 // margin is what a guest is left past what it uses, and has available
@@ -356,16 +356,16 @@ func (m state) needs() bool {
 }
 
 // floor is the least a Shared guest is held at while its pool is not
-// short: what it uses and a margin, or its guarantee if more; for one that
+// short: what it uses and a margin, or its reservation if more; for one that
 // reports nothing, or whose balloon cannot be set, its size now.
 func (m state) floor() int64 {
 	if m.booting() {
-		return m.GuaranteedMiB
+		return m.ReservedMiB
 	}
 	if !m.stats || m.noBalloon {
 		return m.size()
 	}
-	return min(max(m.inUseMiB+margin(m.MemoryMiB), m.GuaranteedMiB), m.MemoryMiB)
+	return min(max(m.inUseMiB+margin(m.MemoryMiB), m.ReservedMiB), m.MemoryMiB)
 }
 
 // allowances are the sizes a pool's Shared guests are held at (docs/decisions/node-agent.md "Memory pools").
@@ -392,11 +392,11 @@ func allowances(sizeMiB int64, members []state) map[string]int64 {
 		above := make([]int64, len(shared))
 		for i, m := range shared {
 			if !m.noBalloon {
-				above[i] = floors[i] - m.GuaranteedMiB
+				above[i] = floors[i] - m.ReservedMiB
 			}
 		}
 		for i, m := range shared {
-			out[m.UID] = max(floors[i]-portion(sum-budget, above, i, true), m.GuaranteedMiB)
+			out[m.UID] = max(floors[i]-portion(sum-budget, above, i, true), m.ReservedMiB)
 		}
 		return out
 	}
@@ -513,7 +513,7 @@ func decide(sizeMiB int64, members []state, stepMiB int64) Result {
 			r.Balloons[m.UID] = m.balloonMiB + min(d, stepMiB)
 			st := Safe
 			if a < m.floor() {
-				st = Guarantee
+				st = Reserve
 			}
 			r.Stage = max(r.Stage, st)
 		case -d > DeadbandMiB:

@@ -11,7 +11,7 @@ import (
 
 // memoryPools runs a Shared VM of a memory pool beside one of none: the
 // pool's VM listed as it was launched, booting with its guest at its
-// guarantee, the rest in its balloon, which follows what it is set to and
+// reservation, the rest in its balloon, which follows what it is set to and
 // refuses more than the VM's memory; its share and its pool's limit
 // changed while it runs without restarting it; the VM of no pool listed in
 // none, its balloon empty. Stopped, its pool lists nothing and is swept.
@@ -21,7 +21,7 @@ func memoryPools(t *testing.T, h Host) {
 	hv := h.Hypervisor
 	pool := driver.MemoryPool{Name: "conform", SizeMiB: 1024}
 	pooled := vmSpec(t, h, "m1", driver.RestartAlways)
-	pooled.MemoryMiB, pooled.MemoryPool, pooled.GuaranteedMiB = 512, &pool, 256
+	pooled.MemoryMiB, pooled.MemoryPool, pooled.ReservedMiB = 512, &pool, 256
 	alone := vmSpec(t, h, "m2", driver.RestartAlways)
 	t.Cleanup(func() {
 		for _, m := range []string{"m1", "m2"} {
@@ -53,8 +53,8 @@ func memoryPools(t *testing.T, h Host) {
 	vm, _ := vmOf(t, h, "m1")
 	in, err := hv.PoolVMs(ctx)
 	must(t, err)
-	want := driver.PoolVM{MachineUID: "m1", Pool: pool, MemoryMiB: 512, GuaranteedMiB: 256}
-	if len(in) != 1 || in[0].MachineUID != "m1" || in[0].Pool != pool || in[0].MemoryMiB != 512 || in[0].GuaranteedMiB != 256 ||
+	want := driver.PoolVM{MachineUID: "m1", Pool: pool, MemoryMiB: 512, ReservedMiB: 256}
+	if len(in) != 1 || in[0].MachineUID != "m1" || in[0].Pool != pool || in[0].MemoryMiB != 512 || in[0].ReservedMiB != 256 ||
 		in[0].Started.Sub(vm.Started).Abs() > time.Second {
 		t.Errorf("the pools' VMs are %+v, want %+v started at %v", in, want, vm.Started)
 	}
@@ -65,7 +65,7 @@ func memoryPools(t *testing.T, h Host) {
 		return b
 	}
 	near := func(b uint64, mib int64) bool { return int64(b>>20) >= mib-16 && int64(b>>20) <= mib+16 }
-	testutil.EventuallyWithin(t, vmWait, "the pool's guest booted at its guarantee", func() bool { return near(balloonOf("m1").Actual, 256) })
+	testutil.EventuallyWithin(t, vmWait, "the pool's guest booted at its reservation", func() bool { return near(balloonOf("m1").Actual, 256) })
 	if b := balloonOf("m2"); b.Actual != 0 {
 		t.Errorf("the VM of no pool booted with a balloon of %d", b.Actual)
 	}
@@ -85,7 +85,7 @@ func memoryPools(t *testing.T, h Host) {
 	if again, ok := vmOf(t, h, "m1"); !ok || again.State != driver.VMRunning || !again.Started.Equal(vm.Started) || again.SpecHash != vm.SpecHash {
 		t.Errorf("its share and pool changed, the VM is %+v (%t), want it running on as %+v", again, ok, vm)
 	}
-	if in, err := hv.PoolVMs(ctx); err != nil || len(in) != 1 || in[0].Pool != pool || in[0].GuaranteedMiB != 256 {
+	if in, err := hv.PoolVMs(ctx); err != nil || len(in) != 1 || in[0].Pool != pool || in[0].ReservedMiB != 256 {
 		t.Errorf("its share changed, the pools' VMs are %+v (%v), want it as launched", in, err)
 	}
 

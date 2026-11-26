@@ -68,7 +68,7 @@ func newAgentMetrics() *agentMetrics {
 		}),
 		squeezes: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hangar_node_memory_pool_squeezes_total",
-			Help: "Polls of a memory pool that changed its machines' balloons, by result: safe and guarantee inflated them, to what their guests use and a margin or to their guarantees; deflate gave memory back.",
+			Help: "Polls of a memory pool that changed its machines' balloons, by result: safe and reservation inflated them, to what their guests use and a margin or to their reservations; deflate gave memory back.",
 		}, []string{"result"}),
 		balloonUnresponsive: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "hangar_node_memory_pool_balloons_unresponsive_total",
@@ -78,7 +78,7 @@ func newAgentMetrics() *agentMetrics {
 	for _, r := range []string{pullResultOK, pullResultFailed, pullResultUnauthorized, pullResultTimeout, pullResultInvalid, pullResultDiskFailed, pullResultCanceled} {
 		m.pulls.WithLabelValues(r)
 	}
-	for _, s := range []squeeze.Stage{squeeze.Safe, squeeze.Guarantee, squeeze.Deflate} {
+	for _, s := range []squeeze.Stage{squeeze.Safe, squeeze.Reserve, squeeze.Deflate} {
 		m.squeezes.WithLabelValues(s.String())
 	}
 	return m

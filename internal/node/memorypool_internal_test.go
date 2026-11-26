@@ -13,21 +13,21 @@ func TestAMachinesShareIsReadFromItsSpec(t *testing.T) {
 	m := &computev1alpha1.Machine{
 		Metadata: &metav1.ObjectMeta{Project: "p", Name: "m"},
 		Spec: &computev1alpha1.MachineSpec{
-			Resources:  &computev1alpha1.Resources{Cpu: "1", Memory: "2Gi", MemoryGuaranteed: "1Gi"},
+			Resources:  &computev1alpha1.Resources{Cpu: "1", Memory: "2Gi", MemoryReserved: "1Gi"},
 			MemoryPool: &computev1alpha1.MemoryPool{Name: "acme", Size: "8Gi"},
 		},
 	}
 	s := wantedShare(m)
-	if s == nil || s.pool == nil || *s.pool != (driver.MemoryPool{Name: "acme", SizeMiB: 8192}) || s.memoryMiB != 2048 || s.guaranteedMiB != 1024 || s.specGuaranteed() != 1024 {
-		t.Errorf("pooled with a guarantee: %+v", s)
+	if s == nil || s.pool == nil || *s.pool != (driver.MemoryPool{Name: "acme", SizeMiB: 8192}) || s.memoryMiB != 2048 || s.reservedMiB != 1024 || s.specReserved() != 1024 {
+		t.Errorf("pooled with a reservation: %+v", s)
 	}
-	m.Spec.Resources.MemoryGuaranteed = ""
-	if s := wantedShare(m); s == nil || s.guaranteedMiB != 2048 || s.specGuaranteed() != 0 {
-		t.Errorf("pooled with no guarantee: %+v, want all of its memory", s)
+	m.Spec.Resources.MemoryReserved = ""
+	if s := wantedShare(m); s == nil || s.reservedMiB != 2048 || s.specReserved() != 0 {
+		t.Errorf("pooled with no reservation: %+v, want all of its memory", s)
 	}
-	// Outside a pool a guarantee means nothing.
-	m.Spec.Resources.MemoryGuaranteed, m.Spec.MemoryPool = "1Gi", nil
-	if s := wantedShare(m); s == nil || s.pool != nil || s.guaranteedMiB != 2048 || s.specGuaranteed() != 0 {
+	// Outside a pool a reservation means nothing.
+	m.Spec.Resources.MemoryReserved, m.Spec.MemoryPool = "1Gi", nil
+	if s := wantedShare(m); s == nil || s.pool != nil || s.reservedMiB != 2048 || s.specReserved() != 0 {
 		t.Errorf("in no pool: %+v, want all of its memory", s)
 	}
 	m.Spec.RunState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED

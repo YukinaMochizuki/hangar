@@ -276,7 +276,7 @@ func balloonWait(t *testing.T, uid string) string {
 }
 
 // TestASharedContainerReadingAsItBootsIsNotKilled: two Shared containers
-// of 4 GiB guaranteed 1 GiB whose processes write and read 3500 MiB at
+// of 4 GiB, 1 GiB of each reserved, whose processes write and read 3500 MiB at
 // once as they start, beside a Dedicated one of 2 GiB in a pool of 5 GiB,
 // three times over: their guests wait for their boot balloons, and neither
 // is killed, nor any process of theirs, nor does the pool reach its
@@ -292,7 +292,7 @@ while :; do sleep 1; done`
 	specs := map[string]driver.VMSpec{}
 	for _, uid := range shared {
 		spec := poolMachine(t, h, uid, 6)
-		spec.VCPUs, spec.MemoryMiB, spec.MemoryPool, spec.GuaranteedMiB = 2, 4096, pool, 1024
+		spec.VCPUs, spec.MemoryMiB, spec.MemoryPool, spec.ReservedMiB = 2, 4096, pool, 1024
 		spec.Run.Command = []string{"/bin/sh", "-c", reader}
 		specs[uid] = spec
 	}
@@ -301,9 +301,9 @@ while :; do sleep 1; done`
 	specs["boot-d"] = d
 	w := &poolWatch{hv: h.hv, pool: *pool, q: squeeze.NewSqueezer(), stages: map[squeeze.Stage]int{}, maxBalloon: map[string]int64{}}
 	w.setMembers(
-		squeeze.Member{UID: "boot-a", MemoryMiB: 4096, GuaranteedMiB: 1024},
-		squeeze.Member{UID: "boot-c", MemoryMiB: 4096, GuaranteedMiB: 1024},
-		squeeze.Member{UID: "boot-d", MemoryMiB: 2048, GuaranteedMiB: 2048},
+		squeeze.Member{UID: "boot-a", MemoryMiB: 4096, ReservedMiB: 1024},
+		squeeze.Member{UID: "boot-c", MemoryMiB: 4096, ReservedMiB: 1024},
+		squeeze.Member{UID: "boot-d", MemoryMiB: 2048, ReservedMiB: 2048},
 	)
 	for run := range 3 {
 		// The squeeze runs as the VMs start, as the agent's does.
@@ -371,10 +371,10 @@ func guestOOMKills(t *testing.T, h *host, uid string) string {
 }
 
 // TestAMemoryPoolIsKeptWithinItsSize: three machines in a pool of 5 GiB,
-// two Shared ones of 4 GiB guaranteed 1 GiB and a Dedicated one of 2 GiB,
+// two Shared ones of 4 GiB, 1 GiB of each reserved, and a Dedicated one of 2 GiB,
 // their memory twice the pool's, run in the pool's slice, its MemoryMax
-// the pool and their units' overheads, weighed by their guarantees, the
-// Shared ones the OOM killer's first, booting at their guarantees; the
+// the pool and their units' overheads, weighed by their reservations, the
+// Shared ones the OOM killer's first, booting at their reservations; the
 // squeeze runs as the agent runs it. (a) The Shared ones write and read
 // files at disk speed while the Dedicated one takes 1.5 GiB: no VM is
 // killed, nor any guest's process, the pool never reaches its slice's
@@ -399,7 +399,7 @@ func TestAMemoryPoolIsKeptWithinItsSize(t *testing.T) {
 	specs := map[string]driver.VMSpec{}
 	for _, uid := range sharedUIDs {
 		spec := poolMachine(t, h, uid, 6)
-		spec.VCPUs, spec.MemoryMiB, spec.MemoryPool, spec.GuaranteedMiB = 2, 4096, pool, 1024
+		spec.VCPUs, spec.MemoryMiB, spec.MemoryPool, spec.ReservedMiB = 2, 4096, pool, 1024
 		specs[uid] = spec
 	}
 	spec := poolMachine(t, h, ded, 3)
@@ -447,9 +447,9 @@ func TestAMemoryPoolIsKeptWithinItsSize(t *testing.T) {
 	limitMiB := (5120<<20 + overheads) >> 20
 
 	members := map[string]squeeze.Member{
-		"pool-a": {UID: "pool-a", MemoryMiB: 4096, GuaranteedMiB: 1024},
-		"pool-c": {UID: "pool-c", MemoryMiB: 4096, GuaranteedMiB: 1024},
-		ded:      {UID: ded, MemoryMiB: 2048, GuaranteedMiB: 2048},
+		"pool-a": {UID: "pool-a", MemoryMiB: 4096, ReservedMiB: 1024},
+		"pool-c": {UID: "pool-c", MemoryMiB: 4096, ReservedMiB: 1024},
+		ded:      {UID: ded, MemoryMiB: 2048, ReservedMiB: 2048},
 	}
 	w := &poolWatch{hv: h.hv, pool: *pool, q: squeeze.NewSqueezer(), stages: map[squeeze.Stage]int{}, maxBalloon: map[string]int64{}}
 	w.setMembers(members["pool-a"], members["pool-c"], members[ded])
@@ -474,7 +474,7 @@ func TestAMemoryPoolIsKeptWithinItsSize(t *testing.T) {
 	})
 
 	// (a) Disk-speed page cache in the Shared ones, anonymous memory
-	// within its guarantee in the Dedicated one.
+	// within its reservation in the Dedicated one.
 	offsets := map[string]int{}
 	killsBefore := map[string]string{}
 	// A ticker on each vCPU.
@@ -541,7 +541,7 @@ func TestAMemoryPoolIsKeptWithinItsSize(t *testing.T) {
 	}
 
 	// One reads on, the other idle: the reader is given the other's room
-	// past its guarantee, 2048 of the 3072 the Dedicated memory leaves.
+	// past its reservation, 2048 of the 3072 the Dedicated memory leaves.
 	from := sizeOf(h, "pool-a", 4096)
 	inBackground(t, "pool-a", "while [ ! -e /dev/shm/stop ]; do cat /cache >/dev/null; done")
 	start = time.Now()

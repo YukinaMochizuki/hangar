@@ -70,14 +70,14 @@ func unitProps(spec driver.VMSpec, argv, stopPost []string, restart string, stop
 }
 
 // sharedOOMScore is the OOMScoreAdjust of a VM whose pool may squeeze it
-// below its memory, against 0 for one guaranteed all of it: the most, so
+// below its memory, against 0 for one with all of it reserved: the most, so
 // past its pool's MemoryMax the kernel kills such a VM first, whole, however
 // large the others (docs/decisions/node-agent.md).
 const sharedOOMScore = 1000
 
 // oomScore is a VM's OOMScoreAdjust.
 func oomScore(spec driver.VMSpec) int32 {
-	if spec.Guaranteed() < spec.MemoryMiB {
+	if spec.Reserved() < spec.MemoryMiB {
 		return sharedOOMScore
 	}
 	return 0

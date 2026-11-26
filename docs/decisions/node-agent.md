@@ -451,7 +451,7 @@ unit, and checks each of these from there.
 A VM's vCPUs are shared, never reserved: the scheduler holds a machine's
 memory and disk, not its CPUs. So that no mix of shapes changes how far the
 host's CPUs are shared, each VM's share of them under load follows its
-memory, or, in a memory pool, its guarantee (#177):
+memory, or, in a memory pool, its reservation (#177):
 
 ```
  -.slice
@@ -460,7 +460,7 @@ memory, or, in a memory pool, its guarantee (#177):
  └─ hangar.slice   CPUWeight 1000  AllowedCPUs: all but --reserved-cpu
      ├─ hangar-vm-<uid>.service    CPUWeight: memory / 256 MiB
      └─ hangar-pool_<pool>.slice   CPUWeight: its VMs' together
-         └─ hangar-vm-<uid>.service  CPUWeight: guarantee / 256 MiB
+         └─ hangar-vm-<uid>.service  CPUWeight: reservation / 256 MiB
 ```
 
 - **Every VM's unit runs in `hangar.slice`** (`Slice=`), beside
@@ -469,7 +469,7 @@ memory, or, in a memory pool, its guarantee (#177):
   inside `hangar.slice`, and a weight counts only against its siblings.
 - **A VM's `CPUWeight` is one per 256 MiB of its memory**, within the 1 to
   10000 systemd takes: 2 for 512 MiB, 16 for 4 GiB. A VM in a memory pool
-  is weighed by its guarantee instead (below), so a pool letting its
+  is weighed by its reservation instead (below), so a pool letting its
   machines' memory add up to twice its size does not double its tenant's
   share of the CPUs; a pool's slice weighs what its VMs do together, so
   each VM has the share it would have beside the others in
@@ -512,10 +512,10 @@ units' processes.
 A tenant's machines may share its memory as a pool
 (`docs/decisions/memory-pool.md`): together they may be given up to
 twice, or more, the memory the pool holds on the node, and the node keeps
-what they hold within it. A machine's guarantee (`memory_guaranteed`)
-splits them: one guaranteed all its memory is **Dedicated**, never
-squeezed, never slowed; one guaranteed less is **Shared**, and is given
-only its guarantee for sure.
+what they hold within it. A machine's reservation (`memory_reserved`)
+splits them: one with all its memory reserved is **Dedicated**, never
+squeezed, never slowed; one with less reserved is **Shared**, and is
+sure of its reservation alone.
 
 - **A pool's VMs run in a slice of their own**,
   `hangar.slice/hangar-pool_<pool>.slice`, the pool's name with its dashes
@@ -535,9 +535,9 @@ only its guarantee for sure.
   in `hangar.slice` itself. The driver reads the slice's `memory.max` and
   `cpu.weight` first and sets them only when they differ. A VM joins a
   pool, or leaves one, as it starts: one running when its machine's pool
-  changes stays where it is until its next start, though its guarantee's
+  changes stays where it is until its next start, though its reservation's
   weight and OOM score follow at once. Changing a machine's pool or
-  guarantee restarts nothing: neither is part of what its VM runs. A file
+  reservation restarts nothing: neither is part of what its VM runs. A file
   share's server is in no pool: the scheduler holds its memory on its own.
 - **A pool's members are what runs in its slice**, read from the units in
   it, a stopping one included, and the specs they were launched with: a
@@ -545,7 +545,7 @@ only its guarantee for sure.
   gone, whatever its machine's spec says meanwhile (stopping it, not read
   yet since the agent started, or a memory shrink waiting for its
   restart). The specs say only what changes while it runs: the pool's
-  size and its guarantee. A member whose spec now names another pool, or
+  size and its reservation. A member whose spec now names another pool, or
   none, is held as Dedicated, at its whole memory, and the pool's size
   gains that much, since the scheduler now holds it apart. A running VM
   whose spec names the pool but that started before it joined, outside
@@ -553,8 +553,8 @@ only its guarantee for sure.
   limit. A running VM in no pool's slice whose balloon holds anything has
   it given back whole by the sweep. A pool's **effective size** is the
   least size its members' specs name, or the one they were launched with
-  if none is read, but never less than what its running members are
-  guaranteed together, which a plan lowered while they run can leave past
+  if none is read, but never less than what its running members have
+  reserved together, which a plan lowered while they run can leave past
   it; the scheduler holds the same (`memory-pool.md`).
 - **Each Shared guest is held at its allowance by its balloon**, so the
   pool cannot be overrun at all: what the Shared guests have of their
@@ -574,7 +574,7 @@ only its guarantee for sure.
   host does nothing), out of the effective size: each Shared guest holds its floor, what it uses
   (MemTotal less MemAvailable, from Cloud Hypervisor's
   `vm.balloon-stats`, a report older than 30 s none) and the larger of
-  256 MiB and a tenth of its memory, or its guarantee if more; a guest
+  256 MiB and a tenth of its memory, or its reservation if more; a guest
   that reports nothing holds its size. A guest whose MemAvailable is under
   the larger of 256 MiB and a tenth of its size, or whose counts of
   allocation stalls and direct and background reclaims moved since the
@@ -594,8 +594,8 @@ only its guarantee for sure.
   Dedicated memory and their sizes leave is handed out, by how far each
   could grow, so a guest has room at once. When the floors themselves are
   past what the Dedicated memory leaves, what they are past is taken from
-  them by how far each is above its guarantee, never below it: the
-  guarantee stage, where a guest may kill a process of its own, the Shared
+  them by how far each is above its reservation, never below it: the
+  reserve stage, where a guest may kill a process of its own, the Shared
   promise. The agent keeps only each guest's last count of its reclaims.
 - **A guest shrinks a step at a time, and grows only into what the
   balloons gave back.** A balloon grows by at most 512 MiB a poll, 1 GiB a
@@ -607,9 +607,9 @@ only its guarantee for sure.
   is. A Dedicated machine's balloon, as one made Dedicated while squeezed,
   is given back whole, but as any guest grows: only into room the others'
   balloons freed, before anyone else.
-- **A Shared VM boots at its guarantee**: its launcher gives Cloud
-  Hypervisor `--balloon size=` its memory less its guarantee, which its
-  pool always has room for, since the guarantees of a pool's machines
+- **A Shared VM boots at its reservation**: its launcher gives Cloud
+  Hypervisor `--balloon size=` its memory less its reservation, which its
+  pool always has room for, since the reservations of a pool's machines
   never add up past it, without the squeeze knowing what the others have.
   Its guest's balloon driver inflates that as it boots, in some seconds:
   4.2 s after a 4 GiB container's guest answered, for 3 GiB of balloon,
@@ -617,11 +617,11 @@ only its guarantee for sure.
   waits for it before it starts anything of the container's
   (`guest-agent.md`), so its start is put off by those seconds (3.9 to
   5.7 s measured). For 15 s after its VM starts, hangar-init's wait for
-  it, while its guest has more than its guarantee and 64 MiB and has not
+  it, while its guest has more than its reservation and 64 MiB and has not
   yet been seen at it, the squeeze leaves its balloon to it, counts it at
-  its guarantee and polls soon; then gives it its allowance. A container
+  its reservation and polls soon; then gives it its allowance. A container
   whose wait ran out runs on, counted at what it has.
-  A VM started into a pool its others filled waits, at its guarantee,
+  A VM started into a pool its others filled waits, at its reservation,
   while their balloons take back its share. **A Shared firmware VM has a
   boot window**: its operating system is its own and does not wait, so for
   the few seconds its balloon takes (4.2 s measured), a fill fast enough
@@ -668,7 +668,7 @@ only its guarantee for sure.
   `OutOfMemory`, with the time, whatever its restart policy, and reads
   `OutOfMemory` while its restart policy keeps it down.
 - **What is measured.** `hangar_node_memory_pool_squeezes_total` counts
-  the polls that changed a balloon, by `result` (`safe`, `guarantee`,
+  the polls that changed a balloon, by `result` (`safe`, `reserve`,
   `deflate`), `hangar_node_memory_pool_balloons_unresponsive_total` the
   balloons given up, and `hangar_node_vm_oom_group_kills_total` the VMs killed
   whole, `hangar.slice`'s `memory.events` count. A machine's usage says
@@ -685,7 +685,7 @@ firmware VM gave back its cache as fast. A slice's `MemoryMax` with
 by `oom_score_adj`.
 
 `TestAMemoryPoolIsKeptWithinItsSize` in `test/testbed/vms` runs a pool of
-5 GiB with two Shared VMs of 4 GiB, guaranteed 1 GiB, and a Dedicated one
+5 GiB with two Shared VMs of 4 GiB, 1 GiB of each reserved, and a Dedicated one
 of 2 GiB, squeezed as the agent does (2026-11-26, kernel 6.8, CH v54). The
 two Shared guests wrote and read 3.5 GiB each, twice, at disk speed, in 8
 to 9 s, while the Dedicated one took 1.5 GiB: no VM and no guest process
@@ -693,7 +693,7 @@ was killed, the slice never reached its limit (its peak 4.8 GiB of 5.95),
 the Shared sizes and the Dedicated memory never passed 5 GiB, and the
 worst wake of a ticker on each vCPU came 16 to 41 ms late in the Shared
 guests, 13 to 26 ms in the Dedicated one. One Shared guest reading on,
-the other idle, had the other's room past its guarantee, 1.5 to 2 GiB, in
+the other idle, had the other's room past its reservation, 1.5 to 2 GiB, in
 5.4 to 12.9 s; one left alone in the pool had all its memory back in 2.6
 to 3.6 s; two started again into a pool the third filled were made room
 for in 9.1 s. A Shared guest filling 3.6 GiB of anonymous memory past

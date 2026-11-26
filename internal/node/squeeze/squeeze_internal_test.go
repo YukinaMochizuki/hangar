@@ -9,12 +9,12 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
-// sharedVM is a Shared member of 4096 guaranteed 1024 whose guest has
+// sharedVM is a Shared member of 4096 reserved 1024 whose guest has
 // size MiB, uses inUse of it and has avail available, its unit holding
 // use, its guest reporting its reclaims.
 func sharedVM(uid string, size, use, inUse, avail int64) state {
 	return state{
-		Member: Member{UID: uid, MemoryMiB: 4096, GuaranteedMiB: 1024}, now: longAfter, useMiB: use, balloonMiB: 4096 - size,
+		Member: Member{UID: uid, MemoryMiB: 4096, ReservedMiB: 1024}, now: longAfter, useMiB: use, balloonMiB: 4096 - size,
 		stats: true, inUseMiB: inUse, availableMiB: avail, counters: true,
 	}
 }
@@ -22,9 +22,9 @@ func sharedVM(uid string, size, use, inUse, avail int64) state {
 // longAfter is a time long after its members' VMs started.
 var longAfter = time.Unix(1_000_000_000, 0)
 
-// dedicatedVM is a member guaranteed all its memory, holding use.
+// dedicatedVM is a member with all its memory reserved, holding use.
 func dedicatedVM(uid string, memory, use int64) state {
-	return state{Member: Member{UID: uid, MemoryMiB: memory, GuaranteedMiB: memory}, useMiB: use}
+	return state{Member: Member{UID: uid, MemoryMiB: memory, ReservedMiB: memory}, useMiB: use}
 }
 
 func check(t *testing.T, r Result, wantStage Stage, want map[string]int64) {
@@ -109,14 +109,14 @@ func TestAGuestInNeedIsGivenWhatTheOthersFree(t *testing.T) {
 	}
 }
 
-// TestAShortPoolTakesTowardTheGuarantees: floors past what the Dedicated
-// memory leaves are cut by how far each is above its guarantee, never
-// below it: the guarantee stage.
-func TestAShortPoolTakesTowardTheGuarantees(t *testing.T) {
+// TestAShortPoolTakesTowardTheReservations: floors past what the Dedicated
+// memory leaves are cut by how far each is above its reservation, never
+// below it: the reserve stage.
+func TestAShortPoolTakesTowardTheReservations(t *testing.T) {
 	t.Parallel()
 	// Floors 2209 and 1909, 1046 past 3072: cuts of 599 and 448.
 	r := decide(5120, pool(sharedVM("a", 2560, 2500, 1800, 700), sharedVM("c", 2048, 2000, 1500, 500)), StepMiB)
-	check(t, r, Guarantee, map[string]int64{"a": 2048, "c": 2560})
+	check(t, r, Reserve, map[string]int64{"a": 2048, "c": 2560})
 	if want := map[string]int64{"a": 1610, "c": 1461}; !maps.Equal(r.Allowances, want) {
 		t.Errorf("allowances %v, want %v", r.Allowances, want)
 	}
@@ -126,7 +126,7 @@ func TestAShortPoolTakesTowardTheGuarantees(t *testing.T) {
 	}
 }
 
-// TestAGuestGrowsOnlyIntoRoomFreed: N started at its guarantee into a
+// TestAGuestGrowsOnlyIntoRoomFreed: N started at its reservation into a
 // pool C had filled, past its size together: N and A wait, owed their
 // shares, while C's balloon takes its own back a step at a time.
 func TestAGuestGrowsOnlyIntoRoomFreed(t *testing.T) {
@@ -184,8 +184,8 @@ func TestAStaleReportSaysNothing(t *testing.T) {
 
 // TestABootingGuestIsLeftToItsBalloon: a Shared guest whose VM started
 // lately, still inflating the balloon it boots with, is left to it: its
-// balloon untouched, counted at its guarantee, and polled for soon; once
-// down to its guarantee, or past the window, it is a member as any.
+// balloon untouched, counted at its reservation, and polled for soon; once
+// down to its reservation, or past the window, it is a member as any.
 func TestABootingGuestIsLeftToItsBalloon(t *testing.T) {
 	t.Parallel()
 	booting := sharedVM("b", 3600, 300, 100, 3400)

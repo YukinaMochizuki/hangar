@@ -786,8 +786,8 @@ func checkSpec(s driver.VMSpec) error {
 			return fmt.Errorf("machine %s: %w", s.MachineUID, err)
 		}
 	}
-	if s.GuaranteedMiB < 0 || s.GuaranteedMiB > s.MemoryMiB {
-		return fmt.Errorf("machine %s: guaranteed %d of its %d MiB of memory", s.MachineUID, s.GuaranteedMiB, s.MemoryMiB)
+	if s.ReservedMiB < 0 || s.ReservedMiB > s.MemoryMiB {
+		return fmt.Errorf("machine %s: reserved %d of its %d MiB of memory", s.MachineUID, s.ReservedMiB, s.MemoryMiB)
 	}
 	switch srv := s.FileShareServer; {
 	case s.Converter != nil:
@@ -887,8 +887,8 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec, tailscaleDisk string) ([]byte,
 		MachineUid:  spec.MachineUID,
 	}
 	if balloonArg(spec) != freePageReporting {
-		// Its guest boots at its guarantee (balloonArg), and waits for it.
-		cfg.BootMemoryMib = uint64(spec.Guaranteed())
+		// Its guest boots at its reservation (balloonArg), and waits for it.
+		cfg.BootMemoryMib = uint64(spec.Reserved())
 	}
 	if srv := spec.FileShareServer; srv != nil {
 		cfg.Process = nil

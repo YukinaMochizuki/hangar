@@ -909,11 +909,11 @@ type Hypervisor interface {
 	Usage(ctx context.Context, machineUID string) (VMUsage, error)
 
 	// SetMemoryShare gives a running VM what follows its memory pool and
-	// guarantee while it runs (VMSpec.MemoryPool, GuaranteedMiB): its share
+	// reservation while it runs (VMSpec.MemoryPool, ReservedMiB): its share
 	// of the CPUs and how early the host's OOM killer takes it. The pool it
 	// runs in stays the one it started in. A machine with no running VM
 	// fails.
-	SetMemoryShare(ctx context.Context, machineUID string, pool *MemoryPool, guaranteedMiB int64) error
+	SetMemoryShare(ctx context.Context, machineUID string, pool *MemoryPool, reservedMiB int64) error
 	// PoolVMs lists the VMs that run, or are about to again, in a memory
 	// pool on the host, as each was started: what the pool holds until its
 	// VM is gone, whatever its machine's spec says now.
@@ -949,12 +949,12 @@ type MemoryPool struct {
 }
 
 // PoolVM is a VM running in a memory pool, as it was started: its pool,
-// memory and guarantee, in MiB, and when its running boot started.
+// memory and reservation, in MiB, and when its running boot started.
 type PoolVM struct {
-	MachineUID               string
-	Pool                     MemoryPool
-	MemoryMiB, GuaranteedMiB int64
-	Started                  time.Time
+	MachineUID             string
+	Pool                   MemoryPool
+	MemoryMiB, ReservedMiB int64
+	Started                time.Time
 }
 
 // Balloon is a VM's balloon and what its guest last reported of its
@@ -1116,21 +1116,21 @@ type VMSpec struct {
 	// has one, whether or not it joins, so it can join later.
 	Tailscale *TailscaleSpec `json:",omitempty"`
 	// MemoryPool is the pool the VM shares memory in, nil for none, and
-	// GuaranteedMiB the least of its memory it is left when the pool is
+	// ReservedMiB the least of its memory it is left when the pool is
 	// short, zero for all of it. Neither is part of the hash: they change
 	// while the VM runs (Hypervisor.SetMemoryShare), though it stays in
 	// the pool it started in.
-	MemoryPool    *MemoryPool `json:",omitempty"`
-	GuaranteedMiB int64       `json:",omitempty"`
+	MemoryPool  *MemoryPool `json:",omitempty"`
+	ReservedMiB int64       `json:",omitempty"`
 }
 
-// Guaranteed is the memory, in MiB, the VM is left when its pool is short:
+// Reserved is the memory, in MiB, the VM is left when its pool is short:
 // all of it outside a pool.
-func (s VMSpec) Guaranteed() int64 {
-	if s.MemoryPool == nil || s.GuaranteedMiB <= 0 || s.GuaranteedMiB > s.MemoryMiB {
+func (s VMSpec) Reserved() int64 {
+	if s.MemoryPool == nil || s.ReservedMiB <= 0 || s.ReservedMiB > s.MemoryMiB {
 		return s.MemoryMiB
 	}
-	return s.GuaranteedMiB
+	return s.ReservedMiB
 }
 
 // TailscaleSpec is how a container's guest joins a tailnet. The auth key
@@ -1307,7 +1307,7 @@ func (s VMSpec) Runs(vm VM) bool {
 }
 
 func (s VMSpec) hash() string {
-	s.MemoryPool, s.GuaranteedMiB = nil, 0
+	s.MemoryPool, s.ReservedMiB = nil, 0
 	b, err := json.Marshal(s.noExport())
 	if err != nil {
 		panic(fmt.Sprintf("encoding a VM spec: %v", err)) // every field encodes
