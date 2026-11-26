@@ -110,6 +110,10 @@ message MachineUsageResponse {
   // The last sample with a CPU value; unset before there is one, and once
   // it is more than three polls old.
   UsagePoint latest = 3;
+  // What the machine's balloon holds now, in bytes: how much of its memory
+  // its memory pool has taken back from its guest. Unset when the node
+  // could not tell.
+  optional uint64 balloon_bytes = 4;
 }
 
 // UsagePoint is a machine's usage at a time, or over the minute from it.

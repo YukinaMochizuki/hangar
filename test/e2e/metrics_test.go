@@ -46,7 +46,8 @@ func TestNodeMetricsNameNoMachine(t *testing.T) {
 	})
 
 	metricstest.CheckLabels(t, reg, "hangar_node_tunnel_connected", "hangar_node_tunnel_reconnects_total",
-		"hangar_node_heartbeat_failures_total", "hangar_node_image_pulls_total", "hangar_node_image_cache_bytes")
+		"hangar_node_heartbeat_failures_total", "hangar_node_image_pulls_total", "hangar_node_image_cache_bytes",
+		"hangar_node_memory_pool_squeezes_total", "hangar_node_vm_oom_group_kills_total")
 	metricstest.CheckAbsent(t, reg, marker, uid, apiservertest.Tenant)
 
 	if v := value("hangar_node_image_pulls_total", map[string]string{"result": "ok"}); v < 1 {

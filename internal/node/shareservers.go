@@ -271,6 +271,9 @@ func (a *Agent) convergeShareServer(ctx context.Context, m *computev1alpha1.Mach
 		Restart:         restartPolicy(m.GetSpec().GetRestartPolicy()),
 		FileShareServer: &driver.ShareServer{Volume: vol, Export: shareExport(fs, p.clients(fs))},
 	}
+	if spec, err = withMemoryShare(spec, m); err != nil {
+		return nil, errors.Join(err, pending)
+	}
 	obs, err := a.ensureVM(ctx, spec, vm)
 	return obs, errors.Join(err, pending)
 }

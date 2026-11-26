@@ -52,7 +52,11 @@ type Host struct {
 	// memHeld, guestMemUsed and oldMemGuests are, by machine uid, what
 	// each VM's unit holds of memory, what each container's guest says it
 	// uses, and the guests that cannot say (usage.go).
-	memHeld      map[string]uint64
+	memHeld map[string]uint64
+	// pools are the sizes of the memory pools the host holds, in MiB;
+	// memEvents is Hypervisor.MemoryEvents.
+	pools        map[string]int64
+	memEvents    chan struct{}
 	guestMemUsed map[string]uint64
 	oldMemGuests map[string]bool
 
@@ -274,6 +278,11 @@ type vm struct {
 	cpu      time.Duration
 	spin     float64
 	spinFrom time.Time
+	// balloon is what its balloon holds, and pool and guaranteed what
+	// SetMemoryShare, or its start, last gave it (pool.go).
+	balloon    uint64
+	pool       *driver.MemoryPool
+	guaranteed int64
 }
 
 // New returns an empty host.
@@ -298,7 +307,7 @@ func New() *Host {
 		rootUsed: map[string]uint64{}, rootFilesUsed: map[string]uint64{}, rootClaims: map[string]driver.FSUsage{}, oldRootGuests: map[string]bool{}, noLiveResize: map[string]bool{}, rootCalls: map[string][]string{}, rootHolds: map[string]chan struct{}{},
 		volumeUsed: map[string]uint64{}, volumeFilesUsed: map[string]uint64{}, volumeClaims: map[string]driver.FSUsage{}, oldVolumeGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
-		memHeld: map[string]uint64{}, guestMemUsed: map[string]uint64{}, oldMemGuests: map[string]bool{},
+		memHeld: map[string]uint64{}, pools: map[string]int64{}, memEvents: make(chan struct{}, 1), guestMemUsed: map[string]uint64{}, oldMemGuests: map[string]bool{},
 		shareRoots: map[string]string{}, oldListGuests: map[string]bool{},
 	}
 }
@@ -1662,6 +1671,10 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		},
 		spec:  spec,
 		boots: boots,
+		pool:  spec.MemoryPool, guaranteed: spec.GuaranteedMiB,
+	}
+	if p := spec.MemoryPool; p != nil {
+		d.h.pools[p.Name] = p.SizeMiB
 	}
 	if spec.TPM {
 		if _, ok := d.h.tpms[spec.MachineUID]; !ok {

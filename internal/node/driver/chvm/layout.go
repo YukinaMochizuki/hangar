@@ -227,6 +227,9 @@ type exitRecord struct {
 	Signal int `json:",omitempty"`
 	// Error says why the launcher could not start the VM.
 	Error string `json:",omitempty"`
+	// OOMKilled says the kernel's OOM killer killed the VM's unit whole,
+	// the launcher with it, with Code ExitNoRecord (RecordOOMKill).
+	OOMKilled bool `json:",omitempty"`
 	// Started and Ended bound the run.
 	Started, Ended time.Time
 }

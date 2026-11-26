@@ -106,6 +106,7 @@ e2e-host: guest-initramfs guest-initramfs-testbed guest-converter host-swtpm $(E
 	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
 	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
 	CGO_ENABLED=0 go build -tags testbed -o bin/ch-probe ./test/testbed/vms/chprobe
+	CGO_ENABLED=0 go build -tags testbed -o bin/mem-hog ./test/testbed/vms/memhog
 	CGO_ENABLED=0 go build -tags testbed -o bin/vsock-probe ./test/testbed/guest/vsockprobe
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
 		go test -exec 'sudo -E' -tags testbed -count=1 -p 1 -timeout 30m -v ./test/testbed/...
@@ -114,6 +115,7 @@ e2e-host: guest-initramfs guest-initramfs-testbed guest-converter host-swtpm $(E
 e2e-host-vms: guest-initramfs guest-converter host-swtpm $(E2E_HOST_ROOTFS)
 	CGO_ENABLED=0 go build -o bin/hangar-node ./cmd/hangar-node
 	CGO_ENABLED=0 go build -tags testbed -o bin/ch-probe ./test/testbed/vms/chprobe
+	CGO_ENABLED=0 go build -tags testbed -o bin/mem-hog ./test/testbed/vms/memhog
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
 		go test -exec 'sudo -E' -tags testbed -count=1 -timeout 30m -v ./test/testbed/vms/ $(if $(RUN),-run '$(RUN)')
 

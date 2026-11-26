@@ -54,10 +54,20 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 	a.host.Lock()
 	defer a.host.Unlock()
 	m, err := a.getMachine(ctx, k)
-	if err != nil || m == nil || m.GetSpec().GetNode() != a.cfg.Name {
+	if err != nil {
 		return err
 	}
+	if m == nil || m.GetSpec().GetNode() != a.cfg.Name {
+		for uid, s := range a.memoryShares {
+			if s.key == k {
+				a.trackMemory(uid, nil)
+			}
+		}
+		return nil
+	}
 	uid := m.GetMetadata().GetUid()
+	share := wantedShare(m)
+	a.trackMemory(uid, share)
 	if a.stops.running[uid] {
 		// Its stop's success, or its own retry, checks it again.
 		return stopping(uid)
@@ -93,6 +103,9 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 		err = blocked(computeapi.ReasonNetworkFailed, letGo)
 	default:
 		report, err = a.converge(ctx, m, vm, epoch)
+		if err == nil && share != nil && report != nil && report.phase == computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING {
+			a.applyMemoryShare(ctx, uid, *share)
+		}
 	}
 	var s *stuck
 	if errors.As(err, &s) {
@@ -159,9 +172,16 @@ func phaseOf(vm *driver.VM) computev1alpha1.MachinePhase {
 // exited reports a VM its restart policy keeps down.
 func exited(vm *driver.VM) *observation {
 	obs := notReady(phaseOf(vm), computeapi.ReasonExited, fmt.Sprintf("the container exited with code %d", vm.ExitCode))
+	if vm.OOMKilled {
+		obs = notReady(phaseOf(vm), computeapi.ReasonOutOfMemory, outOfMemory)
+	}
 	obs.applied = true
 	return obs
 }
+
+// outOfMemory is the message of a machine whose VM the host killed whole,
+// its memory pool out of memory.
+const outOfMemory = "the machine was killed: its tenant's machines on the node ran out of the memory they share"
 
 func (a *Agent) vmOf(ctx context.Context, uid string) (*driver.VM, error) {
 	vms, err := a.cfg.Drivers.Hypervisor.VMs(ctx)
@@ -328,6 +348,9 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		Mounts:      mnts,
 		Restart:     restartPolicy(m.GetSpec().GetRestartPolicy()),
 		Tailscale:   tailscaleSpec(m),
+	}
+	if spec, err = withMemoryShare(spec, m); err != nil {
+		return nil, err
 	}
 	// Its one mount of each share fails the boot if the share's server does
 	// not serve it yet: a boot the node starts waits, its VM of an earlier

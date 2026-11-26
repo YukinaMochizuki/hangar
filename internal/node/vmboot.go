@@ -60,6 +60,9 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		Search:             search,
 		Restart:            restartPolicy(m.GetSpec().GetRestartPolicy()),
 	}
+	if spec, err = withMemoryShare(spec, m); err != nil {
+		return nil, err
+	}
 	if vm != nil && !spec.Runs(*vm) {
 		if err := a.stopVM(ctx, uid); err != nil {
 			return nil, err
@@ -82,7 +85,10 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 	}
 	if vm.State == driver.VMExited {
 		reason, msg := computeapi.ReasonPoweredOff, "the guest powered off"
-		if vm.ExitCode != 0 {
+		switch {
+		case vm.OOMKilled:
+			reason, msg = computeapi.ReasonOutOfMemory, outOfMemory
+		case vm.ExitCode != 0:
 			reason, msg = computeapi.ReasonExited, fmt.Sprintf("the VM ended without powering off, code %d", vm.ExitCode)
 		}
 		obs := notReady(phaseOf(vm), reason, msg)

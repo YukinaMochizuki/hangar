@@ -35,6 +35,8 @@ type fakeSystemd struct {
 	starts  int
 	stopped []string
 	listErr error
+	// slices are the slices made and not stopped.
+	slices map[string]bool
 }
 
 func newFakeSystemd() *fakeSystemd {
@@ -89,7 +91,24 @@ func (f *fakeSystemd) slice(_ context.Context, name, _ string, props []sd.Proper
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.props[name] = props
+	if f.slices == nil {
+		f.slices = map[string]bool{}
+	}
+	f.slices[name] = true
 	return nil
+}
+
+func (f *fakeSystemd) listSlices(context.Context) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for s := range f.slices {
+		if strings.HasPrefix(s, poolSlicePrefix) {
+			out = append(out, s)
+		}
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 func (f *fakeSystemd) stop(_ context.Context, name string) error {
@@ -97,6 +116,7 @@ func (f *fakeSystemd) stop(_ context.Context, name string) error {
 	defer f.mu.Unlock()
 	f.stopped = append(f.stopped, name)
 	delete(f.units, name)
+	delete(f.slices, name)
 	return nil
 }
 

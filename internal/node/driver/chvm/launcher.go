@@ -105,18 +105,77 @@ type Launcher struct {
 }
 
 // LauncherMain is hangar-node vmm [--dir DIR] UID, returning its exit code.
+// With --stopped it is its unit's ExecStopPost instead (RecordOOMKill).
 func LauncherMain(args []string) int {
 	fs := flag.NewFlagSet("vmm", flag.ContinueOnError)
 	dir := fs.String("dir", DefaultDir, "the directory of the VMs' directories")
 	user := fs.Uint("vm-user", 0, "the id Cloud Hypervisor runs as; 0, or none, runs it as root")
+	stopped := fs.Bool("stopped", false, "record how the VM's unit ended, run once it has stopped")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 1 || *user > 1<<31 {
-		fmt.Fprintln(os.Stderr, "usage: hangar-node vmm [--dir DIR] [--vm-user ID] MACHINE_UID")
+		fmt.Fprintln(os.Stderr, "usage: hangar-node vmm [--dir DIR] [--vm-user ID | --stopped] MACHINE_UID")
 		return ExitFailed
+	}
+	if *stopped {
+		if err := RecordOOMKill(*dir, fs.Arg(0), "/proc/self/cgroup", "/sys/fs/cgroup", os.Getenv("SERVICE_RESULT")); err != nil {
+			fmt.Fprintln(os.Stderr, "vmm --stopped:", err)
+			return 1
+		}
+		return 0
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	l := &Launcher{Dir: *dir, VMUser: uint32(*user), Log: slog.New(slog.NewTextHandler(os.Stderr, nil))}
 	return l.Run(ctx, fs.Arg(0))
+}
+
+// RecordOOMKill records, as the machine's VM's exit, that the kernel's OOM
+// killer killed its unit whole, if it did: systemd says so in result, its
+// ExecStopPost's $SERVICE_RESULT, and the unit's cgroup, named in procCgroup
+// under cgroupRoot, counts it in memory.events. The launcher was killed too,
+// and recorded nothing; the cgroup goes with the unit, so this is the last
+// moment to tell. Run as the unit's ExecStopPost, in the unit's cgroup.
+func RecordOOMKill(dir, uid, procCgroup, cgroupRoot, result string) error {
+	if err := checkUID(uid); err != nil {
+		return err
+	}
+	if result != "oom-kill" {
+		return nil
+	}
+	b, err := os.ReadFile(procCgroup)
+	if err != nil {
+		return err
+	}
+	// cgroup v2 alone: "0::/path".
+	path, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "0::")
+	if !ok || strings.Contains(path, "\n") {
+		return fmt.Errorf("%s is no cgroup v2 path: %q", procCgroup, b)
+	}
+	events, err := os.ReadFile(filepath.Join(cgroupRoot, path, "memory.events"))
+	if err != nil {
+		return err
+	}
+	kills, err := keyedValue(events, "oom_group_kill")
+	if err != nil {
+		return fmt.Errorf("%s/memory.events: %w", path, err)
+	}
+	if kills == 0 {
+		return nil
+	}
+	vmDir := filepath.Join(dir, uid)
+	if _, err := os.Lstat(filepath.Join(vmDir, specFile)); err != nil {
+		return err
+	}
+	r := exitRecord{Code: ExitNoRecord, OOMKilled: true, Ended: time.Now()}
+	// The launcher makes its Cloud Hypervisor's directory afresh as it
+	// starts.
+	if fi, err := os.Stat(filepath.Join(vmDir, chDir)); err == nil {
+		r.Started = fi.ModTime()
+	}
+	b, err = json.Marshal(r)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(filepath.Join(vmDir, exitFile), b)
 }
 
 // OpenZvol opens the zvol a /dev/zvol link names, refusing what it leads to
@@ -802,11 +861,22 @@ func diskCount(ln launch) int {
 	return n
 }
 
-// freePageReporting is the balloon every VM has: never inflated, it only
-// carries the pages the guest reports free, which Cloud Hypervisor gives
-// back to the host. Without it a guest's memory, once touched, stays in use
-// on the host until the VM stops (docs/decisions/node-agent.md).
+// freePageReporting is the balloon every VM has, which carries the pages
+// the guest reports free, which Cloud Hypervisor gives back to the host.
+// Without it a guest's memory, once touched, stays in use on the host
+// until the VM stops (docs/decisions/node-agent.md).
 const freePageReporting = "size=0,free_page_reporting=on"
+
+// balloonArg is the VM's --balloon: never inflated as it boots but for a
+// Shared VM of a memory pool's, which boots with its guest at its
+// guarantee, what its pool always has room for, until the squeeze gives
+// it its allowance.
+func balloonArg(s driver.VMSpec) string {
+	if s.MemoryPool == nil || s.Guaranteed() >= s.MemoryMiB {
+		return freePageReporting
+	}
+	return fmt.Sprintf("size=%dM,free_page_reporting=on", s.MemoryMiB-s.Guaranteed())
+}
 
 // netOffloads turns on the virtio-net offloads Cloud Hypervisor v54 turned
 // off by default: without them guest-to-guest TCP fell from about 40 to
@@ -852,7 +922,7 @@ func chArgs(ln launch, dir string, taps int) []string {
 		"--cmdline", ln.Cmdline,
 		"--cpus", fmt.Sprintf("boot=%d", s.VCPUs),
 		"--memory", fmt.Sprintf("size=%dM", s.MemoryMiB),
-		"--balloon", freePageReporting,
+		"--balloon", balloonArg(s),
 		"--disk",
 		vda,
 		"path=" + filepath.Join(dir, bootFile) + ",image_type=raw,readonly=on",

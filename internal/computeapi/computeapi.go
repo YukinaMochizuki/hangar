@@ -221,6 +221,11 @@ const (
 	ReasonNetworkFailed = "NetworkFailed"
 	ReasonBootFailed    = "BootFailed"
 	ReasonExited        = "Exited"
+	// ReasonOutOfMemory means the node killed the machine's VM whole, as
+	// the machines of its memory pool on the node held more than the pool
+	// lets them (docs/decisions/memory-pool.md); its restart policy keeps
+	// it down.
+	ReasonOutOfMemory = "OutOfMemory"
 	// ReasonPoweredOff means a firmware machine's guest powered itself
 	// off, which keeps it off until it is stopped and started; a firmware
 	// machine that ended otherwise is Exited, and boots again.
