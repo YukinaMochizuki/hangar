@@ -127,6 +127,7 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 		if c := a.tailnetCondition(m, report); c != nil {
 			report.conds = append(report.conds, c)
 		}
+		report.conds = append(report.conds, a.memoryConditions(uid, vm)...)
 		if werr := a.writeStatus(ctx, m, report); werr != nil {
 			return werr
 		}
@@ -744,6 +745,9 @@ func (a *Agent) writeStatus(ctx context.Context, m *computev1alpha1.Machine, obs
 	}
 	if tailscaleSpec(m) == nil {
 		status.Conditions = slices.DeleteFunc(status.Conditions, func(c *metav1.Condition) bool { return c.GetType() == computeapi.TailnetJoined })
+	}
+	if !slices.ContainsFunc(obs.conds, func(c *metav1.Condition) bool { return c.GetType() == computeapi.MachineBalloonResponsive }) {
+		status.Conditions = slices.DeleteFunc(status.Conditions, func(c *metav1.Condition) bool { return c.GetType() == computeapi.MachineBalloonResponsive })
 	}
 	if proto.Equal(status, m.GetStatus()) {
 		return nil

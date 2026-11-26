@@ -208,3 +208,17 @@ func TestABootingGuestIsLeftToItsBalloon(t *testing.T) {
 		t.Errorf("past the window: %v, want b squeezed a step", r.Balloons)
 	}
 }
+
+// TestADedicatedBalloonComesBackOnlyIntoRoom: a Dedicated member's balloon
+// is given back before any other grows, but only into room freed: here
+// the 48 left while A's balloon takes its step.
+func TestADedicatedBalloonComesBackOnlyIntoRoom(t *testing.T) {
+	t.Parallel()
+	d := dedicatedVM("d", 2048, 1000)
+	d.balloonMiB = 1000
+	r := decide(4096, []state{sharedVM("a", 3000, 2900, 100, 2900), d}, StepMiB)
+	check(t, r, Safe, map[string]int64{"a": 1096 + StepMiB, "d": 952})
+	// 1072 freed, short of what it and A in need are owed: it first.
+	r = decide(5120, []state{sharedVM("a", 1000, 1000, 950, 50), sharedVM("c", 2000, 1900, 100, 1900), d}, StepMiB)
+	check(t, r, Safe, map[string]int64{"a": 3096 - 72, "c": 2096 + StepMiB, "d": 0})
+}

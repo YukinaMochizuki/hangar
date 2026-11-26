@@ -914,10 +914,15 @@ type Hypervisor interface {
 	// runs in stays the one it started in. A machine with no running VM
 	// fails.
 	SetMemoryShare(ctx context.Context, machineUID string, pool *MemoryPool, guaranteedMiB int64) error
-	// SetMemoryPool holds the VMs running in a pool on the host to its size
-	// together, past their VMMs' own overheads: past that the host kills
-	// one of them whole. A pool no VM runs in is left alone.
-	SetMemoryPool(ctx context.Context, pool MemoryPool) error
+	// PoolVMs lists the VMs that run, or are about to again, in a memory
+	// pool on the host, as each was started: what the pool holds until its
+	// VM is gone, whatever its machine's spec says now.
+	PoolVMs(ctx context.Context) ([]PoolVM, error)
+	// SetMemoryPool holds the VMs running in a pool on the host to guestMiB
+	// of their guests' memory together, past their VMMs' own overheads:
+	// past that the host kills one of them whole. Zero or less lifts the
+	// limit. A pool no VM runs in is left alone.
+	SetMemoryPool(ctx context.Context, name string, guestMiB int64) error
 	// SweepMemoryPools removes what holds a pool no VM runs in any more.
 	SweepMemoryPools(ctx context.Context) error
 	// Balloon reads a running VM's balloon, and its guest's memory as the
@@ -943,6 +948,15 @@ type MemoryPool struct {
 	SizeMiB int64
 }
 
+// PoolVM is a VM running in a memory pool, as it was started: its pool,
+// memory and guarantee, in MiB, and when its running boot started.
+type PoolVM struct {
+	MachineUID               string
+	Pool                     MemoryPool
+	MemoryMiB, GuaranteedMiB int64
+	Started                  time.Time
+}
+
 // Balloon is a VM's balloon and what its guest last reported of its
 // memory, in bytes.
 type Balloon struct {
@@ -953,12 +967,8 @@ type Balloon struct {
 	// reported none, as a guest without the balloon's statistics.
 	Total, Available uint64
 	Updated          time.Time
-	// Reclaims counts, since the guest booted, its allocations that
-	// stalled and the times it reclaimed memory, directly or in the
-	// background, as of Updated: it moves while the guest is short of
-	// memory, page cache and all. HasReclaims is false for a guest whose
-	// kernel reports none of them. OOMKills counts the processes the
-	// guest's own OOM killer killed, if HasOOMKills.
+	// Reclaims counts the guest's stalled allocations and reclaims since it
+	// booted, if HasReclaims; OOMKills its own OOM kills, if HasOOMKills.
 	Reclaims, OOMKills       uint64
 	HasReclaims, HasOOMKills bool
 }
@@ -1354,6 +1364,10 @@ type VM struct {
 	// OOMKilled says an exited VM was killed whole by the host's OOM
 	// killer, its pool being out of memory, rather than ending by itself.
 	OOMKilled bool
+	// LastOOMKill is when the host's OOM killer last killed the VM whole,
+	// whatever its restart policy did then; zero for never since it was
+	// last started by the driver.
+	LastOOMKill time.Time
 }
 
 // VMState is where a VM is.

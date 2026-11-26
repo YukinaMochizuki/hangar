@@ -146,9 +146,6 @@ func (w *poolWatch) setMembers(members ...squeeze.Member) {
 
 func (w *poolWatch) run(ctx context.Context, log *slog.Logger) {
 	squeeze.Run(ctx, clockwork.NewRealClock(), w.hv.MemoryEvents(), node.DefaultSqueezePoll, func(ctx context.Context, pressure bool) bool {
-		if err := w.hv.SetMemoryPool(ctx, w.pool); err != nil {
-			log.Warn("setting the pool", "error", err)
-		}
 		step := int64(squeeze.StepMiB)
 		if pressure {
 			step = squeeze.PressureStepMiB
@@ -166,10 +163,18 @@ func (w *poolWatch) run(ctx context.Context, log *slog.Logger) {
 				}
 			}
 		}
-		r, err := w.q.Poll(ctx, w.hv, log, time.Now(), w.pool, members, step)
+		r, err := w.q.Poll(ctx, w.hv, log, time.Now(), w.pool.SizeMiB, members, step)
 		if err != nil {
 			log.Warn("polling the pool", "error", err)
 			return true
+		}
+		// As the agent's: never under what the guests have now.
+		var held int64
+		for _, size := range r.Sizes {
+			held += size
+		}
+		if err := w.hv.SetMemoryPool(ctx, w.pool.Name, max(w.pool.SizeMiB, held)); err != nil {
+			log.Warn("setting the pool", "error", err)
 		}
 		w.mu.Lock()
 		w.polls++

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
@@ -111,12 +112,17 @@ func (a *Agent) squeezeLoop(ctx context.Context) {
 	squeeze.Run(ctx, a.cfg.Clock, a.cfg.Drivers.Hypervisor.MemoryEvents(), a.cfg.SqueezePoll, a.squeeze)
 }
 
-// squeeze checks each memory pool of the machines running on the node, off
-// the host lock, with the larger step under pressure; it says whether any
-// is under pressure now. It keeps nothing from one poll to the next: the
-// host and the specs say it all.
+// squeeze checks each memory pool on the node, off the host lock, with the
+// larger step under pressure; it says whether any is under pressure now.
+// What a pool holds is read back from the host, its slice's VMs as they
+// were started; the specs say only what of it changes while they run.
 func (a *Agent) squeeze(ctx context.Context, pressure bool) bool {
 	hv := a.cfg.Drivers.Hypervisor
+	inPools, err := hv.PoolVMs(ctx)
+	if err != nil {
+		a.cfg.Log.Debug("listing the pools' VMs", "error", err)
+		return pressure
+	}
 	vms, err := hv.VMs(ctx)
 	if err != nil {
 		a.cfg.Log.Debug("listing VMs to squeeze their pools", "error", err)
@@ -125,18 +131,11 @@ func (a *Agent) squeeze(ctx context.Context, pressure bool) bool {
 	a.host.Lock()
 	shares := maps.Clone(a.memoryShares)
 	a.host.Unlock()
-	pools := map[string][]string{}
-	started := map[string]time.Time{}
-	for _, vm := range vms {
-		if s, ok := shares[vm.MachineUID]; ok && s.pool != nil && vm.State == driver.VMRunning {
-			pools[s.pool.Name] = append(pools[s.pool.Name], vm.MachineUID)
-			started[vm.MachineUID] = vm.Started
-		}
-	}
+	plans := planPools(inPools, vms, shares)
 	keep := map[string]bool{}
-	for _, uids := range pools {
-		for _, uid := range uids {
-			keep[uid] = true
+	for _, p := range plans {
+		for _, m := range p.members {
+			keep[m.UID] = true
 		}
 	}
 	a.squeezer.Forget(keep)
@@ -145,41 +144,180 @@ func (a *Agent) squeeze(ctx context.Context, pressure bool) bool {
 		step = squeeze.PressureStepMiB
 	}
 	hot := false
-	for _, name := range slices.Sorted(maps.Keys(pools)) {
+	for _, name := range slices.Sorted(maps.Keys(plans)) {
 		if ctx.Err() != nil {
 			return hot
 		}
-		hot = a.squeezePool(ctx, name, pools[name], shares, started, step) || hot
+		hot = a.squeezePool(ctx, plans[name], shares, step) || hot
 	}
 	return hot
 }
 
-// squeezePool checks one pool, of the running machines uids, and says
-// whether it is under pressure.
-func (a *Agent) squeezePool(ctx context.Context, name string, uids []string, shares map[string]memoryShare, started map[string]time.Time, step int64) bool {
-	hv := a.cfg.Drivers.Hypervisor
-	// The pool's machines' specs may disagree for a moment as it changes:
-	// the least is the safe one.
-	pool := driver.MemoryPool{Name: name}
-	members := make([]squeeze.Member, 0, len(uids))
-	for _, uid := range uids {
-		s := shares[uid]
-		if pool.SizeMiB == 0 || s.pool.SizeMiB < pool.SizeMiB {
-			pool.SizeMiB = s.pool.SizeMiB
+// poolPlan is what one pool's poll works on.
+type poolPlan struct {
+	name    string
+	members []squeeze.Member
+	// sizeMiB is what the members share: the pool's size, or its members'
+	// guarantees if more, and the memory of those in its slice that left it.
+	sizeMiB int64
+	// inSlice are the members in its slice; the others run outside it, as
+	// started before their machines joined the pool.
+	inSlice map[string]bool
+	// belongs says some VM in its slice is still of the pool; with none, its
+	// slice holds them to no limit until swept.
+	belongs bool
+}
+
+// planPools is each pool's plan, from its slices' VMs as launched, the running VMs, and the specs (docs/decisions/node-agent.md "Memory pools").
+func planPools(inPools []driver.PoolVM, vms []driver.VM, shares map[string]memoryShare) map[string]*poolPlan {
+	plans := map[string]*poolPlan{}
+	planOf := func(name string) *poolPlan {
+		p := plans[name]
+		if p == nil {
+			p = &poolPlan{name: name, inSlice: map[string]bool{}}
+			plans[name] = p
 		}
-		members = append(members, squeeze.Member{UID: uid, MemoryMiB: s.memoryMiB, GuaranteedMiB: s.guaranteedMiB, Started: started[uid]})
+		return p
 	}
-	if err := hv.SetMemoryPool(ctx, pool); err != nil {
-		a.cfg.Log.Warn("setting the memory pool's limit", "pool", name, "error", err)
+	specSize, startedSize := map[string]int64{}, map[string]int64{}
+	least := func(m map[string]int64, name string, size int64) {
+		if have, ok := m[name]; !ok || size < have {
+			m[name] = size
+		}
 	}
-	r, err := a.squeezer.Poll(ctx, hv, a.cfg.Log, a.cfg.Clock.Now(), pool, members, step)
+	guaranteed, left := map[string]int64{}, map[string]int64{}
+	inSlice := map[string]bool{}
+	for _, v := range inPools {
+		name := v.Pool.Name
+		p := planOf(name)
+		p.inSlice[v.MachineUID] = true
+		inSlice[v.MachineUID] = true
+		m := squeeze.Member{UID: v.MachineUID, MemoryMiB: v.MemoryMiB, GuaranteedMiB: v.GuaranteedMiB, Started: v.Started}
+		s, read := shares[v.MachineUID]
+		switch {
+		case !read:
+			least(startedSize, name, v.Pool.SizeMiB)
+		case s.pool != nil && s.pool.Name == name:
+			least(specSize, name, s.pool.SizeMiB)
+			m.GuaranteedMiB = min(s.guaranteedMiB, v.MemoryMiB)
+		default:
+			m.GuaranteedMiB = v.MemoryMiB
+			left[name] += v.MemoryMiB
+			p.members = append(p.members, m)
+			continue
+		}
+		p.belongs = true
+		guaranteed[name] += m.GuaranteedMiB
+		p.members = append(p.members, m)
+	}
+	for _, vm := range vms {
+		s, ok := shares[vm.MachineUID]
+		if !ok || s.pool == nil || vm.State != driver.VMRunning || inSlice[vm.MachineUID] {
+			continue
+		}
+		name := s.pool.Name
+		p := planOf(name)
+		p.belongs = true
+		least(specSize, name, s.pool.SizeMiB)
+		guaranteed[name] += s.guaranteedMiB
+		p.members = append(p.members, squeeze.Member{UID: vm.MachineUID, MemoryMiB: s.memoryMiB, GuaranteedMiB: s.memoryMiB, Started: vm.Started})
+	}
+	for name, p := range plans {
+		size, ok := specSize[name]
+		if !ok {
+			size = startedSize[name]
+		}
+		p.sizeMiB = max(size, guaranteed[name]) + left[name]
+	}
+	return plans
+}
+
+// sliceLimit is the guests' memory a pool's slice is held to, zero for none (docs/decisions/node-agent.md "Memory pools").
+func (p *poolPlan) sliceLimit(sizes map[string]int64) int64 {
+	if !p.belongs {
+		return 0
+	}
+	limit, held := p.sizeMiB, int64(0)
+	for _, m := range p.members {
+		if !p.inSlice[m.UID] {
+			limit -= m.MemoryMiB
+			continue
+		}
+		held += sizes[m.UID]
+	}
+	return max(limit, held, 1)
+}
+
+// squeezePool polls one pool, sets its slice's limit, and says whether it
+// is under pressure.
+func (a *Agent) squeezePool(ctx context.Context, p *poolPlan, shares map[string]memoryShare, step int64) bool {
+	hv := a.cfg.Drivers.Hypervisor
+	r, err := a.squeezer.Poll(ctx, hv, a.cfg.Log, a.cfg.Clock.Now(), p.sizeMiB, p.members, step)
 	if err != nil {
-		a.cfg.Log.Debug("reading a memory pool", "pool", name, "error", err)
+		a.cfg.Log.Debug("reading a memory pool", "pool", p.name, "error", err)
 		return false
+	}
+	if err := hv.SetMemoryPool(ctx, p.name, p.sliceLimit(r.Sizes)); err != nil {
+		a.cfg.Log.Warn("setting the memory pool's limit", "pool", p.name, "error", err)
 	}
 	if r.Stage != squeeze.Hold {
 		a.metrics.squeezed(r.Stage)
-		a.cfg.Log.Debug("squeezed a memory pool", "pool", name, "stage", r.Stage.String(), "balloons_mib", r.Balloons, "allowances_mib", r.Allowances)
+		a.cfg.Log.Debug("squeezed a memory pool", "pool", p.name, "stage", r.Stage.String(), "balloons_mib", r.Balloons, "allowances_mib", r.Allowances)
+	}
+	for _, uid := range r.Unresponsive {
+		a.metrics.balloonUnresponsive.Inc()
+		a.cfg.Log.Warn("a pool's machine's balloon does not follow what it is asked; it is asked nothing more until its VM starts again", "pool", p.name, "machine_uid", uid)
+		if s, ok := shares[uid]; ok && a.requeue != nil {
+			// Its reconcile reports it.
+			a.requeue(s.key)
+		}
 	}
 	return r.Hot
+}
+
+// deflateLeft gives back, whole, the balloon of each running VM in no
+// pool's slice: none is ever squeezed, but one whose pool's slice it has
+// left by starting again may have been.
+func (a *Agent) deflateLeft(ctx context.Context, vms []driver.VM) {
+	hv := a.cfg.Drivers.Hypervisor
+	inPools, err := hv.PoolVMs(ctx)
+	if err != nil {
+		return
+	}
+	pooled := map[string]bool{}
+	for _, v := range inPools {
+		pooled[v.MachineUID] = true
+	}
+	for _, vm := range vms {
+		if vm.State != driver.VMRunning || pooled[vm.MachineUID] || vm.FileShareServer {
+			continue
+		}
+		if b, err := hv.Balloon(ctx, vm.MachineUID); err == nil && b.Actual > 0 {
+			if err := hv.SetBalloon(ctx, vm.MachineUID, 0); err != nil {
+				a.cfg.Log.Warn("giving back a balloon", "machine_uid", vm.MachineUID, "error", err)
+			}
+		}
+	}
+}
+
+// memoryConditions are what the node says of a machine's memory beside its
+// Ready: that its balloon does not follow, while so; and when the host's
+// OOM killer last killed its VM whole, which stays.
+func (a *Agent) memoryConditions(uid string, vm *driver.VM) []*metav1.Condition {
+	var out []*metav1.Condition
+	if a.squeezer.Unresponsive(uid) {
+		out = append(out, &metav1.Condition{
+			Type: computeapi.MachineBalloonResponsive, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE,
+			Reason:  computeapi.ReasonBalloonUnresponsive,
+			Message: "the machine's balloon does not follow what its node asks, as a guest with no balloon driver: it is held at all it has until it starts again",
+		})
+	}
+	if vm != nil && !vm.LastOOMKill.IsZero() {
+		out = append(out, &metav1.Condition{
+			Type: computeapi.MachineOOMKilled, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE,
+			Reason:  computeapi.ReasonOutOfMemory,
+			Message: "the host killed the machine's VM whole at " + vm.LastOOMKill.UTC().Format(time.RFC3339) + ", its tenant's machines on the node out of the memory they share",
+		})
+	}
+	return out
 }

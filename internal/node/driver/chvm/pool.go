@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -89,41 +91,62 @@ func (h *Hypervisor) unitCgroup(spec driver.VMSpec, uid string) string {
 
 // poolMember is a VM whose unit runs, or is about to, in a pool's slice.
 type poolMember struct {
-	uid  string
-	spec driver.VMSpec
+	uid     string
+	spec    driver.VMSpec
+	started time.Time
 }
 
-// poolMembers lists the VMs whose units run, or wait to restart, in the
-// pool's slice, by their spec files.
-func (h *Hypervisor) poolMembers(ctx context.Context, name string) ([]poolMember, error) {
+// allPoolMembers lists the VMs whose units run, or wait to restart, in a
+// pool's slice, by their spec files, by pool.
+func (h *Hypervisor) allPoolMembers(ctx context.Context) (map[string][]poolMember, error) {
 	units, err := h.sd.list(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing units: %w", err)
 	}
-	var out []poolMember
+	out := map[string][]poolMember{}
 	for _, u := range units {
 		uid, ok := uidOfUnit(u.Name)
 		if !ok || !running(u) {
 			continue
 		}
 		ln, err := readLaunch(h.dir(uid))
-		if err != nil || ln.Spec.MemoryPool == nil || ln.Spec.MemoryPool.Name != name {
+		if err != nil || ln.Spec.MemoryPool == nil {
 			continue
 		}
-		out = append(out, poolMember{uid: uid, spec: ln.Spec})
+		name := ln.Spec.MemoryPool.Name
+		out[name] = append(out[name], poolMember{uid: uid, spec: ln.Spec, started: u.Started})
 	}
 	return out, nil
 }
 
-// poolProps are a pool's slice's properties, for its members and one more
-// about to start, if any: a MemoryMax of its size and each member's unit's
-// overhead, the backstop; and a CPUWeight of its members' together, so
-// each has the share of the CPUs it would have in machinesSlice itself,
-// beside the VMs in no pool. A member's weight is its cgroup's, which
-// SetMemoryShare may have changed since it started.
-func (h *Hypervisor) poolProps(pool driver.MemoryPool, members []poolMember, starting *driver.VMSpec) []sd.Property {
-	memory := uint64(pool.SizeMiB) << 20
-	var weight uint64
+// poolMembers lists the VMs whose units run, or wait to restart, in the
+// pool's slice.
+func (h *Hypervisor) poolMembers(ctx context.Context, name string) ([]poolMember, error) {
+	all, err := h.allPoolMembers(ctx)
+	return all[name], err
+}
+
+func (h *Hypervisor) PoolVMs(ctx context.Context) ([]driver.PoolVM, error) {
+	all, err := h.allPoolMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []driver.PoolVM
+	for _, members := range all {
+		for _, m := range members {
+			out = append(out, driver.PoolVM{
+				MachineUID: m.uid, Pool: *m.spec.MemoryPool, MemoryMiB: m.spec.MemoryMiB,
+				GuaranteedMiB: m.spec.Guaranteed(), Started: m.started,
+			})
+		}
+	}
+	slices.SortFunc(out, func(a, b driver.PoolVM) int { return strings.Compare(a.MachineUID, b.MachineUID) })
+	return out, nil
+}
+
+// poolProps are a pool's slice's MemoryMax and CPUWeight, for its members and starting (docs/decisions/node-agent.md "Memory pools").
+func (h *Hypervisor) poolProps(guestMiB int64, members []poolMember, starting *driver.VMSpec) (memory, weight uint64) {
+	memory = uint64(max(guestMiB, 0)) << 20
 	for _, m := range members {
 		memory += unitOverhead(m.spec)
 		w, err := readUint(filepath.Join(h.unitCgroup(m.spec, m.uid), "cpu.weight"))
@@ -136,42 +159,72 @@ func (h *Hypervisor) poolProps(pool driver.MemoryPool, members []poolMember, sta
 		memory += unitOverhead(*starting)
 		weight += cpuWeight(*starting)
 	}
-	return []sd.Property{
-		property("MemoryMax", memory),
-		noSwap(),
-		property("CPUWeight", clampWeight(weight)),
+	if guestMiB <= 0 {
+		memory = math.MaxUint64
 	}
+	return memory, clampWeight(weight)
 }
 
-// startPool makes or updates the slice of the pool of a VM about to start,
-// for it as well as the members running already. h.pools is held.
+// setSlice gives a pool's slice memory and weight, where they differ from
+// what its cgroup has; a slice not made yet is made.
+func (h *Hypervisor) setSlice(ctx context.Context, name string, memory, weight uint64) error {
+	dir := filepath.Join(h.cfg.cgroupRoot, machinesSlice, poolSlice(name))
+	if have, ok := cgroupMax(filepath.Join(dir, "memory.max")); ok && have == memory&^4095 {
+		if w, err := readUint(filepath.Join(dir, "cpu.weight")); err == nil && w == weight {
+			return nil
+		}
+	}
+	props := []sd.Property{property("MemoryMax", memory), noSwap(), property("CPUWeight", weight)}
+	if err := h.sd.slice(ctx, poolSlice(name), poolSliceDescription(name), props); err != nil {
+		return fmt.Errorf("the memory pool's slice %s: %w", poolSlice(name), err)
+	}
+	h.watchEvents(filepath.Join(dir, "memory.events"))
+	return nil
+}
+
+// cgroupMax reads a cgroup's limit file, "max" as math.MaxUint64&^4095.
+func cgroupMax(path string) (uint64, bool) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+	if s := strings.TrimSpace(string(b)); s == "max" {
+		return math.MaxUint64 &^ 4095, true
+	}
+	n, err := readUint(path)
+	return n, err == nil
+}
+
+// startPool makes or raises the slice of the pool of a VM about to start (docs/decisions/node-agent.md "Memory pools").
 func (h *Hypervisor) startPool(ctx context.Context, spec driver.VMSpec) error {
 	pool := *spec.MemoryPool
 	members, err := h.poolMembers(ctx, pool.Name)
 	if err != nil {
 		return err
 	}
-	if err := h.sd.slice(ctx, poolSlice(pool.Name), poolSliceDescription(pool.Name), h.poolProps(pool, members, &spec)); err != nil {
-		return fmt.Errorf("the memory pool's slice %s: %w", poolSlice(pool.Name), err)
+	memory, weight := h.poolProps(pool.SizeMiB, members, &spec)
+	if have, ok := cgroupMax(filepath.Join(h.cfg.cgroupRoot, machinesSlice, poolSlice(pool.Name), "memory.max")); ok {
+		if have == math.MaxUint64&^4095 {
+			memory = math.MaxUint64
+		} else {
+			memory = max(memory, have+unitOverhead(spec))
+		}
 	}
-	return nil
+	return h.setSlice(ctx, pool.Name, memory, weight)
 }
 
-func (h *Hypervisor) SetMemoryPool(ctx context.Context, pool driver.MemoryPool) error {
-	if err := checkPool(pool); err != nil {
-		return err
+func (h *Hypervisor) SetMemoryPool(ctx context.Context, name string, guestMiB int64) error {
+	if !poolNamePattern.MatchString(name) {
+		return fmt.Errorf("memory pool %q cannot name a slice", name)
 	}
 	h.pools.Lock()
 	defer h.pools.Unlock()
-	members, err := h.poolMembers(ctx, pool.Name)
+	members, err := h.poolMembers(ctx, name)
 	if err != nil || len(members) == 0 {
 		return err
 	}
-	if err := h.sd.slice(ctx, poolSlice(pool.Name), poolSliceDescription(pool.Name), h.poolProps(pool, members, nil)); err != nil {
-		return fmt.Errorf("the memory pool's slice %s: %w", poolSlice(pool.Name), err)
-	}
-	h.watchEvents(filepath.Join(h.cfg.cgroupRoot, machinesSlice, poolSlice(pool.Name), "memory.events"))
-	return nil
+	memory, weight := h.poolProps(guestMiB, members, nil)
+	return h.setSlice(ctx, name, memory, weight)
 }
 
 // SweepMemoryPools stops each pool's slice with no member and nothing in

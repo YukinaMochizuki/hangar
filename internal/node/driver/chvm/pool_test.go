@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -99,9 +100,10 @@ func TestAPoolsVMsRunInItsSlice(t *testing.T) {
 	}
 }
 
-// TestAPoolsSliceFollowsItsMembers: setting a pool's size counts the VMs
-// running in its slice then, at the weights their cgroups have; a pool no
-// VM runs in gets no slice.
+// TestAPoolsSliceFollowsItsMembers: setting a pool's limit counts the VMs
+// running in its slice then, at the weights their cgroups have, and sets
+// nothing when the slice has it already; zero lifts it; a pool no VM runs
+// in gets no slice; a VM starting never lowers it.
 func TestAPoolsSliceFollowsItsMembers(t *testing.T) {
 	s := newFakeSystemd()
 	root := t.TempDir()
@@ -120,40 +122,100 @@ func TestAPoolsSliceFollowsItsMembers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cg, "cpu.weight"), []byte("7\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.SetMemoryPool(ctx, driver.MemoryPool{Name: "acme-corp", SizeMiB: 4096}); err != nil {
+	if err := h.SetMemoryPool(ctx, "acme-corp", 4096); err != nil {
 		t.Fatal(err)
 	}
 	slice := s.propsOf(acmeSlice)
-	if got, want := prop(slice, "MemoryMax"), uint64(4096<<20+2*overhead1G); got != want {
+	want := uint64(4096<<20 + 2*overhead1G)
+	if got := prop(slice, "MemoryMax"); got != want {
 		t.Errorf("MemoryMax %v, want %d", got, want)
 	}
 	if got := prop(slice, "CPUWeight"); got != uint64(9) {
 		t.Errorf("CPUWeight %v, want 9: a's 7 and b's 2", got)
 	}
 
+	// The slice's cgroup as the kernel then shows it: nothing to set.
+	sliceDir := filepath.Join(root, machinesSlice, acmeSlice)
+	writeCgroup := func(memory string, weight int) {
+		t.Helper()
+		for name, v := range map[string]string{"memory.max": memory + "\n", "cpu.weight": strconv.Itoa(weight) + "\n"} {
+			if err := os.WriteFile(filepath.Join(sliceDir, name), []byte(v), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	writeCgroup(strconv.FormatUint(want&^4095, 10), 9)
+	s.props[acmeSlice] = nil
+	if err := h.SetMemoryPool(ctx, "acme-corp", 4096); err != nil || s.propsOf(acmeSlice) != nil {
+		t.Errorf("set what the slice has: %v, %v", err, s.propsOf(acmeSlice))
+	}
+
+	// A VM starting adds its overhead to what the slice has, though the
+	// pool's size is less.
+	c := pooledSpec("c", 256)
+	c.MemoryPool.SizeMiB = 1024
+	if err := h.Start(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	if got := prop(s.propsOf(acmeSlice), "MemoryMax"); got != want&^4095+overhead1G {
+		t.Errorf("a VM starting set MemoryMax %v, want %d", got, want&^4095+overhead1G)
+	}
+	s.exit(t, h, "c", 0)
+
 	s.exit(t, h, "b", 0)
-	if err := h.SetMemoryPool(ctx, driver.MemoryPool{Name: "acme-corp", SizeMiB: 4096}); err != nil {
+	if err := h.SetMemoryPool(ctx, "acme-corp", 4096); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := prop(s.propsOf(acmeSlice), "MemoryMax"), uint64(4096<<20+overhead1G); got != want {
 		t.Errorf("with b exited, MemoryMax %v, want %d", got, want)
 	}
+	if err := h.SetMemoryPool(ctx, "acme-corp", 0); err != nil || prop(s.propsOf(acmeSlice), "MemoryMax") != uint64(math.MaxUint64) {
+		t.Errorf("lifted: %v, MemoryMax %v; want infinity", err, prop(s.propsOf(acmeSlice), "MemoryMax"))
+	}
 
-	if err := h.SetMemoryPool(ctx, driver.MemoryPool{Name: "nobody", SizeMiB: 4096}); err != nil {
+	if err := h.SetMemoryPool(ctx, "nobody", 4096); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.propsOf(poolSlice("nobody")); got != nil {
 		t.Errorf("a pool no VM runs in got a slice: %v", got)
 	}
-	for _, p := range []driver.MemoryPool{{Name: "Acme", SizeMiB: 1}, {Name: "a/b", SizeMiB: 1}, {Name: "acme", SizeMiB: 0}} {
-		if err := h.SetMemoryPool(ctx, p); err == nil {
+	for _, p := range []driver.MemoryPool{{Name: "Acme", SizeMiB: 1}, {Name: "a/b", SizeMiB: 1}} {
+		if err := h.SetMemoryPool(ctx, p.Name, 1); err == nil {
 			t.Errorf("set pool %+v", p)
 		}
-		spec := pooledSpec("c", 0)
+	}
+	for _, p := range []driver.MemoryPool{{Name: "Acme", SizeMiB: 1}, {Name: "a/b", SizeMiB: 1}, {Name: "acme", SizeMiB: 0}} {
+		spec := pooledSpec("d", 0)
 		spec.MemoryPool = &p
 		if err := h.Start(ctx, spec); err == nil {
 			t.Errorf("started a VM in pool %+v", p)
 		}
+	}
+}
+
+// TestPoolVMsAreAsStarted: the VMs running in a pool are listed by what
+// their spec files say they started with, whatever started since.
+func TestPoolVMsAreAsStarted(t *testing.T) {
+	s := newFakeSystemd()
+	h := newDriverWith(t, shortDir(t), s, &fakeGuest{}, func(c *Config) { c.cgroupRoot = t.TempDir() })
+	ctx := t.Context()
+	for _, spec := range []driver.VMSpec{pooledSpec("a", 256), pooledSpec("b", 0), testSpec("plain", driver.RestartAlways)} {
+		if err := h.Start(ctx, spec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vms, err := h.PoolVMs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := driver.MemoryPool{Name: "acme-corp", SizeMiB: 2048}
+	if len(vms) != 2 || vms[0].MachineUID != "a" || vms[0].Pool != pool || vms[0].MemoryMiB != 1024 || vms[0].GuaranteedMiB != 256 ||
+		vms[1].MachineUID != "b" || vms[1].GuaranteedMiB != 1024 || vms[0].Started.IsZero() {
+		t.Errorf("pool VMs %+v", vms)
+	}
+	s.exit(t, h, "b", 0)
+	if vms, err := h.PoolVMs(ctx); err != nil || len(vms) != 1 {
+		t.Errorf("with b exited: %+v, %v", vms, err)
 	}
 }
 
@@ -277,7 +339,7 @@ func TestAPoolsVMStartingOrItsSliceFullWakesTheSqueeze(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slice, "memory.events"), []byte("max 0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.SetMemoryPool(ctx, *pooledSpec("m1", 256).MemoryPool); err != nil {
+	if err := h.SetMemoryPool(ctx, "acme-corp", 2048); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(slice, "memory.events"), []byte("max 3\n"), 0o644); err != nil {
@@ -369,8 +431,19 @@ func TestAnOOMKillIsRecorded(t *testing.T) {
 	delete(s.units, unitName("m1"))
 	s.mu.Unlock()
 	vm, ok := listed(t, h, "m1")
-	if !ok || vm.State != driver.VMExited || !vm.OOMKilled || vm.ExitCode != ExitNoRecord {
-		t.Errorf("listed %+v (%t), want exited, killed, with %d", vm, ok, ExitNoRecord)
+	if !ok || vm.State != driver.VMExited || !vm.OOMKilled || vm.ExitCode != ExitNoRecord || vm.LastOOMKill.IsZero() {
+		t.Errorf("listed %+v (%t), want exited, killed, with %d, when", vm, ok, ExitNoRecord)
+	}
+	// Started again by its restart policy, whose launcher forgets the exit:
+	// the kill is kept.
+	if err := os.Remove(exitFile); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.units[unitName("m1")] = &unitState{Name: unitName("m1"), Active: "active", Started: time.Now()}
+	s.mu.Unlock()
+	if again, ok := listed(t, h, "m1"); !ok || again.State != driver.VMRunning || !again.LastOOMKill.Equal(vm.LastOOMKill) {
+		t.Errorf("started again, listed %+v (%t), want running, killed at %v", again, ok, vm.LastOOMKill)
 	}
 	if err := RecordOOMKill(dir, "../m1", procCgroup, root, "oom-kill"); err == nil {
 		t.Error("recorded for a uid that is a path")

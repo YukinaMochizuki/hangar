@@ -61,7 +61,6 @@ func TestAPollTellsAGuestReclaiming(t *testing.T) {
 		},
 		set: map[string]uint64{},
 	}
-	pool := driver.MemoryPool{Name: "acme", SizeMiB: 5120}
 	members := []squeeze.Member{
 		{UID: "a", MemoryMiB: 4096, GuaranteedMiB: 1024},
 		{UID: "c", MemoryMiB: 4096, GuaranteedMiB: 1024},
@@ -69,7 +68,7 @@ func TestAPollTellsAGuestReclaiming(t *testing.T) {
 	}
 	q := squeeze.NewSqueezer()
 	log := slog.New(slog.DiscardHandler)
-	r, err := q.Poll(t.Context(), h, log, now, pool, members, squeeze.StepMiB)
+	r, err := q.Poll(t.Context(), h, log, now, 5120, members, squeeze.StepMiB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +78,7 @@ func TestAPollTellsAGuestReclaiming(t *testing.T) {
 	b := h.balloons["a"]
 	b.Reclaims = 15
 	h.balloons["a"] = b
-	if r, err = q.Poll(t.Context(), h, log, now, pool, members, squeeze.StepMiB); err != nil {
+	if r, err = q.Poll(t.Context(), h, log, now, 5120, members, squeeze.StepMiB); err != nil {
 		t.Fatal(err)
 	}
 	if want := map[string]uint64{"c": 2560 * mib}; r.Stage != squeeze.Safe || !maps.Equal(h.set, want) || !slices.Equal(r.Needing, []string{"a"}) {
@@ -88,7 +87,107 @@ func TestAPollTellsAGuestReclaiming(t *testing.T) {
 
 	clear(h.set)
 	delete(h.used, "c")
-	if _, err := q.Poll(t.Context(), h, log, now, pool, members, squeeze.StepMiB); err == nil || len(h.set) > 0 {
+	if _, err := q.Poll(t.Context(), h, log, now, 5120, members, squeeze.StepMiB); err == nil || len(h.set) > 0 {
 		t.Errorf("with c's memory unknown: %v, set %v; want an error and nothing set", err, h.set)
+	}
+}
+
+// TestABalloonThatDoesNotFollowIsAskedNoMore: a balloon that does not move
+// toward what it is asked for StuckFor is said unresponsive once, then
+// asked nothing more and the pool not kept hot for it; its VM started
+// again, it is asked again.
+func TestABalloonThatDoesNotFollowIsAskedNoMore(t *testing.T) {
+	t.Parallel()
+	const mib = 1 << 20
+	start := time.Unix(1_000_000_000, 0)
+	// Its balloons never move from what balloons says.
+	h := &host{
+		used:     map[string]uint64{"a": 4000 * mib, "d": 500 * mib},
+		balloons: map[string]driver.Balloon{"a": {Total: 4096 * mib, Available: 3800 * mib}, "d": {}},
+		set:      map[string]uint64{},
+	}
+	members := []squeeze.Member{
+		{UID: "a", MemoryMiB: 4096, GuaranteedMiB: 1024, Started: start},
+		{UID: "d", MemoryMiB: 2048, GuaranteedMiB: 2048, Started: start},
+	}
+	q := squeeze.NewSqueezer()
+	log := slog.New(slog.DiscardHandler)
+	poll := func(now time.Time) squeeze.Result {
+		t.Helper()
+		b := h.balloons["a"]
+		b.Updated = now
+		h.balloons["a"] = b
+		clear(h.set)
+		r, err := q.Poll(t.Context(), h, log, now, 4096, members, squeeze.StepMiB)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	var said []string
+	for i := range 10 {
+		r := poll(start.Add(time.Minute + time.Duration(i)*10*time.Second))
+		said = append(said, r.Unresponsive...)
+		if i >= 7 && (r.Hot || len(h.set) > 0) {
+			t.Errorf("poll %d, once given up: %+v, set %v; want nothing asked, not hot", i, r, h.set)
+		}
+		if i < 7 && h.set["a"] == 0 {
+			t.Errorf("poll %d: a not asked, set %v", i, h.set)
+		}
+	}
+	if !slices.Equal(said, []string{"a"}) || !q.Unresponsive("a") {
+		t.Errorf("said %v, unresponsive %t; want a once", said, q.Unresponsive("a"))
+	}
+	members[0].Started = start.Add(time.Hour)
+	poll(start.Add(time.Hour + time.Minute))
+	if q.Unresponsive("a") || h.set["a"] == 0 {
+		t.Errorf("started again: unresponsive %t, set %v; want asked again", q.Unresponsive("a"), h.set)
+	}
+}
+
+// TestAGuestGrownAfterItBootedIsSqueezed: a Shared guest seen at its boot
+// size, its guarantee, has booted: grown past it within squeeze.BootWindow
+// of its start, it is squeezed as any, not left to a balloon it no longer
+// inflates.
+func TestAGuestGrownAfterItBootedIsSqueezed(t *testing.T) {
+	t.Parallel()
+	const mib = 1 << 20
+	now := time.Unix(1_000_000_000, 0)
+	h := &host{
+		used:     map[string]uint64{"a": 1000 * mib, "c": 1000 * mib},
+		balloons: map[string]driver.Balloon{},
+		set:      map[string]uint64{},
+	}
+	at := func(uid string, sizeMiB, inUseMiB uint64) {
+		h.balloons[uid] = driver.Balloon{Actual: (4096 - sizeMiB) * mib, Total: sizeMiB * mib, Available: (sizeMiB - inUseMiB) * mib, Updated: now}
+	}
+	members := []squeeze.Member{
+		{UID: "a", MemoryMiB: 4096, GuaranteedMiB: 1024, Started: now},
+		{UID: "c", MemoryMiB: 4096, GuaranteedMiB: 1024, Started: now.Add(-time.Hour)},
+	}
+	q := squeeze.NewSqueezer()
+	log := slog.New(slog.DiscardHandler)
+	poll := func() {
+		t.Helper()
+		clear(h.set)
+		if _, err := q.Poll(t.Context(), h, log, now, 4096, members, squeeze.StepMiB); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Booting, A is left to its balloon.
+	at("a", 3072, 100)
+	at("c", 1024, 1000)
+	poll()
+	if _, ok := h.set["a"]; ok {
+		t.Errorf("booting, a was set %v", h.set)
+	}
+	// At its boot size, then grown, then C in need: A gives it room.
+	at("a", 1024, 100)
+	poll()
+	now = now.Add(time.Second)
+	at("a", 3072, 100)
+	poll()
+	if got := h.set["a"]; got != (1024+squeeze.StepMiB)*mib {
+		t.Errorf("grown after it booted, a was set %d MiB, want %d", got/mib, 1024+squeeze.StepMiB)
 	}
 }

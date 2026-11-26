@@ -55,10 +55,12 @@ type Host struct {
 	memHeld map[string]uint64
 	// pools are the sizes of the memory pools the host holds, in MiB;
 	// memEvents is Hypervisor.MemoryEvents.
-	pools        map[string]int64
-	memEvents    chan struct{}
-	guestMemUsed map[string]uint64
-	oldMemGuests map[string]bool
+	pools     map[string]int64
+	memEvents chan struct{}
+	// stuckBalloons take no SetBalloon (UnresponsiveBalloon).
+	stuckBalloons map[string]bool
+	guestMemUsed  map[string]uint64
+	oldMemGuests  map[string]bool
 
 	tags      map[string]string             // reference to digest
 	configs   map[string]driver.ImageConfig // by digest; a digest stays pullable
@@ -307,7 +309,7 @@ func New() *Host {
 		rootUsed: map[string]uint64{}, rootFilesUsed: map[string]uint64{}, rootClaims: map[string]driver.FSUsage{}, oldRootGuests: map[string]bool{}, noLiveResize: map[string]bool{}, rootCalls: map[string][]string{}, rootHolds: map[string]chan struct{}{},
 		volumeUsed: map[string]uint64{}, volumeFilesUsed: map[string]uint64{}, volumeClaims: map[string]driver.FSUsage{}, oldVolumeGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
-		memHeld: map[string]uint64{}, pools: map[string]int64{}, memEvents: make(chan struct{}, 1), guestMemUsed: map[string]uint64{}, oldMemGuests: map[string]bool{},
+		memHeld: map[string]uint64{}, pools: map[string]int64{}, memEvents: make(chan struct{}, 1), stuckBalloons: map[string]bool{}, guestMemUsed: map[string]uint64{}, oldMemGuests: map[string]bool{},
 		shareRoots: map[string]string{}, oldListGuests: map[string]bool{},
 	}
 }
@@ -1674,7 +1676,11 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		pool:  spec.MemoryPool, guaranteed: spec.GuaranteedMiB,
 	}
 	if p := spec.MemoryPool; p != nil {
-		d.h.pools[p.Name] = p.SizeMiB
+		if _, ok := d.h.pools[p.Name]; !ok {
+			d.h.pools[p.Name] = p.SizeMiB
+		}
+		// As the real driver's: the squeeze gives it its allowance now.
+		signal(d.h.memEvents)
 	}
 	if spec.TPM {
 		if _, ok := d.h.tpms[spec.MachineUID]; !ok {
@@ -1691,9 +1697,14 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 // bootGuest has a guest, booting, hold what its boot disk gives it, written
 // when the VM started: as hangar-init does, whatever it was told in an
 // earlier boot. A container's is its public IPv6, a share's server's its
-// export.
+// export. Its balloon is what it boots with: as chvm's, a pool's Shared
+// guest's holds all but its guarantee.
 func (h *Host) bootGuest(v *vm) {
 	v.cpu, v.spin = bootCPU, 0
+	v.balloon = 0
+	if v.spec.MemoryPool != nil && v.spec.Guaranteed() < v.spec.MemoryMiB {
+		v.balloon = uint64(v.spec.MemoryMiB-v.spec.Guaranteed()) << 20
+	}
 	switch {
 	case v.spec.FileShareServer != nil:
 		h.exports[v.MachineUID] = cloneExport(v.spec.FileShareServer.Export)

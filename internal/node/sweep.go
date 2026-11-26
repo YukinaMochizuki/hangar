@@ -66,6 +66,7 @@ func (a *Agent) sweep(ctx context.Context) error {
 		return err == nil
 	}
 	if vms, err := d.Hypervisor.VMs(ctx); keep(err) {
+		a.deflateLeft(ctx, vms)
 		listed := map[string]bool{}
 		for _, vm := range vms {
 			listed[vm.MachineUID] = true

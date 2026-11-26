@@ -3,6 +3,9 @@ package fake
 import (
 	"context"
 	"fmt"
+	"maps"
+	"regexp"
+	"slices"
 	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -25,16 +28,68 @@ func (d hypervisor) SetMemoryShare(_ context.Context, machineUID string, pool *d
 	return nil
 }
 
-func (d hypervisor) SetMemoryPool(_ context.Context, pool driver.MemoryPool) error {
+// poolName is what names a pool, as chvm's: a DNS label.
+var poolName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+
+func (d hypervisor) SetMemoryPool(_ context.Context, name string, guestMiB int64) error {
+	if !poolName.MatchString(name) {
+		return fmt.Errorf("memory pool %q cannot name a slice", name)
+	}
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
-	if pool.SizeMiB <= 0 {
-		return fmt.Errorf("memory pool %s has a size of %d MiB", pool.Name, pool.SizeMiB)
-	}
-	if d.h.poolMembersLocked(pool.Name) > 0 {
-		d.h.pools[pool.Name] = pool.SizeMiB
+	if d.h.poolMembersLocked(name) > 0 {
+		d.h.pools[name] = guestMiB
 	}
 	return nil
+}
+
+func (d hypervisor) PoolVMs(context.Context) ([]driver.PoolVM, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	var out []driver.PoolVM
+	for _, uid := range slices.Sorted(maps.Keys(d.h.vms)) {
+		v := d.h.vms[uid]
+		if v.State != driver.VMRunning || v.spec.MemoryPool == nil {
+			continue
+		}
+		out = append(out, driver.PoolVM{
+			MachineUID: uid, Pool: *v.spec.MemoryPool, MemoryMiB: v.spec.MemoryMiB,
+			GuaranteedMiB: v.spec.Guaranteed(), Started: v.Started,
+		})
+	}
+	return out, nil
+}
+
+// OOMKill has the host's OOM killer kill the machine's running VM whole:
+// its restart policy starts it again, or it is exited, killed; either way
+// the VM says when.
+func (h *Host) OOMKill(machineUID string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	v, ok := h.vms[machineUID]
+	if !ok || v.State != driver.VMRunning {
+		return fmt.Errorf("no running VM for machine %s", machineUID)
+	}
+	h.endExecsLocked(machineUID)
+	v.LastOOMKill = time.Now()
+	if v.spec.Restart == driver.RestartNever {
+		v.State, v.ExitCode, v.OOMKilled, v.balloon = driver.VMExited, 253, true, 0
+	} else {
+		v.boots++
+		v.Started = time.Now()
+		h.boot(machineUID)
+		h.bootGuest(v)
+	}
+	signal(h.vmChanges)
+	return nil
+}
+
+// UnresponsiveBalloon has the machine's VM's balloon take no SetBalloon
+// from now, as a guest with no balloon driver, or a hung one.
+func (h *Host) UnresponsiveBalloon(machineUID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.stuckBalloons[machineUID] = true
 }
 
 func (d hypervisor) SweepMemoryPools(context.Context) error {
@@ -87,6 +142,9 @@ func (d hypervisor) SetBalloon(_ context.Context, machineUID string, size uint64
 	}
 	if size > uint64(v.spec.MemoryMiB)<<20 {
 		return fmt.Errorf("machine %s: a balloon of %d bytes is past its memory", machineUID, size)
+	}
+	if d.h.stuckBalloons[machineUID] {
+		return nil
 	}
 	v.balloon = size
 	return nil

@@ -48,6 +48,9 @@ const (
 	// exitFile records how the VM's last run ended, written by the
 	// launcher when Cloud Hypervisor exits by itself.
 	exitFile = "exit.json"
+	// oomFile is when the host's OOM killer last killed the VM's unit
+	// whole, which outlives the unit's restarts (RecordOOMKill).
+	oomFile = "oom-killed"
 	// stopFile marks a VM being stopped: once its guest powers off, the
 	// launcher waits to be stopped instead of exiting, so the restart
 	// policy never starts it again.

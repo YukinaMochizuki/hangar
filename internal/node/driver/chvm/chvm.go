@@ -420,7 +420,8 @@ func (h *Hypervisor) vm(uid string, unit *unitState) (driver.VM, bool, error) {
 		return driver.VM{}, false, err
 	}
 	vm := driver.VM{
-		MachineUID: uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces, RootSize: ln.Spec.Root.Size,
+		LastOOMKill: lastOOMKill(dir),
+		MachineUID:  uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces, RootSize: ln.Spec.Root.Size,
 		VCPUs: ln.Spec.VCPUs, Firmware: ln.Spec.Firmware, FileShareServer: ln.Spec.FileShareServer != nil,
 	}
 	for _, v := range ln.Spec.Disks {
@@ -1129,4 +1130,18 @@ func (h *Hypervisor) DeleteLogs(ctx context.Context, uid string) error {
 		return fmt.Errorf("machine %s's unit %s is %s; stop it first", uid, unit.Name, unit.Active)
 	}
 	return os.RemoveAll(h.dir(uid))
+}
+
+// lastOOMKill is when RecordOOMKill last recorded the VM killed whole, zero
+// for never.
+func lastOOMKill(dir string) time.Time {
+	b, err := os.ReadFile(filepath.Join(dir, oomFile))
+	if err != nil {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(b)))
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }

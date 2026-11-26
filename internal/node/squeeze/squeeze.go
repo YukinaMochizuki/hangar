@@ -45,10 +45,11 @@ const (
 	// before its balloon is set: an allowance moves a little at each poll.
 	DeadbandMiB = 32
 	// BootWindow is how long after its VM started a Shared guest may still
-	// be inflating the balloon it boots with: past hangar-init's wait for it
-	// (boot.BalloonTimeout). BootSlackMiB is how far above its guarantee its
-	// size may be once inflated (boot.BalloonSlackMiB).
-	BootWindow   = 30 * time.Second
+	// be inflating the balloon it boots with: hangar-init's wait for it
+	// (boot.BalloonTimeout), after which it runs, and counts at what it has.
+	// BootSlackMiB is how far above its guarantee its size may be once
+	// inflated (boot.BalloonSlackMiB).
+	BootWindow   = 15 * time.Second
 	BootSlackMiB = 64
 	// StaleStats is how old a guest's report of its memory may be before
 	// it says nothing: Cloud Hypervisor asks for a new one each time it is
@@ -102,27 +103,66 @@ type Result struct {
 	// members' guests are held at; Needing the members that need more.
 	Balloons, Allowances map[string]int64
 	Needing              []string
+	// Sizes are what each member's guest has now, its memory less what its
+	// balloon holds, whatever was set.
+	Sizes map[string]int64
+	// Unresponsive are the members whose balloons stopped following what
+	// they are asked at this poll (Squeezer.Unresponsive).
+	Unresponsive []string
 	// Hot says a guest needs more, or a balloon has further to go: polled
 	// again soon, for pressure.
 	Hot bool
 }
 
+// How long a balloon may not follow what it was asked before it is asked
+// nothing more: StuckFor, short of it by more than DeadbandMiB and moving
+// less than MovedMiB from one poll to the next. Long enough for a guest
+// killing a process of its own to give its balloon what it frees.
+const (
+	StuckFor = time.Minute
+	MovedMiB = 16
+)
+
 // Squeezer squeezes the pools of a node. It keeps each guest's last count
-// of its reclaims, to tell it moving; it is safe for concurrent use.
+// of its reclaims, to tell it moving, and how its balloon followed what it
+// was asked; it is safe for concurrent use.
 type Squeezer struct {
 	mu       sync.Mutex
 	reclaims map[string]uint64
+	balloons map[string]*followed
 }
 
-// NewSqueezer returns a squeezer that has seen no reclaims yet.
-func NewSqueezer() *Squeezer { return &Squeezer{reclaims: map[string]uint64{}} }
+// followed is how a member's balloon followed what it was asked, in the
+// boot started at started.
+type followed struct {
+	started, stuckSince time.Time
+	asked, last         int64
+	hasAsked            bool
+	unresponsive        bool
+	// booted says its guest was seen at the size it boots with: past it
+	// later, it was grown, and is booting no more.
+	booted bool
+}
 
-// Poll reads the members of a pool from the host at now, and sets their
-// balloons as decide says, one growing by at most stepMiB. A member whose
-// memory on the host cannot be read leaves what the pool holds unknown,
-// and it does nothing. What it fails to set is logged.
-func (q *Squeezer) Poll(ctx context.Context, hv driver.Hypervisor, log *slog.Logger, now time.Time, pool driver.MemoryPool, members []Member, stepMiB int64) (Result, error) {
+// NewSqueezer returns a squeezer that has seen nothing yet.
+func NewSqueezer() *Squeezer {
+	return &Squeezer{reclaims: map[string]uint64{}, balloons: map[string]*followed{}}
+}
+
+// Unresponsive reports whether the machine's balloon, in its boot running,
+// stopped following what it was asked: it is asked nothing more until the
+// VM starts again, and counted at what its guest has.
+func (q *Squeezer) Unresponsive(uid string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	f := q.balloons[uid]
+	return f != nil && f.unresponsive
+}
+
+// Poll reads a pool's members at now and sets their balloons as decide says (docs/decisions/node-agent.md "Memory pools").
+func (q *Squeezer) Poll(ctx context.Context, hv driver.Hypervisor, log *slog.Logger, now time.Time, sizeMiB int64, members []Member, stepMiB int64) (Result, error) {
 	states := make([]state, 0, len(members))
+	var stuck []string
 	for _, mb := range members {
 		used, err := hv.Usage(ctx, mb.UID)
 		if err != nil {
@@ -135,7 +175,7 @@ func (q *Squeezer) Poll(ctx context.Context, hv driver.Hypervisor, log *slog.Log
 			// A VM whose balloon cannot be read, as one whose VMM serves
 			// no API, cannot be squeezed either.
 			m.noBalloon = true
-			log.Debug("reading a pool's machine's balloon", "pool", pool.Name, "machine_uid", mb.UID, "error", err)
+			log.Debug("reading a pool's machine's balloon", "machine_uid", mb.UID, "error", err)
 		default:
 			m.balloonMiB = min(int64(b.Actual>>20), m.MemoryMiB)
 			m.inUseMiB, m.stats = GuestInUse(b, now)
@@ -146,16 +186,82 @@ func (q *Squeezer) Poll(ctx context.Context, hv driver.Hypervisor, log *slog.Log
 					m.reclaimed = q.moved(mb.UID, b.Reclaims)
 				}
 			}
+			var newly bool
+			m.noBalloon, newly = q.follow(mb.UID, mb.Started, m.balloonMiB, now)
+			if newly {
+				stuck = append(stuck, mb.UID)
+			}
+			m.booted = q.booted(mb.UID, m.size() <= m.GuaranteedMiB+BootSlackMiB)
 		}
 		states = append(states, m)
 	}
-	r := decide(pool.SizeMiB, states, stepMiB)
+	r := decide(sizeMiB, states, stepMiB)
+	r.Unresponsive = stuck
 	for _, uid := range slices.Sorted(maps.Keys(r.Balloons)) {
 		if err := hv.SetBalloon(ctx, uid, uint64(r.Balloons[uid])<<20); err != nil {
-			log.Warn("setting a pool's machine's balloon", "pool", pool.Name, "machine_uid", uid, "error", err)
+			log.Warn("setting a pool's machine's balloon", "machine_uid", uid, "error", err)
+			continue
 		}
+		q.asked(uid, r.Balloons[uid])
 	}
 	return r, nil
+}
+
+// follow takes what a member's balloon holds now, against what it was
+// asked, and reports whether it no longer follows, and whether it stopped
+// at this poll.
+func (q *Squeezer) follow(uid string, started time.Time, actual int64, now time.Time) (unresponsive, newly bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	f := q.balloons[uid]
+	if f == nil || !f.started.Equal(started) {
+		f = &followed{started: started, last: actual}
+		q.balloons[uid] = f
+	}
+	if f.unresponsive {
+		return true, false
+	}
+	switch {
+	case !f.hasAsked || abs(f.asked-actual) <= DeadbandMiB || abs(actual-f.last) >= MovedMiB:
+		f.stuckSince = time.Time{}
+	case f.stuckSince.IsZero():
+		f.stuckSince = now
+	}
+	f.last = actual
+	if !f.stuckSince.IsZero() && now.Sub(f.stuckSince) >= StuckFor {
+		f.unresponsive = true
+		return true, true
+	}
+	return false, false
+}
+
+// booted keeps that a member's guest, followed, is at its boot size now, if
+// so, and reports whether it was in this boot.
+func (q *Squeezer) booted(uid string, now bool) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	f := q.balloons[uid]
+	if f == nil {
+		return now
+	}
+	f.booted = f.booted || now
+	return f.booted
+}
+
+// asked keeps what a member's balloon was asked.
+func (q *Squeezer) asked(uid string, target int64) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if f := q.balloons[uid]; f != nil {
+		f.asked, f.hasAsked = target, true
+	}
+}
+
+func abs(n int64) int64 {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // moved reports whether a guest's count of its reclaims has grown since the
@@ -173,6 +279,11 @@ func (q *Squeezer) moved(uid string, n uint64) bool {
 func (q *Squeezer) Forget(keep map[string]bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	for uid := range q.balloons {
+		if !keep[uid] {
+			delete(q.balloons, uid)
+		}
+	}
 	for uid := range q.reclaims {
 		if !keep[uid] {
 			delete(q.reclaims, uid)
@@ -208,6 +319,8 @@ type state struct {
 	stats                  bool
 	inUseMiB, availableMiB int64
 	counters, reclaimed    bool
+	// booted says it was seen at its boot size since its VM started.
+	booted bool
 }
 
 // size is what the guest has of its memory: what its balloon leaves it.
@@ -215,9 +328,10 @@ func (m state) size() int64 { return m.MemoryMiB - m.balloonMiB }
 
 // booting reports a Shared guest still inflating the balloon it boots
 // with, which leaves it its guarantee: its balloon is left to it, its
-// container's process not started yet (docs/decisions/guest-agent.md).
+// container's process not started yet (docs/decisions/guest-agent.md);
+// one seen at its boot size since was grown, and has booted.
 func (m state) booting() bool {
-	return m.shared() && !m.noBalloon && m.now.Sub(m.Started) < BootWindow && m.size() > m.GuaranteedMiB+BootSlackMiB
+	return m.shared() && !m.noBalloon && !m.booted && m.now.Sub(m.Started) < BootWindow && m.size() > m.GuaranteedMiB+BootSlackMiB
 }
 
 // margin is what a guest is left past what it uses, and has available
@@ -254,14 +368,7 @@ func (m state) floor() int64 {
 	return min(max(m.inUseMiB+margin(m.MemoryMiB), m.GuaranteedMiB), m.MemoryMiB)
 }
 
-// allowances are the sizes the Shared members' guests are held at in a pool
-// of sizeMiB. They share what the Dedicated members' whole memory leaves of
-// it, used or not, so a Dedicated machine is never short: each holds its
-// floor, and the rest goes to those that need more, by how far each could
-// grow, the others held at their floors; with none in need, each keeps its
-// size and what is left is handed out by how far each could grow. Short,
-// what the floors take past the budget is taken from them by how far each
-// is above its guarantee, never below it.
+// allowances are the sizes a pool's Shared guests are held at (docs/decisions/node-agent.md "Memory pools").
 func allowances(sizeMiB int64, members []state) map[string]int64 {
 	budget := sizeMiB
 	var shared []state
@@ -339,25 +446,28 @@ func portion(total int64, weights []int64, i int, up bool) int64 {
 	return total * weights[i] / sum
 }
 
-// decide says what to do to a pool of sizeMiB whose running machines are
-// members: each Shared guest is brought toward its allowance, a balloon
-// growing by at most stepMiB, and shrinking only into what the balloons
-// already leave free of the pool, those in need first, so that what the
-// Shared guests have and the Dedicated machines' memory together never
-// pass the pool's size. A Dedicated machine's balloon is given back whole.
+// decide says which balloons to set in a pool of sizeMiB, and how hot it is (docs/decisions/node-agent.md "Memory pools").
 func decide(sizeMiB int64, members []state, stepMiB int64) Result {
-	r := Result{Balloons: map[string]int64{}, Allowances: allowances(sizeMiB, members)}
+	r := Result{Balloons: map[string]int64{}, Allowances: allowances(sizeMiB, members), Sizes: map[string]int64{}}
 	room := sizeMiB
-	for _, m := range members {
+	type grower struct {
+		i    int
+		want int64
+		// first: a Dedicated member, then one in need.
+		first, need bool
+	}
+	var growers []grower
+	for i, m := range members {
+		room -= m.size()
+		r.Sizes[m.UID] = m.size()
 		switch {
 		case !m.shared():
-			room -= m.MemoryMiB
+			// Given back whole, but only into room freed, as any.
 			if m.balloonMiB > 0 && !m.noBalloon {
-				r.Balloons[m.UID] = 0
-				r.Stage = Deflate
+				r.Hot = true
+				growers = append(growers, grower{i: i, want: m.balloonMiB, first: true})
 			}
 		default:
-			room -= m.size()
 			if m.needs() {
 				r.Needing = append(r.Needing, m.UID)
 			}
@@ -366,11 +476,6 @@ func decide(sizeMiB int64, members []state, stepMiB int64) Result {
 		}
 	}
 	r.Hot = r.Hot || len(r.Needing) > 0
-	type grower struct {
-		i    int
-		want int64
-	}
-	var growers []grower
 	for i, m := range members {
 		a, ok := r.Allowances[m.UID]
 		if !ok || m.noBalloon || m.booting() {
@@ -384,24 +489,26 @@ func decide(sizeMiB int64, members []state, stepMiB int64) Result {
 			if a < m.floor() {
 				st = Guarantee
 			}
-			if r.Stage == Deflate || st > r.Stage {
-				r.Stage = st
-			}
+			r.Stage = max(r.Stage, st)
 		case -d > DeadbandMiB:
 			r.Hot = true
-			growers = append(growers, grower{i, -d})
+			growers = append(growers, grower{i: i, want: -d, need: m.needs()})
 		}
 	}
-	// Those in need first, then the others, each into what is left.
 	slices.SortStableFunc(growers, func(x, y grower) int {
-		nx, ny := members[x.i].needs(), members[y.i].needs()
 		switch {
-		case nx == ny:
-			return 0
-		case nx:
-			return -1
+		case x.first != y.first:
+			if x.first {
+				return -1
+			}
+			return 1
+		case x.need != y.need:
+			if x.need {
+				return -1
+			}
+			return 1
 		}
-		return 1
+		return 0
 	})
 	for _, g := range growers {
 		if room <= 0 {

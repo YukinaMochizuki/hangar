@@ -21,6 +21,9 @@ type agentMetrics struct {
 	pulls             *prometheus.CounterVec
 	imageCache        prometheus.Gauge
 	squeezes          *prometheus.CounterVec
+	// balloonUnresponsive counts the balloons found not following what
+	// they are asked.
+	balloonUnresponsive prometheus.Counter
 	// tunnelOpened says a tunnel was opened before, so the next is a
 	// reconnect. Only the tunnel's one goroutine reads and writes it.
 	tunnelOpened bool
@@ -67,6 +70,10 @@ func newAgentMetrics() *agentMetrics {
 			Name: "hangar_node_memory_pool_squeezes_total",
 			Help: "Polls of a memory pool that changed its machines' balloons, by result: safe and guarantee inflated them, to what their guests use and a margin or to their guarantees; deflate gave memory back.",
 		}, []string{"result"}),
+		balloonUnresponsive: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "hangar_node_memory_pool_balloons_unresponsive_total",
+			Help: "Balloons of memory pools' machines found not following what they are asked, as a guest with no balloon driver: asked nothing more until the VM starts again.",
+		}),
 	}
 	for _, r := range []string{pullResultOK, pullResultFailed, pullResultUnauthorized, pullResultTimeout, pullResultInvalid, pullResultDiskFailed, pullResultCanceled} {
 		m.pulls.WithLabelValues(r)
@@ -110,7 +117,7 @@ func (o oomKills) Collect(ch chan<- prometheus.Metric) {
 // listener serves.
 func (a *Agent) Collectors() []prometheus.Collector {
 	m := a.metrics
-	cs := []prometheus.Collector{m.tunnelUp, m.tunnelReconnects, m.heartbeatFailures, m.statusFailures, m.pulls, m.imageCache, m.squeezes}
+	cs := []prometheus.Collector{m.tunnelUp, m.tunnelReconnects, m.heartbeatFailures, m.statusFailures, m.pulls, m.imageCache, m.squeezes, m.balloonUnresponsive}
 	if a.cfg.Drivers != nil {
 		cs = append(cs, newOOMKills(a.cfg.Drivers.Hypervisor.OOMGroupKills))
 	}

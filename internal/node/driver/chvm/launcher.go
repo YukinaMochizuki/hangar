@@ -128,12 +128,7 @@ func LauncherMain(args []string) int {
 	return l.Run(ctx, fs.Arg(0))
 }
 
-// RecordOOMKill records, as the machine's VM's exit, that the kernel's OOM
-// killer killed its unit whole, if it did: systemd says so in result, its
-// ExecStopPost's $SERVICE_RESULT, and the unit's cgroup, named in procCgroup
-// under cgroupRoot, counts it in memory.events. The launcher was killed too,
-// and recorded nothing; the cgroup goes with the unit, so this is the last
-// moment to tell. Run as the unit's ExecStopPost, in the unit's cgroup.
+// RecordOOMKill records the VM's exit, and when, if the OOM killer killed its unit whole (docs/decisions/node-agent.md "Memory pools").
 func RecordOOMKill(dir, uid, procCgroup, cgroupRoot, result string) error {
 	if err := checkUID(uid); err != nil {
 		return err
@@ -173,6 +168,11 @@ func RecordOOMKill(dir, uid, procCgroup, cgroupRoot, result string) error {
 	}
 	b, err = json.Marshal(r)
 	if err != nil {
+		return err
+	}
+	// The exit goes with the next run of the unit's restart policy; the
+	// kill is kept, for the node to report whatever the policy did.
+	if err := writeAtomic(filepath.Join(vmDir, oomFile), []byte(r.Ended.UTC().Format(time.RFC3339Nano))); err != nil {
 		return err
 	}
 	return writeAtomic(filepath.Join(vmDir, exitFile), b)
