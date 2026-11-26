@@ -104,10 +104,15 @@ describe("a Shared machine's page", () => {
     expect(screen.queryByText(/stopped for memory/i)).toBeNull();
   });
 
-  it("says its balloon does not follow, and shows nothing available now", async () => {
+  it("says it isn't sharing its memory while its balloon does not follow, for how long, and shows nothing available now", async () => {
     render(<MachineDetail kind="Container" name="web" />, { wrapper: withApi(paletteApi({ ...machines("2Gi", [stuck]), usage: usage(1.4) })) });
-    expect(await screen.findByText("web is not giving memory back")).toBeTruthy();
-    expect(screen.getByText(/Its guest stopped answering requests for memory, so the 4 GiB it may hold cannot go to Acme's other machines\. Restarting it asks again\./)).toBeTruthy();
+    expect(await screen.findByText("web isn't sharing its memory")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Its memory driver hasn't responded for 12m, so it can't give back memory it isn't using, and your other Shared machines can't use that memory. It keeps running normally. Restart it to fix this.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(": its memory driver hasn't responded for 12m.", { exact: false })).toBeTruthy();
     await waitFor(() => expect(within(usageCard()).queryByText("Loading…")).toBeNull());
     expect(screen.queryByText(/available now/)).toBeNull();
   });
@@ -122,7 +127,7 @@ describe("a Shared machine in its list", () => {
     expect(within(row() as HTMLElement).getByText("Stopped for memory 23m ago")).toBeTruthy();
     cleanup();
     render(<MachineList kind="Container" />, { wrapper: withApi(paletteApi(machines("2Gi", [stuck]))) });
-    await waitFor(() => expect(within(row() as HTMLElement).getByText("Not giving memory back")).toBeTruthy());
+    await waitFor(() => expect(within(row() as HTMLElement).getByText("Not sharing memory")).toBeTruthy());
     cleanup();
     render(<MachineList kind="Container" />, { wrapper: withApi(paletteApi(machines(""))) });
     await waitFor(() => expect(within(row() as HTMLElement).getByText("web")).toBeTruthy());

@@ -649,11 +649,16 @@ language; the plan's percent is never shown.
   that as a dashed line on the memory plot. What the node says is shown
   where it happened: a VM killed for its pool's memory (`OOMKilled`) is a
   banner and a line under the row's state for a day after the kill, its
-  time read from the condition's message, then only the condition; a
-  balloon that does not follow (`BalloonResponsive` False) is a banner and
-  a line while it lasts, and hides what is available, which it makes
-  untrue. A kill that left the machine down already has its Failed banner,
-  so it gets no second one.
+  time read from the condition's message, then only the condition. A
+  balloon that does not follow (`BalloonResponsive` False) reads "Not
+  sharing memory" under the row's state, and on the page "<name> isn't
+  sharing its memory" with why in plain words: its memory driver has not
+  responded for how long, so it cannot give back memory it is not using and
+  the tenant's other Shared machines cannot use it; it keeps running, and a
+  restart fixes it. It hides what is available, which it makes untrue.
+  Settled with the owner, over "not giving memory back", which said what
+  happens but not why. A kill that left the machine down already has its
+  Failed banner, so it gets no second one.
 
 ### Disks and images
 

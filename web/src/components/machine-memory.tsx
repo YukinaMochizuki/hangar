@@ -4,7 +4,9 @@
 // that its VM was killed for its pool's memory, or that its balloon does
 // not follow.
 
+import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
+import type { Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { PageBanner } from "@/components/notice";
 import { Badge } from "@/components/ui";
 import { ago, type MachineView } from "@/lib/machines";
@@ -19,6 +21,14 @@ export function SharedBadge({ m }: { m: MachineView }) {
 }
 
 const running = (m: MachineView) => !m.stopped && m.phase === MachinePhase.RUNNING;
+
+/**
+ * How long a balloon has not followed, from when its BalloonResponsive turned
+ * False, as "12m"; drawn anew as the page asks again.
+ */
+function stuckFor(c: Condition): string | undefined {
+  return c.lastTransitionTime ? ago(timestampDate(c.lastTransitionTime)) : undefined;
+}
 
 /**
  * The Summary's Memory row of a Shared machine: its limit, what its pool
@@ -46,8 +56,8 @@ export function MemoryRow({ m }: { m: MachineView }) {
       )}
       {stuck && (
         <div className="mt-1 text-[12px] text-pending" role="status">
-          Not giving memory back
-          {stuck.lastTransitionTime && <span className="text-muted">: its guest has not answered requests for memory for {ago(new Date(Number(stuck.lastTransitionTime.seconds) * 1000))}.</span>}
+          Not sharing memory
+          {stuckFor(stuck) && <span className="text-muted">: its memory driver hasn't responded for {stuckFor(stuck)}.</span>}
         </div>
       )}
       {pool.pooled && outsidePool(m) && <div className="mt-1 text-[12px] text-muted">Shares memory from its next restart.</div>}
@@ -83,9 +93,10 @@ export function MemoryBanners({ m }: { m: MachineView }) {
         </PageBanner>
       )}
       {stuck && !m.stopped && (
-        <PageBanner tone="warning" title={`${m.name} is not giving memory back`}>
+        <PageBanner tone="warning" title={`${m.name} isn't sharing its memory`}>
           <span className="block">
-            Its guest stopped answering requests for memory, so the {formatNumber(machineMemory(m).memoryGi)} GiB it may hold cannot go to {tenant}'s other machines. Restarting it asks again.
+            {stuckFor(stuck) ? `Its memory driver hasn't responded for ${stuckFor(stuck)}` : "Its memory driver isn't responding"}, so it can't give back memory it
+            isn't using, and your other Shared machines can't use that memory. It keeps running normally. Restart it to fix this.
           </span>
         </PageBanner>
       )}
@@ -97,6 +108,6 @@ export function MemoryBanners({ m }: { m: MachineView }) {
 export function MemoryStateLine({ m }: { m: MachineView }) {
   const killed = killedRecently(m);
   if (killed && m.phase !== MachinePhase.FAILED) return <span className="block text-[11.5px] text-fail">Stopped for memory {ago(killed)} ago</span>;
-  if (balloonStuck(m) && !m.stopped) return <span className="block text-[11.5px] text-pending">Not giving memory back</span>;
+  if (balloonStuck(m) && !m.stopped) return <span className="block text-[11.5px] text-pending">Not sharing memory</span>;
   return null;
 }
