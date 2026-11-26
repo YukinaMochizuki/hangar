@@ -26,7 +26,7 @@ import { ConditionRow, ConditionsFold, EquivalentCard, LabelsField } from "@/com
 import { Notice, PageBanner } from "@/components/notice";
 import { RunsOnPanel } from "@/components/runs-on-panel";
 import { createdKey, useJustCreated } from "@/lib/just-created";
-import { DetailSkeleton } from "@/components/page";
+import { DetailHead, DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
 import { Taxiway, type Stop, type StopState } from "@/components/taxiway";
@@ -99,37 +99,38 @@ function Header({ m, terminal, set }: { m: MachineView; terminal: boolean; set: 
   const more = useMoreActions(m);
   const nic = m.interfaces[0];
   return (
-    <div className="border-b px-4 pb-5 pt-6 md:px-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <h1 className="truncate text-[22px] font-semibold tracking-tight">{m.name}</h1>
-            <Badge>{m.kind === "Container" ? "Container" : "Virtual machine"}</Badge>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
-            {m.deleting ? <span>Deleting</span> : <Status phase={m.phase} waiting={m.waitingForRoom !== undefined} />}
-            {m.phase === MachinePhase.RUNNING && m.booted && <span>up {uptime(m.booted)}</span>}
-            <span className="flex items-center gap-1.5">
-              {size && <SizeBadge size={size.label} />}
-              <span className="tabular">{sizeText(m)}</span>
-            </span>
-            {nic?.ipv4 && <span className="font-mono text-[12px]">{bare(nic.ipv4)}</span>}
-          </div>
-        </div>
-        <span className="flex items-center gap-2">
-          {terminal && (
-            <Link
-              to={m.kind === "Container" ? "/projects/$project/containers/$name/terminal" : "/projects/$project/vms/$name/terminal"}
-              params={{ project: m.project, name: m.name }}
-              className={buttonVariants({ size: "sm" })}
-            >
-              <TerminalSquare /> Terminal
-            </Link>
-          )}
-          <MachineActions set={set} more={more} />
-        </span>
-      </div>
-    </div>
+    <DetailHead
+      name={m.name}
+      kind={m.kind === "Container" ? "Container" : "Virtual machine"}
+      facts={
+        <>
+          {m.deleting ? <span>Deleting</span> : <Status phase={m.phase} waiting={m.waitingForRoom !== undefined} />}
+          {m.phase === MachinePhase.RUNNING && m.booted && <span>up {uptime(m.booted)}</span>}
+          <span className="flex items-center gap-1.5">
+            {size && <SizeBadge size={size.label} />}
+            <span className="tabular">{sizeText(m)}</span>
+          </span>
+          {nic?.ipv4 && <span className="font-mono text-[12px]">{bare(nic.ipv4)}</span>}
+        </>
+      }
+      actions={
+        <MachineActions
+          set={set}
+          more={more}
+          lead={
+            terminal && (
+              <Link
+                to={m.kind === "Container" ? "/projects/$project/containers/$name/terminal" : "/projects/$project/vms/$name/terminal"}
+                params={{ project: m.project, name: m.name }}
+                className={buttonVariants()}
+              >
+                <TerminalSquare /> Terminal
+              </Link>
+            )
+          }
+        />
+      }
+    />
   );
 }
 

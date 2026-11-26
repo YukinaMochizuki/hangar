@@ -7,26 +7,24 @@ import { useDiskActions, useDiskCan } from "@/components/disk-actions";
 import { MachineLink } from "@/components/links";
 import { PageBanner } from "@/components/notice";
 import { HeadActions, type ActionSet, type Can } from "@/components/object-actions";
-import { DetailSkeleton } from "@/components/page";
+import { DetailHead, DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice } from "@/components/states";
 import { DiskSource, DiskState, diskYaml, MadeAs, UsedAs } from "@/components/storage";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
-import { Badge, Card, CardHeader, Field } from "@/components/ui";
+import { Card, CardHeader, Field } from "@/components/ui";
 import { date } from "@/lib/machines";
 import { diskFault, gib, growthBlocked, growthOf, rootDiskOwner, usedAs, useDisks } from "@/lib/storage";
 import { DiskSize } from "@/pages/disk-list";
 
 function Header({ d, set }: { d: Disk; set: ActionSet }) {
   return (
-    <div className="border-b px-4 pb-5 pt-6 md:px-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <h1 className="truncate text-[22px] font-semibold tracking-tight">{d.metadata?.name}</h1>
-            <Badge>Disk</Badge>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
+    <>
+      <DetailHead
+        name={d.metadata?.name ?? ""}
+        kind="Disk"
+        facts={
+          <>
             <span>
               <DiskState d={d} reason={false} />
             </span>
@@ -36,14 +34,12 @@ function Header({ d, set }: { d: Disk; set: ActionSet }) {
                 <UsedAs d={d} />
               </span>
             )}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <HeadActions set={set} />
-        </div>
-      </div>
+          </>
+        }
+        actions={<HeadActions set={set} />}
+      />
       {set.dialogs}
-    </div>
+    </>
   );
 }
 

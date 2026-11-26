@@ -11,12 +11,12 @@ import { DiskLink } from "@/components/links";
 import { PageBanner } from "@/components/notice";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
 import { HeadActions, type Can } from "@/components/object-actions";
-import { DetailSkeleton } from "@/components/page";
+import { DetailHead, DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
 import { DiskState, ImageStateCell } from "@/components/storage";
 import { Taxiway, type Stop } from "@/components/taxiway";
-import { Badge, Card, CardEmpty, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Card, CardEmpty, CardHeader, CopyButton, Field } from "@/components/ui";
 import { customImageFloorGiB, customImageState, sourceDisk, uploadedFraction, uploadSource, useCustomImages, type CustomImageStep } from "@/lib/custom-images";
 import { date } from "@/lib/machines";
 import { gib, useDisks } from "@/lib/storage";
@@ -252,28 +252,21 @@ function Loaded({ ci, project, crumbs, can }: { ci: CustomImage; project: string
           Its node is copying {sourceDisk(ci)}. Disks can be made from it once it is Ready.
         </PageBanner>
       )}
-      <div className="border-b px-4 pb-5 pt-6 md:px-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <h1 className="truncate font-mono text-[22px] font-semibold tracking-tight">{name}</h1>
-              <Badge>Custom image</Badge>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
-              <span className="inline-flex items-center gap-2">
-                <ImageStateCell s={{ ...s, reason: undefined }} />
-              </span>
-              <span>{osLabel(ci.spec?.os ?? "", ci.spec?.version ?? "")}</span>
-              {ci.status?.usedSize && <span className="tabular">{gib(ci.status.usedSize)} used</span>}
-            </div>
-          </div>
-          {set.actions.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <HeadActions set={set} />
-            </div>
-          )}
-        </div>
-      </div>
+      <DetailHead
+        name={name}
+        mono
+        kind="Custom image"
+        facts={
+          <>
+            <span className="inline-flex items-center gap-2">
+              <ImageStateCell s={{ ...s, reason: undefined }} />
+            </span>
+            <span>{osLabel(ci.spec?.os ?? "", ci.spec?.version ?? "")}</span>
+            {ci.status?.usedSize && <span className="tabular">{gib(ci.status.usedSize)} used</span>}
+          </>
+        }
+        actions={set.actions.length > 0 && <HeadActions set={set} />}
+      />
       <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-5">
           {upload && (s.step === "awaiting-upload" || s.step === "converting" || s.step === "failed") && (

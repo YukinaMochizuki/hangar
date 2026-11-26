@@ -6,7 +6,7 @@ import { Search } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Topbar } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
-import { Card, Kbd } from "@/components/ui";
+import { Badge, Card, Kbd } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 /** A list page's title, what the kind is in a few words, and its create button. */
@@ -194,17 +194,32 @@ export function DetailFrame({
   );
 }
 
-/** An object page's head: its name, kind, a line of facts, and its actions. */
-export function DetailHead({ name, kind, facts, actions }: { name: string; kind: string; facts: ReactNode; actions?: ReactNode }) {
+/**
+ * An object page's head: its name (in mono for an image's), kind, a line of
+ * facts, and its actions. The actions sit beside the name while the name
+ * keeps 20rem; on anything narrower they move below it as one row, never
+ * split into rows beside it.
+ */
+export function DetailHead({
+  name,
+  kind,
+  facts,
+  actions,
+  mono,
+}: {
+  name: string;
+  kind: string;
+  facts: ReactNode;
+  actions?: ReactNode;
+  mono?: boolean;
+}) {
   return (
     <div className="border-b px-4 pb-5 pt-6 md:px-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0 flex-1 basis-80">
           <div className="flex items-center gap-2.5">
-            <h1 className="truncate text-[22px] font-semibold tracking-tight">{name}</h1>
-            <span className="inline-flex h-5 shrink-0 items-center rounded border border-border-strong px-1.5 text-[11px] font-medium text-muted">
-              {kind}
-            </span>
+            <h1 className={cn("truncate text-[22px] font-semibold tracking-tight", mono && "font-mono")}>{name}</h1>
+            <Badge className="shrink-0">{kind}</Badge>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">{facts}</div>
         </div>

@@ -17,12 +17,12 @@ import { Notice, PageBanner } from "@/components/notice";
 import { HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { StaleNotice } from "@/components/resource";
 import { SecretValuesFields, useSecretValuesForm } from "@/components/secret-values";
-import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
+import { DetailHead, DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
-import { Badge, Button, buttonVariants, Card, CardHeader, Field, StateText } from "@/components/ui";
+import { Button, buttonVariants, Card, CardHeader, Field, StateText } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import {
   commands,
@@ -388,32 +388,24 @@ function Loaded({ s, crumbs, use, stale, refetch, can }: { s: Secret; crumbs: Re
           {fault.message}
         </PageBanner>
       )}
-      <div className="border-b px-4 pb-5 pt-6 md:px-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <h1 className="truncate text-[22px] font-semibold tracking-tight">{name}</h1>
-              <Badge>Secret</Badge>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
+      <DetailHead
+        name={name}
+        kind="Secret"
+        facts={
+          <>
+            <span>
+              <SecretState s={s} />
+            </span>
+            <span>{secretTypeLabel(s)}</span>
+            {!use.loading && !use.error && (
               <span>
-                <SecretState s={s} />
+                {usedBy.length === 0 ? "Named by no container" : usedBy.length === 1 ? "Named by 1 container" : `Named by ${usedBy.length} containers`}
               </span>
-              <span>{secretTypeLabel(s)}</span>
-              {!use.loading && !use.error && (
-                <span>
-                  {usedBy.length === 0 ? "Named by no container" : usedBy.length === 1 ? "Named by 1 container" : `Named by ${usedBy.length} containers`}
-                </span>
-              )}
-            </div>
-          </div>
-          {set.actions.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <HeadActions set={set} />
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </>
+        }
+        actions={set.actions.length > 0 && <HeadActions set={set} />}
+      />
       <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-5">
           <Card>
