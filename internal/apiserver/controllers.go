@@ -48,7 +48,7 @@ func (s *Server) newControllers() []*controller.Controller {
 		{
 			Name: "container", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileContainer),
-			Watches: []controller.Watch{
+			Watches: append([]controller.Watch{
 				{Kind: registry.Container.Kind, Map: controller.Self},
 				// A machine on a node changing may make room for a resize
 				// another container is waiting on, and a machine going frees
@@ -74,7 +74,7 @@ func (s *Server) newControllers() []*controller.Controller {
 				// let through a root disk's growth waiting on quota.
 				{Kind: registry.Tenant.Kind, Map: s.containersWaitingOnQuota, SkipResync: true},
 				{Kind: registry.Project.Kind, Map: s.containersWaitingOnQuota, SkipResync: true},
-			},
+			}, poolWatches(s, registry.Container)...),
 		},
 		{
 			Name: "secret", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
@@ -84,7 +84,7 @@ func (s *Server) newControllers() []*controller.Controller {
 		{
 			Name: "virtualmachine", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileVirtualMachine),
-			Watches: []controller.Watch{
+			Watches: append([]controller.Watch{
 				{Kind: registry.VirtualMachine.Kind, Map: controller.Self},
 				{Kind: registry.Machine.Kind, Map: s.vmOfMachineAndNeighbours, SkipResync: true},
 				// A node going quiet changes what its VMs report.
@@ -101,7 +101,7 @@ func (s *Server) newControllers() []*controller.Controller {
 				// machine with its source disk start.
 				{Kind: registry.CustomImage.Kind, Map: s.vmsInProject, SkipResync: true},
 				{Kind: registry.Address.Kind, Map: s.targetsOfAddress(registry.VirtualMachine), SkipResync: true},
-			},
+			}, poolWatches(s, registry.VirtualMachine)...),
 		},
 		{
 			Name: "address", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
@@ -189,7 +189,7 @@ func (s *Server) newControllers() []*controller.Controller {
 		{
 			Name: "fileshare", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileFileShare),
-			Watches: []controller.Watch{
+			Watches: append([]controller.Watch{
 				{Kind: registry.FileShare.Kind, Map: s.shareAndWaiting},
 				// Its server, and the machines declaring it, are its status.
 				{Kind: registry.Machine.Kind, Map: s.sharesOfMachine, SkipResync: true},
@@ -200,7 +200,7 @@ func (s *Server) newControllers() []*controller.Controller {
 				{Kind: registry.Disk.Kind, Map: s.sharesWaitingForRoom, SkipResync: true},
 				// A network appearing gives a server waiting for it an address.
 				{Kind: registry.Network.Kind, Map: s.sharesInProject, SkipResync: true},
-			},
+			}, poolWatches(s, registry.FileShare)...),
 		},
 		{
 			Name: "project-networks", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
@@ -499,6 +499,11 @@ func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container
 func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta *metav1.ObjectMeta, name string, want *computev1alpha1.MachineSpec, m *computev1alpha1.Machine) (*computev1alpha1.Machine, error) {
 	key := resource.Key{Project: meta.GetProject(), Name: name}
 	owner := ipv6Owner{project: meta.GetProject(), kind: r.Kind, name: meta.GetName(), machine: name}
+	pool, err := s.memoryPoolOf(ctx, meta.GetProject())
+	if err != nil {
+		return m, err
+	}
+	want.MemoryPool = pool
 	if m == nil {
 		// Addresses are chosen and written as one decision.
 		s.ipam.Lock()
@@ -544,11 +549,11 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 	if moving != nil && !errors.Is(moving, errAddressMoving) {
 		return m, moving
 	}
-	was, err := heldBy(m.GetSpec().GetResources())
+	was, err := machineHeld(m.GetSpec())
 	if err != nil {
 		return nil, fmt.Errorf("machine %s: %w", key.Name, err)
 	}
-	now, err := heldBy(want.GetResources())
+	now, err := machineHeld(want)
 	if err != nil {
 		return nil, err
 	}
@@ -572,7 +577,10 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 	if asksToStop(want) {
 		now.memory = 0
 	}
-	if node := want.GetNode(); node != "" && (now.memory > was.memory || now.disk > was.disk) {
+	// A change of pool, as when its tenant's plan changes, is held to the
+	// node's room as a resize is: it may raise what the machine holds.
+	poolChanged := now.pool != was.pool || now.poolSize != was.poolSize
+	if node := want.GetNode(); node != "" && (now.memory > was.memory || now.disk > was.disk || poolChanged) {
 		// The check and the write are one decision, as a placement is.
 		s.capacity.Lock()
 		defer s.capacity.Unlock()
@@ -618,7 +626,12 @@ func machineSpec(name string, cs *computev1alpha1.ContainerSpec, st *computev1al
 		return nil, err
 	}
 	sz.disk = max(sz.disk, grownDisk(st)*quantity.GiB)
+	guaranteed, err := guaranteedMemory(cs.GetResources().GetMemoryGuaranteed(), sz.memory)
+	if err != nil {
+		return nil, fmt.Errorf("spec.resources.memory_guaranteed: %w", err)
+	}
 	resources := sz.canonical()
+	resources.MemoryGuaranteed = canonicalGuaranteed(guaranteed, sz.memory)
 	if g := cs.GetResources().GetDiskGrow(); g != nil {
 		resources.DiskGrow = proto.Clone(g).(*computev1alpha1.DiskGrow)
 	}
@@ -917,10 +930,11 @@ func asksToStop(spec *computev1alpha1.MachineSpec) bool {
 }
 
 // machineHolds is what m holds on its node: its root disk always, as its
-// disks stay there, and its memory unless its node has stopped it at a spec
-// asking it to stay stopped. Until the node has, the VM may still run.
+// disks stay there, and its memory, in its memory pool if it has one,
+// unless its node has stopped it at a spec asking it to stay stopped. Until
+// the node has, the VM may still run.
 func machineHolds(m *computev1alpha1.Machine) (held, error) {
-	h, err := heldBy(m.GetSpec().GetResources())
+	h, err := machineHeld(m.GetSpec())
 	if machineHasStopped(m) {
 		h.memory = 0
 	}
@@ -928,11 +942,15 @@ func machineHolds(m *computev1alpha1.Machine) (held, error) {
 }
 
 // nodeUsage returns every node and what machines, disks and file shares
-// hold on each (machineHolds). One still being deleted holds its part until
+// hold on each (machineHolds), the machines of a memory pool together no
+// more than its size. One still being deleted holds its part until
 // released. Disks are sparse, so a machine holds the root disk size it
 // declares, and a disk or a share the size it has, not what was written to
 // them.
-func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*computev1alpha1.Node, map[string]held, error) {
+//
+// A pool's machines on several nodes hold up to its size on each: more
+// than the pool can use, never less.
+func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*computev1alpha1.Node, map[string]nodeHeld, error) {
 	nodeObjs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Node.Kind})
 	if err != nil {
 		return nil, nil, err
@@ -941,7 +959,7 @@ func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*compute
 	if err != nil {
 		return nil, nil, err
 	}
-	used := map[string]held{}
+	used := map[string]nodeHeld{}
 	for _, o := range machineObjs {
 		if o.Project == except.Project && o.Name == except.Name {
 			continue
@@ -959,8 +977,7 @@ func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*compute
 			return nil, nil, fmt.Errorf("machine %s/%s: %w", o.Project, o.Name, err)
 		}
 		u := used[n]
-		u.memory = add(u.memory, h.memory)
-		u.disk = add(u.disk, h.disk)
+		u.take(h)
 		used[n] = u
 	}
 	diskObjs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Disk.Kind})
@@ -1018,8 +1035,10 @@ func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*compute
 
 // resizeFits says whether a machine placed on node can grow from was to now:
 // each amount that grows must fit in what the node has left besides this
-// machine. A node that reports no disk is not checked for disk. When
-// starts, too little memory is a start waiting for room (StartDoesNotFit).
+// machine, its memory as much as it raises what the node holds
+// (nodeHeld.memoryFor), which in a memory pool may be none. A node that
+// reports no disk is not checked for disk. When starts, too little memory
+// is a start waiting for room (StartDoesNotFit).
 func (s *Server) resizeFits(ctx context.Context, node string, machine resource.Key, was, now held, starts bool) error {
 	nodes, used, err := s.nodeUsage(ctx, machine)
 	if err != nil {
@@ -1035,17 +1054,19 @@ func (s *Server) resizeFits(ctx context.Context, node string, machine resource.K
 			}
 		}
 	}
-	if mem := free(room.memory, used[node].memory); now.memory > was.memory && now.memory > mem {
+	u := used[node]
+	needWas, needNow := u.memoryFor(was), u.memoryFor(now)
+	if mem := free(room.memory, u.memory()); needNow > needWas && needNow > mem {
 		if starts {
 			return &blocked{computeapi.ReasonStartDoesNotFit, fmt.Sprintf(
 				"node %s has %s of memory free for this machine, not %s; it starts once there is room",
-				node, quantity.FormatMemory(mem), quantity.FormatMemory(now.memory))}
+				node, quantity.FormatMemory(mem), quantity.FormatMemory(needNow))}
 		}
 		return &blocked{"ResizeDoesNotFit", fmt.Sprintf(
 			"node %s has %s of memory free for this machine, not %s; the change is not applied",
-			node, quantity.FormatMemory(mem), quantity.FormatMemory(now.memory))}
+			node, quantity.FormatMemory(mem), quantity.FormatMemory(needNow))}
 	}
-	if disk := free(room.disk, used[node].disk); room.hasDisk && now.disk > was.disk && now.disk > disk {
+	if disk := free(room.disk, u.disk); room.hasDisk && now.disk > was.disk && now.disk > disk {
 		return &blocked{"ResizeDoesNotFit", fmt.Sprintf(
 			"node %s has %s of disk free for this machine, not %s; the change is not applied",
 			node, quantity.FormatDisk(disk), quantity.FormatDisk(now.disk))}
@@ -1054,8 +1075,10 @@ func (s *Server) resizeFits(ctx context.Context, node string, machine resource.K
 }
 
 // pickNode chooses the ready, schedulable node with the most free memory that
-// fits the machine's memory and disk, and extra bytes of disk besides. Memory
-// and disk cannot be overcommitted; vCPUs are shared. If only is not empty,
+// fits the machine's memory, as much as it raises what the node holds
+// (nodeHeld.memoryFor), and its disk, and extra bytes of disk besides.
+// Memory and disk cannot be overcommitted, but within a tenant's own memory
+// pool; vCPUs are shared. If only is not empty,
 // the node of that name is the only one considered. With no fit, it says why.
 func (s *Server) pickNode(ctx context.Context, m *computev1alpha1.Machine, only string, extra uint64) (string, string, error) {
 	if only == "" {
@@ -1072,11 +1095,13 @@ func (s *Server) pickNodeAmong(ctx context.Context, m *computev1alpha1.Machine, 
 	if err != nil {
 		return "", "", err
 	}
-	need, err := heldBy(m.GetSpec().GetResources())
+	need, err := machineHeld(m.GetSpec())
 	if err != nil {
 		return "", "", fmt.Errorf("machine %s: %w", m.GetMetadata().GetName(), err)
 	}
 	need.disk = add(need.disk, extra)
+	// The least memory it needs on any node, for saying why none fits.
+	leastMemory := need.memory
 	if keep != nil {
 		nodes = slices.DeleteFunc(nodes, func(n *computev1alpha1.Node) bool { return !keep(n) })
 		if len(nodes) == 0 {
@@ -1105,9 +1130,11 @@ func (s *Server) pickNodeAmong(ctx context.Context, m *computev1alpha1.Machine, 
 			unreadable = append(unreadable, err.Error())
 			continue
 		}
-		mem := free(room.memory, used[name].memory)
-		memoryFit := mem >= need.memory
-		diskFit := !room.hasDisk || free(room.disk, used[name].disk) >= need.disk
+		u := used[name]
+		mem, needMemory := free(room.memory, u.memory()), u.memoryFor(need)
+		leastMemory = min(leastMemory, needMemory)
+		memoryFit := mem >= needMemory
+		diskFit := !room.hasDisk || free(room.disk, u.disk) >= need.disk
 		if memoryFit {
 			memoryFits++
 		}
@@ -1119,7 +1146,7 @@ func (s *Server) pickNodeAmong(ctx context.Context, m *computev1alpha1.Machine, 
 		}
 	}
 	if len(fits) == 0 {
-		mem, disk := quantity.FormatMemory(need.memory), quantity.FormatDisk(need.disk)
+		mem, disk := quantity.FormatMemory(leastMemory), quantity.FormatDisk(need.disk)
 		switch {
 		case len(nodes) == 0:
 			return "", "no nodes are registered", nil

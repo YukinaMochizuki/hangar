@@ -35,6 +35,9 @@ import (
 // DefaultPlan is the Plan of a tenant whose spec.plan is empty.
 const DefaultPlan = "default"
 
+// MaxMemoryLimitPercent is the highest memory_limit_percent a Plan may set.
+const MaxMemoryLimitPercent = 400
+
 // DefaultMaxOwnedTenants is how many tenants a person or service token may
 // own when nothing says otherwise: the one signing up opens.
 const DefaultMaxOwnedTenants = 1
@@ -68,7 +71,9 @@ type dim int
 const (
 	// dimCPU is in millicores.
 	dimCPU dim = iota
-	// dimMemory and dimDisk are in bytes.
+	// dimMemory, dimMemoryCeiling and dimDisk are in bytes. dimMemory is
+	// machines' guaranteed memory, dimMemoryCeiling their memory, which no
+	// limit of its own caps (limitSet.memoryCeiling).
 	dimMemory
 	dimDisk
 	dimMachines
@@ -83,11 +88,12 @@ const (
 	dimPortForwards
 	dimCustomImages
 	dimNetworkEndpoints
+	dimMemoryCeiling
 	numDims
 )
 
 // dimNames are the dimensions as Limits and Usage name them.
-var dimNames = [numDims]string{"cpu", "memory", "disk", "machines", "projects", "networks", "addresses", "public_endpoints", "service_tokens", "file_shares", "domains", "port_forwards", "custom_images", "network_endpoints"}
+var dimNames = [numDims]string{"cpu", "memory", "disk", "machines", "projects", "networks", "addresses", "public_endpoints", "service_tokens", "file_shares", "domains", "port_forwards", "custom_images", "network_endpoints", "memory_ceiling"}
 
 // amounts are what something holds, by dimension.
 type amounts [numDims]int64
@@ -99,12 +105,37 @@ func (a *amounts) add(b amounts) {
 }
 
 // limitSet is a Limits read as numbers; a dimension not set has no limit.
-// machineCalls counts no object, so it is no dimension (nodecalls.go).
+// machineCalls counts no object, so it is no dimension (nodecalls.go), and
+// memoryPercent is how far dimMemoryCeiling may go past dimMemory's limit.
 type limitSet struct {
-	val             [numDims]int64
-	set             [numDims]bool
-	machineCalls    int64
-	machineCallsSet bool
+	val              [numDims]int64
+	set              [numDims]bool
+	machineCalls     int64
+	machineCallsSet  bool
+	memoryPercent    int64
+	memoryPercentSet bool
+}
+
+// memoryLimitPercent is the plan's memory_limit_percent: 100 when unset,
+// and never below, which admission refuses.
+func (ls limitSet) memoryLimitPercent() int64 {
+	if !ls.memoryPercentSet {
+		return 100
+	}
+	return max(ls.memoryPercent, 100)
+}
+
+// memoryCeiling is how far the memory of machines asked to run may add up
+// under these limits, with percent the tenant's memory_limit_percent: its
+// memory limit times percent, none where memory has no limit.
+func (ls limitSet) memoryCeiling(percent int64) (int64, bool) {
+	if !ls.set[dimMemory] {
+		return 0, false
+	}
+	if ls.val[dimMemory] > math.MaxInt64/percent {
+		return math.MaxInt64, true
+	}
+	return ls.val[dimMemory] * percent / 100, true
 }
 
 // parseLimits reads l, refusing a quantity that is not one or a count
@@ -160,6 +191,9 @@ func parseLimits(l *tenancyv1alpha1.Limits) (limitSet, error) {
 		}
 		ls.machineCalls, ls.machineCallsSet = int64(l.GetMachineCalls()), true
 	}
+	if l.MemoryLimitPercent != nil {
+		ls.memoryPercent, ls.memoryPercentSet = int64(l.GetMemoryLimitPercent()), true
+	}
 	return ls, nil
 }
 
@@ -200,7 +234,7 @@ func formatAmount(d dim, v int64) string {
 			return strconv.FormatInt(v/1000, 10)
 		}
 		return strconv.FormatInt(v, 10) + "m"
-	case dimMemory, dimDisk:
+	case dimMemory, dimMemoryCeiling, dimDisk:
 		switch {
 		case v == 0:
 		case v%int64(quantity.GiB) == 0:
@@ -235,6 +269,9 @@ func (ls limitSet) proto() *tenancyv1alpha1.Limits {
 	if ls.machineCallsSet {
 		l.MachineCalls = proto.Int32(int32(ls.machineCalls))
 	}
+	if ls.memoryPercentSet {
+		l.MemoryLimitPercent = proto.Int32(int32(ls.memoryPercent))
+	}
 	return l
 }
 
@@ -255,6 +292,7 @@ func (a amounts) usage() *tenancyv1alpha1.Usage {
 		PortForwards:     int32(a[dimPortForwards]),
 		CustomImages:     int32(a[dimCustomImages]),
 		NetworkEndpoints: int32(a[dimNetworkEndpoints]),
+		MemoryCeiling:    formatAmount(dimMemoryCeiling, a[dimMemoryCeiling]),
 	}
 }
 
@@ -293,7 +331,8 @@ func countsOne(d dim) func(proto.Message, projectObjects) amounts {
 // defaults and in the canonical sizes the container controller gives it,
 // plus a public endpoint for each public port, which the apiserver makes
 // for it. Its disk is what its root disk has grown to by itself, if more
-// than the spec asks. A stopped container holds its disk, its endpoints and
+// than the spec asks. Its memory is what it is guaranteed, and its memory
+// ceiling its memory. A stopped container holds its disk, its endpoints and
 // its place among machines, but no cpu or memory.
 func containerAmounts(obj proto.Message, _ projectObjects) amounts {
 	c := obj.(*computev1alpha1.Container)
@@ -314,9 +353,21 @@ func containerAmounts(obj proto.Message, _ projectObjects) amounts {
 	a[dimDisk] = int64(max(wholeGi(sz.disk), grownDisk(c.GetStatus())) * quantity.GiB)
 	if spec.GetRunState() != computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED {
 		a[dimCPU] = int64(sz.cpu) * 1000
-		a[dimMemory] = int64(wholeMi(sz.memory) * quantity.MiB)
+		a.addMemory(spec.GetResources().GetMemoryGuaranteed(), sz.memory)
 	}
 	return a
+}
+
+// addMemory counts a machine of memory asked to run, guaranteed as
+// memory_guaranteed says: no more than its memory, which a stored one that
+// no longer parses is guaranteed.
+func (a *amounts) addMemory(memoryGuaranteed string, memory uint64) {
+	g, err := guaranteedMemory(memoryGuaranteed, memory)
+	if err != nil || g > memory {
+		g = memory
+	}
+	a[dimMemory] += int64(wholeMi(g) * quantity.MiB)
+	a[dimMemoryCeiling] += int64(wholeMi(memory) * quantity.MiB)
 }
 
 // vmAmounts is what a VM's machine is asked for, as containerAmounts is a
@@ -343,7 +394,7 @@ func vmAmounts(obj proto.Message, in projectObjects) amounts {
 	}
 	if sz, err := vmSizes(vm.GetSpec().GetResources()); err == nil {
 		a[dimCPU] = int64(sz.cpu) * 1000
-		a[dimMemory] = int64(wholeMi(sz.memory) * quantity.MiB)
+		a.addMemory(vm.GetSpec().GetResources().GetMemoryGuaranteed(), sz.memory)
 	}
 	return a
 }
@@ -640,6 +691,13 @@ func (s *Server) checkFits(ctx context.Context, r registry.Resource, obj proto.M
 				tenantName, dimNames[d], formatAmount(d, planLimits.val[d]), planName, formatAmount(d, before.tenant[d]), formatAmount(d, after.tenant[d])))
 		}
 	}
+	percent := planLimits.memoryLimitPercent()
+	if ceiling, ok := planLimits.memoryCeiling(percent); ok && ceilingRaised(before.tenant, after.tenant, ceiling) {
+		return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf(
+			"quota exceeded: the memory of tenant %q's machines asked to run may come to %s, %d%% of its memory limit of %s (plan %q, memory_limit_percent), and comes to %s; this would bring it to %s. Stop or shrink some, or ask a platform administrator for a bigger plan",
+			tenantName, formatAmount(dimMemory, ceiling), percent, formatAmount(dimMemory, planLimits.val[dimMemory]), planName,
+			formatAmount(dimMemory, before.tenant[dimMemoryCeiling]), formatAmount(dimMemory, after.tenant[dimMemoryCeiling])))
+	}
 	if r.Kind == registry.Project.Kind || r.Kind == registry.CustomDomain.Kind {
 		return nil
 	}
@@ -656,7 +714,19 @@ func (s *Server) checkFits(ctx context.Context, r registry.Resource, obj proto.M
 				meta.GetProject(), dimNames[d], formatAmount(d, own.val[d]), formatAmount(d, was[d]), formatAmount(d, now[d]), tenantName))
 		}
 	}
+	if ceiling, ok := own.memoryCeiling(percent); ok && ceilingRaised(was, now, ceiling) {
+		return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf(
+			"quota exceeded: the memory of project %q's machines asked to run may come to %s, %d%% (tenant %q's memory_limit_percent) of its memory limit of %s (its spec.limits), and comes to %s; this would bring it to %s. Stop or shrink some, or ask an owner of tenant %q to raise the project's limit",
+			meta.GetProject(), formatAmount(dimMemory, ceiling), percent, tenantName, formatAmount(dimMemory, own.val[dimMemory]),
+			formatAmount(dimMemory, was[dimMemoryCeiling]), formatAmount(dimMemory, now[dimMemoryCeiling]), tenantName))
+	}
 	return nil
+}
+
+// ceilingRaised says whether going from before to after raises the memory
+// of machines asked to run past ceiling.
+func ceilingRaised(before, after amounts, ceiling int64) bool {
+	return after[dimMemoryCeiling] > before[dimMemoryCeiling] && after[dimMemoryCeiling] > ceiling
 }
 
 // asStored is obj with what an update takes from old, the stored object:
@@ -765,6 +835,14 @@ func validatePlan(ctx context.Context, s *Server, _ auth.Principal, old, obj pro
 	if ls.machineCallsSet && (ls.machineCalls < 1 || ls.machineCalls > MaxMachineCalls) {
 		return invalid("spec.limits.machine_calls: %d is not from 1 to %d", ls.machineCalls, MaxMachineCalls)
 	}
+	if ls.memoryPercentSet {
+		if ls.memoryPercent < 100 || ls.memoryPercent > MaxMemoryLimitPercent {
+			return invalid("spec.limits.memory_limit_percent: %d is not from 100 to %d", ls.memoryPercent, MaxMemoryLimitPercent)
+		}
+		if !ls.set[dimMemory] {
+			return invalid("spec.limits.memory_limit_percent is a percent of spec.limits.memory, which is not set")
+		}
+	}
 	if price := plan.GetSpec().GetPrice(); price != nil {
 		if _, err := billing.ParseMoney(price.GetMonthlyFee()); err != nil {
 			return invalid("spec.price.monthly_fee: %v", err)
@@ -838,6 +916,9 @@ func (s *Server) validateProjectLimits(ctx context.Context, p auth.Principal, ol
 	}
 	if ls.machineCallsSet {
 		return invalid("spec.limits.machine_calls is not a project's to set; the tenant's plan limits machine calls")
+	}
+	if ls.memoryPercentSet {
+		return invalid("spec.limits.memory_limit_percent is not a project's to set; the tenant's plan's holds for its projects")
 	}
 	tenantName := proj.GetSpec().GetTenant()
 	if !s.authz.Allowed(p, authz.Permission(registry.Project, authz.Apply), authz.Target{Tenant: tenantName}) {

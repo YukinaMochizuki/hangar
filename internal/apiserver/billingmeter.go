@@ -162,7 +162,10 @@ func (s *Server) meterReadings(ctx context.Context, tenant string) ([]store.Mete
 // runningShapes are the cpu and memory of each machine running in project
 // for a Container or a VirtualMachine, by the uid of the object it runs
 // for: its Machine's own, which is what runs, whatever its object's spec
-// asks for since. A file share's server is the platform's, and not here.
+// asks for since. Its memory is what it is guaranteed while it is in a
+// memory pool, and all of its memory otherwise, which is what a machine of
+// a tenant that pays as it goes always is. A file share's server is the
+// platform's, and not here.
 func (s *Server) runningShapes(ctx context.Context, project string) (map[string]amounts, error) {
 	objs, err := s.listWith(ctx, registry.Machine, project, nil)
 	if err != nil {
@@ -183,6 +186,11 @@ func (s *Server) runningShapes(ctx context.Context, project string) (map[string]
 				a[dimCPU] = int64(cpu) * 1000
 			}
 			if mem, err := quantity.Bytes(m.GetSpec().GetResources().GetMemory()); err == nil {
+				if m.GetSpec().GetMemoryPool() != nil {
+					if g, err := guaranteedMemory(m.GetSpec().GetResources().GetMemoryGuaranteed(), mem); err == nil {
+						mem = min(mem, g)
+					}
+				}
 				a[dimMemory] = int64(wholeMi(mem) * quantity.MiB)
 			}
 			out[ref.GetUid()] = a
