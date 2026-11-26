@@ -58,6 +58,12 @@ booted kernels of their own, moved there too.
   warning. Cloud Hypervisor gets the value inside double quotes, a quote
   in it doubled, so its option parser takes commas, brackets and
   surrounding spaces as part of it.
+- **A VM keeps nested virtualization** (`--cpus boot=N,nested=on`), as
+  Cloud Hypervisor v53 gave every guest: its guest has `/dev/kvm` and,
+  where the host's KVM allows nesting, can run VMs of its own. Cloud
+  Hypervisor v54 turned it off by default, as it widens what a guest
+  reaches of the host's kernel. Containers, FileShare servers and
+  converter VMs, all on the platform kernel, don't get it.
 - **A VM may have a TPM 2.0**, `spec.tpm.enabled`, set when it is
   created and never changed, served by swtpm on its node, its state kept
   there, encrypted, until the VM is deleted (`docs/decisions/vm-tpm.md`).

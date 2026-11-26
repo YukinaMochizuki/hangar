@@ -6,7 +6,7 @@ Status: accepted, 2026-10.
 
 Some guests want a TPM 2.0: Windows 11, disk encryption sealed to it
 (systemd-cryptenroll, Clevis), and keys an application keeps in it. Cloud
-Hypervisor (v53, as pinned) gives a guest a TPM 2.0 with a CRB interface
+Hypervisor (v54, as pinned) gives a guest a TPM 2.0 with a CRB interface
 that it serves from swtpm, a separate process it talks to over a socket
 (`--tpm socket=`). The TPM's state is a file swtpm writes, about 2 KiB.
 
@@ -77,7 +77,7 @@ that it serves from swtpm, a separate process it talks to over a socket
 
 ## Known issues
 
-Both are Cloud Hypervisor's (v53, and main as of 2026-10). Their fix, a
+Both are Cloud Hypervisor's (v53, v54, and main as of 2026-10). Their fix, a
 patched Cloud Hypervisor, is tracked in hangar#212.
 
 - **A slow reply locks the guest's TPM.** Cloud Hypervisor waits 100 ms

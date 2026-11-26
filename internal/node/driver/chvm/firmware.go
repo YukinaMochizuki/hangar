@@ -65,15 +65,18 @@ func pressPowerButton(ctx context.Context, socket string) error {
 }
 
 // firmwareArgs is Cloud Hypervisor's command line for a firmware VM: the
-// firmware, the balloon for free page reporting, its serial number, its
-// volumes at their nodes in dir with their serials, the root first, the
-// taps on fds 3 and on, its serial console on a socket for its console
-// helper, no virtio console, its API socket, and a TPM VM's swtpm.
+// firmware, its vCPUs with nested virtualization, the balloon for free
+// page reporting, its serial number, its volumes at their nodes in dir
+// with their serials, the root first, the taps on fds 3 and on (netArgs),
+// its serial console on a socket for its console helper, no virtio
+// console, its API socket, and a TPM VM's swtpm.
 func firmwareArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
 	args := []string{
 		"--firmware", ln.Firmware,
-		"--cpus", fmt.Sprintf("boot=%d", s.VCPUs),
+		// Nested virtualization, as Cloud Hypervisor gave every VM before
+		// v54 turned it off by default (docs/decisions/vm-boot.md).
+		"--cpus", fmt.Sprintf("boot=%d,nested=on", s.VCPUs),
 		"--memory", fmt.Sprintf("size=%dM", s.MemoryMiB),
 		"--balloon", freePageReporting,
 		"--platform", "system_serial_number=" + quoteOption(cmp.Or(s.SystemSerialNumber, NoCloudSerial)),
@@ -86,12 +89,7 @@ func firmwareArgs(ln launch, dir string, taps int) []string {
 		}
 		args = append(args, disk)
 	}
-	if taps > 0 {
-		args = append(args, "--net")
-		for n, i := range s.Interfaces[:taps] {
-			args = append(args, fmt.Sprintf("fd=%d,mac=%s", 3+n, i.MAC))
-		}
-	}
+	args = append(args, netArgs(s, taps)...)
 	args = append(args,
 		"--api-socket", "path="+filepath.Join(dir, apiFile),
 		"--console", "off",

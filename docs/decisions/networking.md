@@ -270,6 +270,16 @@ address.
     with `hostnet.OpenTap`, in its namespace. A tap has carrier while open,
     and the driver refuses to delete a tap a VM holds open: when the
     interface is deleted, ensured on another network, or has a duplicate.
+  - Each tap is a `--net fd=N,mac=...` of the VM's Cloud Hypervisor with
+    the checksum, TSO and UFO offloads on (`offload_csum=on,offload_tso=on,
+    offload_ufo=on`), for every machine with a tap: containers, VMs and
+    FileShare servers. Cloud Hypervisor v54 turned them off by default,
+    which makes the guest checksum and segment every packet itself; Hangar
+    keeps v53's behaviour. Measured with iperf3 on the testbed (2026-11,
+    12 vCPUs, nested KVM), a container to a container on one network and an
+    Ubuntu VM to a container, 10 s each: about 40 Gbit/s with v53
+    (39 to 49), about 3 Gbit/s with v54's defaults (2.9 to 3.7), and about
+    40 again with v54 and the offloads on (33 to 45).
   - The driver watches links, IPv4 addresses and routes, and its nft tables,
     in each network's namespace and, for its own links and the uplink, in the
     root namespace, and signals `Changes`; with an IPv6 prefix, the IPv6
