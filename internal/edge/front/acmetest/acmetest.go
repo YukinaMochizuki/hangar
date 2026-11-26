@@ -62,24 +62,24 @@ func Start(addr string, zones ...string) (*Server, error) {
 	return s, nil
 }
 
-// listen listens on addr over UDP and on the same port over TCP. A port
-// the system picked for UDP may be unusable for TCP, taken or, on Windows,
-// in a range the system keeps back, so then it tries another.
+// listen listens on addr over TCP and on the same port over UDP. TCP picks
+// first: Windows hands out UDP ports in sequence, often inside a range it
+// keeps back for TCP, so every UDP pick could fail over TCP.
 func listen(addr string) (net.PacketConn, net.Listener, error) {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, nil, err
 	}
 	for try := 1; ; try++ {
-		pc, err := net.ListenPacket("udp", addr)
+		ln, err := net.Listen("tcp", addr)
 		if err != nil {
 			return nil, nil, err
 		}
-		ln, err := net.Listen("tcp", pc.LocalAddr().String())
+		pc, err := net.ListenPacket("udp", ln.Addr().String())
 		if err == nil {
 			return pc, ln, nil
 		}
-		_ = pc.Close()
+		_ = ln.Close()
 		if port != "0" || try == 20 {
 			return nil, nil, err
 		}
