@@ -200,9 +200,10 @@ func (m monitoring) ListNodeUsage(ctx context.Context, _ *connect.Request[monito
 // nodeUsageSummary is, for each Node by name, the machines placed on it
 // counted and the vCPUs of those holding memory summed, with the memory and
 // disk held there as the scheduler counts them (nodeUsage): the machines',
-// and the disks' and file shares' placed there; and the machines its node
-// has stopped counted, with the memory they take back if started. No
-// machine, tenant or project is named.
+// a memory pool's no more than its size, and the disks' and file shares'
+// placed there; and the machines its node has stopped counted, with the
+// memory they take back if started, at most, as one in a memory pool may
+// take less. No machine, tenant or project is named.
 func (s *Server) nodeUsageSummary(ctx context.Context) ([]*monitoringv1alpha1.NodeUsage, error) {
 	nodes, used, err := s.nodeUsage(ctx, resource.Key{})
 	if err != nil {
@@ -256,7 +257,7 @@ func (s *Server) nodeUsageSummary(ctx context.Context) ([]*monitoringv1alpha1.No
 			Node:            name,
 			Machines:        p.machines,
 			Cpu:             strconv.FormatInt(p.cpu, 10),
-			Memory:          formatAmount(dimMemory, clampInt64(h.memory)),
+			Memory:          formatAmount(dimMemory, clampInt64(h.memory())),
 			Disk:            formatAmount(dimDisk, clampInt64(h.disk)),
 			StoppedMachines: p.stopped,
 			StoppedMemory:   formatAmount(dimMemory, clampInt64(p.stoppedMemory)),

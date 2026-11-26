@@ -116,6 +116,9 @@ message VirtualMachineResources {
   string cpu = 1;
   // Guest memory, at least 256Mi; the default is 1Gi.
   string memory = 2;
+  // The memory reserved for the VM, as a container's
+  // resources.memory_reserved is; empty is memory.
+  string memory_reserved = 3;
 }
 
 // VirtualMachineRootDisk is the disk a VM boots from.

@@ -349,6 +349,21 @@ tenant's: what all its projects together hold, against its Plan.
   apiserver reads it at each call, so a change holds from the next one;
   `usage` does not count it, and a project may not set it. How the calls
   are counted is in `node-tunnel.md`.
+- Memory counts two sums of the machines asked to run. `limits.memory`
+  holds their reservations, `resources.memory_reserved`, each its memory
+  when empty; a Plan's `memory_limit_percent`, from 100 to 400 and only
+  with `memory`, holds their memory to that percent of `limits.memory`.
+  Unset it is 100, and with no reservation below memory both sums are the
+  memory, as before. Above 100 the tenant's machines share its memory as a
+  pool, and may reserve less than their memory unless it pays as it
+  goes (`memory-pool.md`). A reservation counts only while the tenant has
+  such a pool; without one, as after its plan's percent is lowered to 100
+  or its account becomes PAY_AS_YOU_GO, its machines count their memory
+  in full, as the meter bills them, which may put it over its limit, as a
+  lowered limit does. A project may not set the percent; its own
+  `memory` holds both sums the same way, with its tenant's percent. Each
+  check refuses on its own, the second naming the percent. `usage.memory`
+  is the first sum and `usage.memory_ceiling` the second.
 - A tenant owner may give a project `spec.limits`, a budget inside the
   tenant's, such as one to cap an agent's project. It may not be above the
   tenant's limits, and the limits that hold for a project are the smaller of

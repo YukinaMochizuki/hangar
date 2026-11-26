@@ -927,10 +927,17 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 	// Its resources parse: validateContainerResources read them.
 	cur, _ := containerShape(c)
 	var was *machineShape
+	var wasReserved *reservation
 	if o, ok := old.(*computev1alpha1.Container); ok {
 		if shape, ok := containerShape(o); ok {
 			was = &shape
+			if g, err := reservedMemory(o.GetSpec().GetResources().GetMemoryReserved(), shape.memory); err == nil {
+				wasReserved = &reservation{g, shape.memory}
+			}
 		}
+	}
+	if err := s.checkReserved(ctx, meta.GetProject(), spec.GetResources().GetMemoryReserved(), cur.memory, minMemory, wasReserved); err != nil {
+		return err
 	}
 	return s.checkMachineShape(p, was, cur, "spec.resources.disk "+cmp.Or(spec.GetResources().GetDisk(), defaultDisk))
 }
@@ -1143,6 +1150,19 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	sz.memory, sz.disk = h.memory, h.disk
 	if err := checkMaximums(sz, "spec.resources", res.GetCpu(), res.GetMemory(), res.GetDisk()); err != nil {
 		return err
+	}
+	if g, err := reservedMemory(res.GetMemoryReserved(), h.memory); err != nil {
+		return invalid("spec.resources.memory_reserved: %v", err)
+	} else if g > h.memory {
+		return invalid("spec.resources.memory_reserved %s is above spec.resources.memory %s", res.GetMemoryReserved(), res.GetMemory())
+	}
+	if pool := spec.GetMemoryPool(); pool != nil {
+		if err := ValidName(pool.GetName()); err != nil {
+			return invalid("spec.memory_pool.name: %v", err)
+		}
+		if size, err := quantity.Bytes(pool.GetSize()); err != nil || size == 0 {
+			return invalid("spec.memory_pool.size %q is not a memory size above zero", pool.GetSize())
+		}
 	}
 	seen := map[string]bool{}
 	for _, nic := range spec.GetInterfaces() {

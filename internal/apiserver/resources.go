@@ -65,9 +65,120 @@ func (s sizes) canonical() *computev1alpha1.Resources {
 	}
 }
 
-// held is the memory and disk a machine holds on its node.
+// reservedMemory reads the resources.memory_reserved of a machine of
+// memory: memory when empty.
+func reservedMemory(s string, memory uint64) (uint64, error) {
+	if s == "" {
+		return memory, nil
+	}
+	return quantity.Bytes(s)
+}
+
+// canonicalReserved is the memory_reserved a machine of memory carries:
+// empty unless below memory, so a machine reserved its memory is written
+// as one that names no reservation.
+func canonicalReserved(reserved, memory uint64) string {
+	if reserved >= memory {
+		return ""
+	}
+	return quantity.FormatMemory(reserved)
+}
+
+// held is the memory and disk a machine holds on its node, and the memory
+// pool it holds its memory in, if any.
 type held struct {
 	memory, disk uint64
+	// pool is empty for a machine in no pool, which holds its memory alone;
+	// reserved is how much of a pool's machine's memory is reserved.
+	pool               string
+	poolSize, reserved uint64
+}
+
+// machineHeld is heldBy of spec's resources, with its memory pool.
+func machineHeld(spec *computev1alpha1.MachineSpec) (held, error) {
+	h, err := heldBy(spec.GetResources())
+	if err != nil {
+		return held{}, err
+	}
+	if p := spec.GetMemoryPool(); p != nil {
+		if h.poolSize, err = quantity.Bytes(p.GetSize()); err != nil {
+			return held{}, fmt.Errorf("memory_pool.size: %w", err)
+		}
+		h.pool = p.GetName()
+		h.reserved = h.memory
+		if g := spec.GetResources().GetMemoryReserved(); g != "" {
+			if h.reserved, err = quantity.Bytes(g); err != nil {
+				return held{}, fmt.Errorf("memory_reserved: %w", err)
+			}
+			h.reserved = min(h.reserved, h.memory)
+		}
+	}
+	return h, nil
+}
+
+// nodeHeld is what a node's machines, disks and file shares hold. The
+// machines of one memory pool hold together the least of their memory and
+// the pool's size; see docs/decisions/memory-pool.md.
+type nodeHeld struct {
+	// alone is the memory of the machines in no pool.
+	alone uint64
+	disk  uint64
+	pools map[string]poolHeld
+}
+
+// poolHeld is the memory of one pool's machines on a node, what they are
+// reserved of it, and the pool's size: the largest any of them carries,
+// as they may disagree while their controllers bring each up to date.
+type poolHeld struct {
+	memory, reserved, size uint64
+}
+
+// holds is what the pool's machines hold together: the least of their
+// memory and the pool's size, but never less than their reservations, which a
+// plan lowered past them while they run leaves above its size.
+func (p poolHeld) holds() uint64 { return min(p.memory, max(p.size, p.reserved)) }
+
+// memory is the memory the node holds.
+func (u nodeHeld) memory() uint64 {
+	m := u.alone
+	for _, p := range u.pools {
+		m = add(m, p.holds())
+	}
+	return m
+}
+
+// take adds what a machine holds.
+func (u *nodeHeld) take(h held) {
+	u.disk = add(u.disk, h.disk)
+	if h.pool == "" {
+		u.alone = add(u.alone, h.memory)
+		return
+	}
+	if h.memory == 0 {
+		return
+	}
+	if u.pools == nil {
+		u.pools = map[string]poolHeld{}
+	}
+	p := u.pools[h.pool]
+	p.memory, p.reserved, p.size = add(p.memory, h.memory), add(p.reserved, h.reserved), max(p.size, h.poolSize)
+	u.pools[h.pool] = p
+}
+
+// memoryFor is how much more memory the node holds once a machine holding h
+// joins what it holds: all of h's memory for a machine in no pool, and for
+// one in a pool only what it raises the pool's hold by, which is nothing
+// once the pool's machines there have its size.
+func (u nodeHeld) memoryFor(h held) uint64 {
+	if h.pool == "" {
+		return h.memory
+	}
+	if h.memory == 0 {
+		return 0
+	}
+	p := u.pools[h.pool]
+	after := poolHeld{memory: add(p.memory, h.memory), reserved: add(p.reserved, h.reserved), size: max(p.size, h.poolSize)}
+	return after.holds() - p.holds()
 }
 
 // heldBy reads a machine's resources; an empty quantity holds nothing.

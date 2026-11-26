@@ -303,6 +303,10 @@
           },
           "type": "array"
         },
+        "memoryPool": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.MemoryPool",
+          "description": "The memory pool the machine shares with its tenant's other machines; unset for a machine in none, which holds its memory alone. Its owner's controller sets it from the tenant's Plan and BillingAccount, and keeps it up to date while the machine runs: changing it restarts nothing. See docs/decisions/memory-pool.md."
+        },
         "node": {
           "description": "Names the Node that runs the machine. Empty until the scheduler places it; once set it never changes.",
           "type": "string"
@@ -391,6 +395,21 @@
       },
       "type": "object"
     },
+    "hangar.compute.v1alpha1.MemoryPool": {
+      "additionalProperties": false,
+      "description": "MemoryPool is memory a tenant's machines share.",
+      "properties": {
+        "name": {
+          "description": "The tenant's name: one pool per tenant, never shared across tenants.",
+          "type": "string"
+        },
+        "size": {
+          "description": "The tenant's Plan's memory, in canonical Mi: both what each node reserves for the pool's machines on it and the most they may use there together.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "hangar.compute.v1alpha1.Resources": {
       "additionalProperties": false,
       "description": "Resources sizes the microVM. Each field is a quantity in Kubernetes syntax, such as \"2\", \"512Mi\" or \"10Gi\"; empty takes the default.",
@@ -409,6 +428,10 @@
         },
         "memory": {
           "description": "Guest memory, at least 128Mi.",
+          "type": "string"
+        },
+        "memoryReserved": {
+          "description": "The memory reserved for the machine, never squeezed below while its tenant's machines share its memory as a pool; empty is memory. A whole number of 256Mi, at least the machine's minimum memory and at most memory. Below memory only for a tenant whose plan's memory_limit_percent is above 100 and whose BillingAccount is not PAY_AS_YOU_GO. It is what counts against the memory quota. A Machine carries it only when below memory. See docs/decisions/memory-pool.md.",
           "type": "string"
         }
       },

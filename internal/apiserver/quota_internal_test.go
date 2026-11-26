@@ -70,6 +70,14 @@ func askedFor(t *testing.T, r *computev1alpha1.Resources) amounts {
 		t.Fatal(err)
 	}
 	a[dimCPU], a[dimMemory], a[dimDisk] = cpu, int64(h.memory), int64(h.disk)
+	a[dimMemoryCeiling] = int64(h.memory)
+	if g := r.GetMemoryReserved(); g != "" {
+		b, err := quantity.Bytes(g)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a[dimMemory] = int64(b)
+	}
 	return a
 }
 
@@ -628,7 +636,7 @@ func TestUsageIsReported(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	wantUsage := &tenancyv1alpha1.Usage{Cpu: "1", Memory: "512Mi", Disk: "10Gi", Machines: 1, Projects: 1, Networks: 2}
+	wantUsage := &tenancyv1alpha1.Usage{Cpu: "1", Memory: "512Mi", Disk: "10Gi", Machines: 1, Projects: 1, Networks: 2, MemoryCeiling: "512Mi"}
 	planLimits := &tenancyv1alpha1.Limits{Cpu: proto.String("4"), Machines: proto.Int32(5)}
 	waitUsage(t, s, user, "a new container and network", func(ts *tenancyv1alpha1.TenantStatus, ps *tenancyv1alpha1.ProjectStatus) bool {
 		return ts.GetPlan() == DefaultPlan && proto.Equal(ts.GetLimits(), planLimits) && proto.Equal(ts.GetUsage(), wantUsage) &&

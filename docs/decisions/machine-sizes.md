@@ -94,6 +94,9 @@ can choose a shape within rules instead.
   only made-up sizes, in tests. The rules are the platform's code, and
   changing them is a change to the apiserver and the console together.
 - Memory stays reserved in full and is never overcommitted, so a shape's
-  memory is what the scheduler holds for it (`machine-model.md`). The
-  CPU a machine is sure of under full load follows its memory; it can use
-  idle CPU up to its vCPUs at any time.
+  memory is what the scheduler holds for it (`machine-model.md`), but for
+  a tenant's own memory pool, whose machines on a node hold together no
+  more than its size and which is never shared with another tenant
+  (`memory-pool.md`). The shape rules read a machine's memory, not its
+  reservation. The CPU a machine is sure of under full load follows its
+  memory; it can use idle CPU up to its vCPUs at any time.

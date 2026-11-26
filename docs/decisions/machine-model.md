@@ -111,7 +111,11 @@ Hypervisor directly, without Kata or Kubernetes.
   (`docs/decisions/machine-sizes.md`).
 - A scheduler in the apiserver places each machine on a ready, uncordoned node
   with room for its memory and its disk, preferring the most free memory.
-  Memory and disk are the resources it reserves; vCPUs are shared. Root disks
+  Memory and disk are the resources it reserves, in full; vCPUs are shared.
+  The one exception is a tenant's own memory pool, never shared across
+  tenants: the running machines of one pool on a node hold together the
+  least of their memory and the pool's size, and a pooled machine needs
+  only what it raises that by (`docs/decisions/memory-pool.md`). Root disks
   are sparse, so a machine holds the disk size it declares, and a node that
   reports no disk is not checked for it. A placed machine is only grown
   (memory or disk) if its node still has room. A stopped machine keeps its

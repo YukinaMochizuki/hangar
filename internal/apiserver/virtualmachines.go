@@ -199,10 +199,19 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 	// Its resources and root disk parse: they were checked above.
 	cur, _ := vmShape(vm)
 	var was *machineShape
+	var wasReserved *reservation
 	if o, ok := old.(*computev1alpha1.VirtualMachine); ok {
 		if shape, ok := vmShape(o); ok {
 			was = &shape
 		}
+		if osz, err := vmSizes(o.GetSpec().GetResources()); err == nil {
+			if g, err := reservedMemory(o.GetSpec().GetResources().GetMemoryReserved(), osz.memory); err == nil {
+				wasReserved = &reservation{g, osz.memory}
+			}
+		}
+	}
+	if err := s.checkReserved(ctx, vm.GetMetadata().GetProject(), spec.GetResources().GetMemoryReserved(), sz.memory, minVMMemory, wasReserved); err != nil {
+		return err
 	}
 	return s.checkMachineShape(p, was, cur,
 		"spec.root_disk.from_image.size "+cmp.Or(spec.GetRootDisk().GetFromImage().GetSize(), defaultVMRootSize))
@@ -534,9 +543,16 @@ func vmMachineSpec(vm *computev1alpha1.VirtualMachine, caKey string) (*computev1
 	if spec.GetRunState() == computev1alpha1.VirtualMachineRunState_VIRTUAL_MACHINE_RUN_STATE_STOPPED {
 		runState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
 	}
+	reserved, err := reservedMemory(spec.GetResources().GetMemoryReserved(), sz.memory)
+	if err != nil {
+		return nil, fmt.Errorf("spec.resources.memory_reserved: %w", err)
+	}
 	out := &computev1alpha1.MachineSpec{
-		Resources: &computev1alpha1.Resources{Cpu: quantity.FormatCPU(sz.cpu), Memory: quantity.FormatMemory(sz.memory)},
-		RunState:  runState,
+		Resources: &computev1alpha1.Resources{
+			Cpu: quantity.FormatCPU(sz.cpu), Memory: quantity.FormatMemory(sz.memory),
+			MemoryReserved: canonicalReserved(reserved, sz.memory),
+		},
+		RunState: runState,
 		Boot: &computev1alpha1.MachineSpec_Firmware{Firmware: &computev1alpha1.FirmwareBoot{
 			RootDisk: vmRootDisk(vm),
 			// The VM's uid, not its machine's: a machine made again is the
