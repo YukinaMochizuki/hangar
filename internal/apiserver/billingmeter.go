@@ -110,6 +110,11 @@ func (s *Server) meterOnce(ctx context.Context, now time.Time) error {
 // VirtualMachine's cpu and memory, which are its Machine's, and only while
 // its node reports it running.
 func (s *Server) meterReadings(ctx context.Context, tenant string) ([]store.MeterReading, error) {
+	terms, ok, err := s.poolTermsOf(ctx, tenant)
+	if err != nil {
+		return nil, err
+	}
+	pooled := ok && terms.pooled()
 	projects, err := s.listWith(ctx, registry.Project, "", nil)
 	if err != nil {
 		return nil, err
@@ -127,7 +132,7 @@ func (s *Server) meterReadings(ctx context.Context, tenant string) ([]store.Mete
 				return nil, err
 			}
 		}
-		running, err := s.runningShapes(ctx, project)
+		running, err := s.runningShapes(ctx, project, pooled)
 		if err != nil {
 			return nil, err
 		}
@@ -162,11 +167,12 @@ func (s *Server) meterReadings(ctx context.Context, tenant string) ([]store.Mete
 // runningShapes are the cpu and memory of each machine running in project
 // for a Container or a VirtualMachine, by the uid of the object it runs
 // for: its Machine's own, which is what runs, whatever its object's spec
-// asks for since. Its memory is what it is guaranteed while it is in a
-// memory pool, and all of its memory otherwise, which is what a machine of
-// a tenant that pays as it goes always is. A file share's server is the
+// asks for since. Its memory is what it is guaranteed while its tenant has
+// a memory pool, as pooled says (poolTerms.pooled), which is what the quota
+// counts too, and all of its memory otherwise, which is what a machine of a
+// tenant that pays as it goes always is. A file share's server is the
 // platform's, and not here.
-func (s *Server) runningShapes(ctx context.Context, project string) (map[string]amounts, error) {
+func (s *Server) runningShapes(ctx context.Context, project string, pooled bool) (map[string]amounts, error) {
 	objs, err := s.listWith(ctx, registry.Machine, project, nil)
 	if err != nil {
 		return nil, err
@@ -186,7 +192,7 @@ func (s *Server) runningShapes(ctx context.Context, project string) (map[string]
 				a[dimCPU] = int64(cpu) * 1000
 			}
 			if mem, err := quantity.Bytes(m.GetSpec().GetResources().GetMemory()); err == nil {
-				if m.GetSpec().GetMemoryPool() != nil {
+				if pooled {
 					if g, err := guaranteedMemory(m.GetSpec().GetResources().GetMemoryGuaranteed(), mem); err == nil {
 						mem = min(mem, g)
 					}

@@ -360,6 +360,76 @@ func TestAPoolFitsOnANodeOnce(t *testing.T) {
 	}
 }
 
+// TestLosingThePoolCountsFullMemory: once its tenant has no pool, by its
+// plan's percent or its account, a machine guaranteed less than its memory
+// counts and is billed its memory, the quota and the meter alike; over its
+// limit then, the tenant can still stop and change machines, but not add.
+func TestLosingThePoolCountsFullMemory(t *testing.T) {
+	t.Parallel()
+	s, system, root, alice := billed(t)
+	now := minuteNow(s)
+	plan := func(l *tenancyv1alpha1.Limits) {
+		p := pricedPlan("pooled", "300")
+		p.Spec.Limits = l
+		mustApply(t, s, root, registry.Plan, p)
+	}
+	plan(pooledLimits("8Gi", 200))
+	onPlan(t, s, root, "acme", "pooled")
+	mustApply(t, s, root, registry.BillingAccount, fixed("acme", now))
+	for _, name := range []string{"a", "b"} {
+		applyCtr(t, s, alice, guaranteed(name, "2Gi", "512Mi"))
+		m := waitMachine(t, s, system, machineName(name), "placed in its pool", func(m *computev1alpha1.Machine) bool {
+			return m.GetSpec().GetNode() == "n1" && m.GetSpec().GetMemoryPool() != nil
+		})
+		reportMachine(t, s, system, m, computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, m.GetMetadata().GetGeneration())
+	}
+	minute := now
+	// usage.memory, and what the meter bills for the next minute, in MiB.
+	agree := func(what, memory string, mib int64) {
+		t.Helper()
+		waitUsage(t, s, alice, what, func(ts *tenancyv1alpha1.TenantStatus, _ *tenancyv1alpha1.ProjectStatus) bool {
+			return ts.GetUsage().GetMemory() == memory && ts.GetUsage().GetMemoryCeiling() == "4Gi"
+		})
+		if err := s.meterOnce(system, minute); err != nil {
+			t.Fatal(err)
+		}
+		held, err := s.meterHeld(system, "acme", minute, minute.Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if held["memory"] != mib {
+			t.Errorf("%s: the meter bills %d MiB of memory, the quota counts %s", what, held["memory"], memory)
+		}
+		minute = minute.Add(time.Minute)
+	}
+	agree("in a pool", "1Gi", 1024)
+
+	plan(&tenancyv1alpha1.Limits{Memory: proto.String("8Gi")})
+	agree("out of the pool at 100 percent", "4Gi", 4096)
+
+	plan(pooledLimits("8Gi", 200))
+	agree("in the pool again", "1Gi", 1024)
+
+	mustApply(t, s, root, registry.PriceList, priceList("std", "TWD"))
+	mustApply(t, s, root, registry.BillingAccount, payg("acme", "std", 1, now))
+	agree("out of the pool paying as it goes", "4Gi", 4096)
+
+	// Over a limit it fits only in a pool, it can still change and stop
+	// what it has, but not add.
+	plan(&tenancyv1alpha1.Limits{Memory: proto.String("2Gi")})
+	cb := s.backend(registry.Container)
+	changed := guaranteed("a", "2Gi", "512Mi")
+	changed.Spec.Image = "redis"
+	if _, err := cb.Apply(alice, changed); err != nil {
+		t.Errorf("changing a container's image over the limit: %v", err)
+	}
+	if _, err := cb.Apply(alice, stopped(guaranteed("b", "2Gi", "512Mi"))); err != nil {
+		t.Errorf("stopping a container over the limit: %v", err)
+	}
+	_, err := cb.Apply(alice, guaranteed("c", "512Mi", ""))
+	wantExhausted(t, err, `tenant "acme"'s memory limit is 2Gi (plan "pooled") and it uses 2Gi; this would bring it to 2560Mi`, "a new container over the limit")
+}
+
 // TestThePoolsMeterIsItsGuarantee: a pooled machine running is billed what
 // it is guaranteed, not its memory.
 func TestThePoolsMeterIsItsGuarantee(t *testing.T) {

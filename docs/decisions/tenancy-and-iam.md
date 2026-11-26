@@ -356,7 +356,11 @@ tenant's: what all its projects together hold, against its Plan.
   Unset it is 100, and with no guarantee below memory both sums are the
   memory, as before. Above 100 the tenant's machines share its memory as a
   pool, and may be guaranteed less than their memory unless it pays as it
-  goes (`memory-pool.md`). A project may not set the percent; its own
+  goes (`memory-pool.md`). A guarantee counts only while the tenant has
+  such a pool; without one, as after its plan's percent is lowered to 100
+  or its account becomes PAY_AS_YOU_GO, its machines count their memory
+  in full, as the meter bills them, which may put it over its limit, as a
+  lowered limit does. A project may not set the percent; its own
   `memory` holds both sums the same way, with its tenant's percent. Each
   check refuses on its own, the second naming the percent. `usage.memory`
   is the first sum and `usage.memory_ceiling` the second.

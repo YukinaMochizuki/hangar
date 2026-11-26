@@ -508,9 +508,16 @@ type tally struct {
 
 // tally counts what tenant holds, read straight from the store, with over,
 // if any, in place of what is stored at its key. A project counts its
-// default network before the controller has made it.
+// default network before the controller has made it. Machines count their
+// guarantees as memory only while the tenant has a memory pool
+// (poolTerms.pooled), and their memory otherwise, as the meter bills them.
 func (s *Server) tally(ctx context.Context, tenant string, over *override) (tally, error) {
 	t := tally{projects: map[string]amounts{}, objects: map[string]*tenancyv1alpha1.Project{}}
+	terms, ok, err := s.poolTermsOf(ctx, tenant)
+	if err != nil {
+		return tally{}, err
+	}
+	pooled := ok && terms.pooled()
 	objs, err := s.listWith(ctx, registry.Project, "", over)
 	if err != nil {
 		return tally{}, err
@@ -541,6 +548,10 @@ func (s *Server) tally(ctx context.Context, tenant string, over *override) (tall
 		})
 		if !hasDefault && p.GetMetadata().GetDeleteTime() == nil {
 			a[dimNetworks]++
+		}
+		if !pooled {
+			// Only machines count memory.
+			a[dimMemory] = a[dimMemoryCeiling]
 		}
 		t.projects[name] = a
 		t.tenant.add(a)
@@ -965,6 +976,9 @@ func (s *Server) usageController() *controller.Controller {
 		{Kind: registry.Tenant.Kind, Map: controller.Self},
 		{Kind: registry.Project.Kind, Map: s.tenantOfProject},
 		{Kind: registry.Plan.Kind, Map: s.tenantsOfPlan, SkipResync: true},
+		// A tenant's account, of its name, decides whether it has a memory
+		// pool, and so what its machines' memory counts.
+		{Kind: registry.BillingAccount.Kind, Map: controller.Self, SkipResync: true},
 		{Kind: registry.CustomDomain.Kind, Map: tenantOfDomain, SkipResync: true},
 	}
 	for kind := range quotaCounters {

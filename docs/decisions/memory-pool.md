@@ -42,8 +42,11 @@ GiB nobody measured.
   their memory: two checks, each refusing a write that raises its sum past
   its limit, with `ResourceExhausted` naming it. A tenant's and a
   project's `status.usage.memory` is the first sum and `memory_ceiling`
-  the second. At 100 with no guarantee anywhere both are what memory
-  counted before.
+  the second. A guarantee counts only while its tenant has a pool (percent
+  above 100, account not PAY_AS_YOU_GO), the predicate the controllers
+  stamp `memory_pool` by; a tenant without one counts its machines' memory
+  in full, whatever guarantees they keep. At 100 with no guarantee
+  anywhere both are what memory counted before.
 - **The Machine carries its pool.** `Machine.spec.memory_pool` names the
   tenant and gives its size, the Plan's `limits.memory`, set by the
   container, VM and FileShare controllers for the machines of a pooled
@@ -68,9 +71,12 @@ GiB nobody measured.
   split across nodes holds up to its size on each, more than it can use:
   safe, not exact.
 - **What is billed for a pooled machine is its guarantee.** The meter
-  counts a running machine in a pool at its guarantee and any other at its
-  memory (`billing.md`). A PAY_AS_YOU_GO tenant has no pool, so its bills
-  are as before; a FIXED tenant pays its plan's fee whatever it holds.
+  counts a running machine at its guarantee while its tenant has a pool,
+  by the same predicate as the quota rather than by the machine's
+  `memory_pool`, which may wait for room on its node, and at its memory
+  otherwise, so the quota and the meter never disagree (`billing.md`). A
+  PAY_AS_YOU_GO tenant has no pool, so its bills are as before; a FIXED
+  tenant pays its plan's fee whatever it holds.
 - **The node squeezes a pool's machines, never another tenant's.** This is
   the node agent's part, and not built yet: the units of a pool's machines
   run in a slice of their own whose `MemoryMax` is the pool's size plus
@@ -92,8 +98,11 @@ GiB nobody measured.
   tenant's machines is at most its plan's memory per node, and only that
   tenant's machines are squeezed to keep within it.
 - A tenant whose plan is lowered to 100, or who moves to PAY_AS_YOU_GO,
-  keeps the guarantees it set until it changes them; its machines leave
-  the pool, as its node's room allows, and hold their memory in full.
+  keeps the guarantees it set until it changes them, but from then on its
+  machines count, and are billed, their memory in full, which may put it
+  over its memory limit: as over a lowered limit, it can still shrink and
+  change anything else (`tenancy-and-iam.md`). Its machines leave the
+  pool as their node's room allows.
 - A FileShare's server is in its tenant's pool like any of its machines,
   though it counts toward no quota.
 - Until the node squeezes, a pooled machine's memory is held by the
