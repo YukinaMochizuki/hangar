@@ -48,6 +48,22 @@ message MachineSpec {
   // mounts once the share is on its node. Changing them restarts nothing:
   // a container's restart comes from its volumes changing.
   repeated MachineFileShare file_shares = 23;
+  // The memory pool the machine shares with its tenant's other machines;
+  // unset for a machine in none, which holds its memory alone. Its owner's
+  // controller sets it from the tenant's Plan and BillingAccount, and
+  // keeps it up to date while the machine runs: changing it restarts
+  // nothing. See docs/decisions/memory-pool.md.
+  MemoryPool memory_pool = 24;
+}
+
+// MemoryPool is memory a tenant's machines share.
+message MemoryPool {
+  // The tenant's name: one pool per tenant, never shared across tenants.
+  string name = 1;
+  // The tenant's Plan's memory, in canonical Mi: both what each node
+  // reserves for the pool's machines on it and the most they may use
+  // there together.
+  string size = 2;
 }
 
 // MachineDisk is a Disk attached to the machine as a block device.

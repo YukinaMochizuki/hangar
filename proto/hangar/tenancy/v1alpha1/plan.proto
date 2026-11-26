@@ -55,7 +55,10 @@ message PlanStatus {
 message Limits {
   // vCPUs, a quantity in Kubernetes syntax, such as "8" or "2500m".
   optional string cpu = 1;
-  // Memory, a quantity such as "16Gi".
+  // Memory, a quantity such as "16Gi": what machines asked to run are
+  // guaranteed, together (resources.memory_guaranteed, which is their
+  // memory when empty). Their memory together may come to
+  // memory_limit_percent of it. See docs/decisions/memory-pool.md.
   optional string memory = 2;
   // Disk space, a quantity such as "200Gi": containers' disks, Disks, the
   // root disks VMs have made from images, FileShares, and CustomImages,
@@ -90,12 +93,23 @@ message Limits {
   optional int32 machine_calls = 14;
   // NetworkEndpoints, each holding an address of its network.
   optional int32 network_endpoints = 15;
+  // How far the memory of the tenant's machines asked to run may add up,
+  // as a percent of memory; their guarantees still add up to no more than
+  // memory. Above 100, the tenant's machines share its memory as one pool
+  // and may be guaranteed less than their memory, unless its
+  // BillingAccount is PAY_AS_YOU_GO. Only a Plan sets it, from 100 to 400,
+  // and only with memory; unset, it is 100. A project's memory limit holds
+  // both sums the same way, with its tenant's percent. See
+  // docs/decisions/memory-pool.md.
+  optional int32 memory_limit_percent = 16;
 }
 
 // Usage is what a tenant, or one of its projects, holds, counted as Limits
 // counts it.
 message Usage {
   string cpu = 1;
+  // What counts against Limits.memory: the guaranteed memory of the
+  // machines asked to run.
   string memory = 2;
   string disk = 3;
   int32 machines = 4;
@@ -111,6 +125,9 @@ message Usage {
   // Usage has no machine_calls, which Limits numbers 14.
   reserved 14;
   int32 network_endpoints = 15;
+  // The memory of the machines asked to run, which may come to
+  // Limits.memory_limit_percent of Limits.memory.
+  string memory_ceiling = 16;
 }
 
 // PlanService manages plans.

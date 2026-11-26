@@ -577,9 +577,12 @@ type VirtualMachineResources struct {
 	// Whole vCPUs; the default is 1.
 	Cpu string `protobuf:"bytes,1,opt,name=cpu,proto3" json:"cpu,omitempty"`
 	// Guest memory, at least 256Mi; the default is 1Gi.
-	Memory        string `protobuf:"bytes,2,opt,name=memory,proto3" json:"memory,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Memory string `protobuf:"bytes,2,opt,name=memory,proto3" json:"memory,omitempty"`
+	// The memory the VM is guaranteed, as a container's
+	// resources.memory_guaranteed is; empty is memory.
+	MemoryGuaranteed string `protobuf:"bytes,3,opt,name=memory_guaranteed,json=memoryGuaranteed,proto3" json:"memory_guaranteed,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *VirtualMachineResources) Reset() {
@@ -622,6 +625,13 @@ func (x *VirtualMachineResources) GetCpu() string {
 func (x *VirtualMachineResources) GetMemory() string {
 	if x != nil {
 		return x.Memory
+	}
+	return ""
+}
+
+func (x *VirtualMachineResources) GetMemoryGuaranteed() string {
+	if x != nil {
+		return x.MemoryGuaranteed
 	}
 	return ""
 }
@@ -1753,10 +1763,11 @@ const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\rserial_number\x18\x01 \x01(\tR\fserialNumber\"J\n" +
 	"\x17VirtualMachineFileShare\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
-	"\tread_only\x18\x02 \x01(\bR\breadOnly\"C\n" +
+	"\tread_only\x18\x02 \x01(\bR\breadOnly\"p\n" +
 	"\x17VirtualMachineResources\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
-	"\x06memory\x18\x02 \x01(\tR\x06memory\"\x93\x01\n" +
+	"\x06memory\x18\x02 \x01(\tR\x06memory\x12+\n" +
+	"\x11memory_guaranteed\x18\x03 \x01(\tR\x10memoryGuaranteed\"\x93\x01\n" +
 	"\x16VirtualMachineRootDisk\x12Q\n" +
 	"\n" +
 	"from_image\x18\x01 \x01(\v20.hangar.compute.v1alpha1.VirtualMachineImageDiskH\x00R\tfromImage\x12\x1c\n" +

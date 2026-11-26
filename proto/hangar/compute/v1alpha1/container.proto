@@ -176,6 +176,14 @@ message Resources {
   // fills, up to disk_grow.max; unset, it never does. See
   // docs/decisions/disk-autogrow.md.
   DiskGrow disk_grow = 6;
+  // The memory the machine is guaranteed, never squeezed below while its
+  // tenant's machines share its memory as a pool; empty is memory. A whole
+  // number of 256Mi, at least the machine's minimum memory and at most
+  // memory. Below memory only for a tenant whose plan's
+  // memory_limit_percent is above 100 and whose BillingAccount is not
+  // PAY_AS_YOU_GO. It is what counts against the memory quota. A Machine
+  // carries it only when below memory. See docs/decisions/memory-pool.md.
+  string memory_guaranteed = 7;
 }
 
 // DiskGrow is how a container's root disk grows by itself.

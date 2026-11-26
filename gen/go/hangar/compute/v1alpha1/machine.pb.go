@@ -245,7 +245,13 @@ type MachineSpec struct {
 	// shares on a node; a VM's may declare one on no node yet, which it
 	// mounts once the share is on its node. Changing them restarts nothing:
 	// a container's restart comes from its volumes changing.
-	FileShares    []*MachineFileShare `protobuf:"bytes,23,rep,name=file_shares,json=fileShares,proto3" json:"file_shares,omitempty"`
+	FileShares []*MachineFileShare `protobuf:"bytes,23,rep,name=file_shares,json=fileShares,proto3" json:"file_shares,omitempty"`
+	// The memory pool the machine shares with its tenant's other machines;
+	// unset for a machine in none, which holds its memory alone. Its owner's
+	// controller sets it from the tenant's Plan and BillingAccount, and
+	// keeps it up to date while the machine runs: changing it restarts
+	// nothing. See docs/decisions/memory-pool.md.
+	MemoryPool    *MemoryPool `protobuf:"bytes,24,opt,name=memory_pool,json=memoryPool,proto3" json:"memory_pool,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -363,6 +369,13 @@ func (x *MachineSpec) GetFileShares() []*MachineFileShare {
 	return nil
 }
 
+func (x *MachineSpec) GetMemoryPool() *MemoryPool {
+	if x != nil {
+		return x.MemoryPool
+	}
+	return nil
+}
+
 type isMachineSpec_Boot interface {
 	isMachineSpec_Boot()
 }
@@ -385,6 +398,63 @@ func (*MachineSpec_Firmware) isMachineSpec_Boot() {}
 
 func (*MachineSpec_FileShareServer) isMachineSpec_Boot() {}
 
+// MemoryPool is memory a tenant's machines share.
+type MemoryPool struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant's name: one pool per tenant, never shared across tenants.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The tenant's Plan's memory, in canonical Mi: both what each node
+	// reserves for the pool's machines on it and the most they may use
+	// there together.
+	Size          string `protobuf:"bytes,2,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryPool) Reset() {
+	*x = MemoryPool{}
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryPool) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryPool) ProtoMessage() {}
+
+func (x *MemoryPool) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryPool.ProtoReflect.Descriptor instead.
+func (*MemoryPool) Descriptor() ([]byte, []int) {
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *MemoryPool) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *MemoryPool) GetSize() string {
+	if x != nil {
+		return x.Size
+	}
+	return ""
+}
+
 // MachineDisk is a Disk attached to the machine as a block device.
 type MachineDisk struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -396,7 +466,7 @@ type MachineDisk struct {
 
 func (x *MachineDisk) Reset() {
 	*x = MachineDisk{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[2]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -408,7 +478,7 @@ func (x *MachineDisk) String() string {
 func (*MachineDisk) ProtoMessage() {}
 
 func (x *MachineDisk) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[2]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -421,7 +491,7 @@ func (x *MachineDisk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineDisk.ProtoReflect.Descriptor instead.
 func (*MachineDisk) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{2}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *MachineDisk) GetDisk() string {
@@ -452,7 +522,7 @@ type MachineFileShare struct {
 
 func (x *MachineFileShare) Reset() {
 	*x = MachineFileShare{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[3]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -464,7 +534,7 @@ func (x *MachineFileShare) String() string {
 func (*MachineFileShare) ProtoMessage() {}
 
 func (x *MachineFileShare) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[3]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -477,7 +547,7 @@ func (x *MachineFileShare) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineFileShare.ProtoReflect.Descriptor instead.
 func (*MachineFileShare) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{3}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *MachineFileShare) GetFileShare() string {
@@ -532,7 +602,7 @@ type ContainerBoot struct {
 
 func (x *ContainerBoot) Reset() {
 	*x = ContainerBoot{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[4]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -544,7 +614,7 @@ func (x *ContainerBoot) String() string {
 func (*ContainerBoot) ProtoMessage() {}
 
 func (x *ContainerBoot) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[4]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -557,7 +627,7 @@ func (x *ContainerBoot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerBoot.ProtoReflect.Descriptor instead.
 func (*ContainerBoot) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{4}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ContainerBoot) GetImage() string {
@@ -629,7 +699,7 @@ type ContainerBootVolume struct {
 
 func (x *ContainerBootVolume) Reset() {
 	*x = ContainerBootVolume{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[5]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -641,7 +711,7 @@ func (x *ContainerBootVolume) String() string {
 func (*ContainerBootVolume) ProtoMessage() {}
 
 func (x *ContainerBootVolume) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[5]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -654,7 +724,7 @@ func (x *ContainerBootVolume) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerBootVolume.ProtoReflect.Descriptor instead.
 func (*ContainerBootVolume) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{5}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ContainerBootVolume) GetDisk() string {
@@ -724,7 +794,7 @@ type FirmwareBoot struct {
 
 func (x *FirmwareBoot) Reset() {
 	*x = FirmwareBoot{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[6]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -736,7 +806,7 @@ func (x *FirmwareBoot) String() string {
 func (*FirmwareBoot) ProtoMessage() {}
 
 func (x *FirmwareBoot) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[6]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -749,7 +819,7 @@ func (x *FirmwareBoot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FirmwareBoot.ProtoReflect.Descriptor instead.
 func (*FirmwareBoot) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{6}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *FirmwareBoot) GetRootDisk() string {
@@ -796,7 +866,7 @@ type FileShareServerBoot struct {
 
 func (x *FileShareServerBoot) Reset() {
 	*x = FileShareServerBoot{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[7]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -808,7 +878,7 @@ func (x *FileShareServerBoot) String() string {
 func (*FileShareServerBoot) ProtoMessage() {}
 
 func (x *FileShareServerBoot) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[7]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -821,7 +891,7 @@ func (x *FileShareServerBoot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileShareServerBoot.ProtoReflect.Descriptor instead.
 func (*FileShareServerBoot) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{7}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *FileShareServerBoot) GetFileShare() string {
@@ -856,7 +926,7 @@ type MachineCloudInit struct {
 
 func (x *MachineCloudInit) Reset() {
 	*x = MachineCloudInit{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[8]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -868,7 +938,7 @@ func (x *MachineCloudInit) String() string {
 func (*MachineCloudInit) ProtoMessage() {}
 
 func (x *MachineCloudInit) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[8]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -881,7 +951,7 @@ func (x *MachineCloudInit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineCloudInit.ProtoReflect.Descriptor instead.
 func (*MachineCloudInit) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{8}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *MachineCloudInit) GetInstanceId() string {
@@ -935,7 +1005,7 @@ type MachineInterface struct {
 
 func (x *MachineInterface) Reset() {
 	*x = MachineInterface{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[9]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -947,7 +1017,7 @@ func (x *MachineInterface) String() string {
 func (*MachineInterface) ProtoMessage() {}
 
 func (x *MachineInterface) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[9]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -960,7 +1030,7 @@ func (x *MachineInterface) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineInterface.ProtoReflect.Descriptor instead.
 func (*MachineInterface) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{9}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *MachineInterface) GetName() string {
@@ -1040,7 +1110,7 @@ type MachineStatus struct {
 
 func (x *MachineStatus) Reset() {
 	*x = MachineStatus{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[10]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1052,7 +1122,7 @@ func (x *MachineStatus) String() string {
 func (*MachineStatus) ProtoMessage() {}
 
 func (x *MachineStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[10]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1065,7 +1135,7 @@ func (x *MachineStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineStatus.ProtoReflect.Descriptor instead.
 func (*MachineStatus) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{10}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *MachineStatus) GetObservedGeneration() int64 {
@@ -1144,7 +1214,7 @@ type MachineDiskWanted struct {
 
 func (x *MachineDiskWanted) Reset() {
 	*x = MachineDiskWanted{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[11]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1156,7 +1226,7 @@ func (x *MachineDiskWanted) String() string {
 func (*MachineDiskWanted) ProtoMessage() {}
 
 func (x *MachineDiskWanted) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[11]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1169,7 +1239,7 @@ func (x *MachineDiskWanted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineDiskWanted.ProtoReflect.Descriptor instead.
 func (*MachineDiskWanted) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{11}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MachineDiskWanted) GetDisk() string {
@@ -1196,7 +1266,7 @@ type GetMachineRequest struct {
 
 func (x *GetMachineRequest) Reset() {
 	*x = GetMachineRequest{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[12]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1208,7 +1278,7 @@ func (x *GetMachineRequest) String() string {
 func (*GetMachineRequest) ProtoMessage() {}
 
 func (x *GetMachineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[12]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1221,7 +1291,7 @@ func (x *GetMachineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMachineRequest.ProtoReflect.Descriptor instead.
 func (*GetMachineRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{12}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetMachineRequest) GetProject() string {
@@ -1247,7 +1317,7 @@ type GetMachineResponse struct {
 
 func (x *GetMachineResponse) Reset() {
 	*x = GetMachineResponse{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[13]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1259,7 +1329,7 @@ func (x *GetMachineResponse) String() string {
 func (*GetMachineResponse) ProtoMessage() {}
 
 func (x *GetMachineResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[13]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1272,7 +1342,7 @@ func (x *GetMachineResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMachineResponse.ProtoReflect.Descriptor instead.
 func (*GetMachineResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{13}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetMachineResponse) GetMachine() *Machine {
@@ -1295,7 +1365,7 @@ type ListMachinesRequest struct {
 
 func (x *ListMachinesRequest) Reset() {
 	*x = ListMachinesRequest{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[14]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1307,7 +1377,7 @@ func (x *ListMachinesRequest) String() string {
 func (*ListMachinesRequest) ProtoMessage() {}
 
 func (x *ListMachinesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[14]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1320,7 +1390,7 @@ func (x *ListMachinesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMachinesRequest.ProtoReflect.Descriptor instead.
 func (*ListMachinesRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{14}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListMachinesRequest) GetProject() string {
@@ -1362,7 +1432,7 @@ type ListMachinesResponse struct {
 
 func (x *ListMachinesResponse) Reset() {
 	*x = ListMachinesResponse{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[15]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1374,7 +1444,7 @@ func (x *ListMachinesResponse) String() string {
 func (*ListMachinesResponse) ProtoMessage() {}
 
 func (x *ListMachinesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[15]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1387,7 +1457,7 @@ func (x *ListMachinesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMachinesResponse.ProtoReflect.Descriptor instead.
 func (*ListMachinesResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{15}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListMachinesResponse) GetItems() []*Machine {
@@ -1423,7 +1493,7 @@ type WatchMachinesRequest struct {
 
 func (x *WatchMachinesRequest) Reset() {
 	*x = WatchMachinesRequest{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[16]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1435,7 +1505,7 @@ func (x *WatchMachinesRequest) String() string {
 func (*WatchMachinesRequest) ProtoMessage() {}
 
 func (x *WatchMachinesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[16]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1448,7 +1518,7 @@ func (x *WatchMachinesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchMachinesRequest.ProtoReflect.Descriptor instead.
 func (*WatchMachinesRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{16}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *WatchMachinesRequest) GetProject() string {
@@ -1483,7 +1553,7 @@ type WatchMachinesResponse struct {
 
 func (x *WatchMachinesResponse) Reset() {
 	*x = WatchMachinesResponse{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[17]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1495,7 +1565,7 @@ func (x *WatchMachinesResponse) String() string {
 func (*WatchMachinesResponse) ProtoMessage() {}
 
 func (x *WatchMachinesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[17]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1508,7 +1578,7 @@ func (x *WatchMachinesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchMachinesResponse.ProtoReflect.Descriptor instead.
 func (*WatchMachinesResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{17}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *WatchMachinesResponse) GetType() v1.EventType {
@@ -1543,7 +1613,7 @@ type ApplyMachineRequest struct {
 
 func (x *ApplyMachineRequest) Reset() {
 	*x = ApplyMachineRequest{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[18]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1555,7 +1625,7 @@ func (x *ApplyMachineRequest) String() string {
 func (*ApplyMachineRequest) ProtoMessage() {}
 
 func (x *ApplyMachineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[18]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1568,7 +1638,7 @@ func (x *ApplyMachineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyMachineRequest.ProtoReflect.Descriptor instead.
 func (*ApplyMachineRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{18}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ApplyMachineRequest) GetMachine() *Machine {
@@ -1596,7 +1666,7 @@ type ApplyMachineResponse struct {
 
 func (x *ApplyMachineResponse) Reset() {
 	*x = ApplyMachineResponse{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[19]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1608,7 +1678,7 @@ func (x *ApplyMachineResponse) String() string {
 func (*ApplyMachineResponse) ProtoMessage() {}
 
 func (x *ApplyMachineResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[19]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1621,7 +1691,7 @@ func (x *ApplyMachineResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyMachineResponse.ProtoReflect.Descriptor instead.
 func (*ApplyMachineResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{19}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ApplyMachineResponse) GetMachine() *Machine {
@@ -1656,7 +1726,7 @@ type DeleteMachineRequest struct {
 
 func (x *DeleteMachineRequest) Reset() {
 	*x = DeleteMachineRequest{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[20]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1668,7 +1738,7 @@ func (x *DeleteMachineRequest) String() string {
 func (*DeleteMachineRequest) ProtoMessage() {}
 
 func (x *DeleteMachineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[20]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1681,7 +1751,7 @@ func (x *DeleteMachineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteMachineRequest.ProtoReflect.Descriptor instead.
 func (*DeleteMachineRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{20}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DeleteMachineRequest) GetProject() string {
@@ -1714,7 +1784,7 @@ type DeleteMachineResponse struct {
 
 func (x *DeleteMachineResponse) Reset() {
 	*x = DeleteMachineResponse{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[21]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1726,7 +1796,7 @@ func (x *DeleteMachineResponse) String() string {
 func (*DeleteMachineResponse) ProtoMessage() {}
 
 func (x *DeleteMachineResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[21]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1739,7 +1809,7 @@ func (x *DeleteMachineResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteMachineResponse.ProtoReflect.Descriptor instead.
 func (*DeleteMachineResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{21}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DeleteMachineResponse) GetMachine() *Machine {
@@ -1761,7 +1831,7 @@ type UpdateMachineStatusRequest struct {
 
 func (x *UpdateMachineStatusRequest) Reset() {
 	*x = UpdateMachineStatusRequest{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[22]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1773,7 +1843,7 @@ func (x *UpdateMachineStatusRequest) String() string {
 func (*UpdateMachineStatusRequest) ProtoMessage() {}
 
 func (x *UpdateMachineStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[22]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1786,7 +1856,7 @@ func (x *UpdateMachineStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMachineStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateMachineStatusRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{22}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *UpdateMachineStatusRequest) GetProject() string {
@@ -1826,7 +1896,7 @@ type UpdateMachineStatusResponse struct {
 
 func (x *UpdateMachineStatusResponse) Reset() {
 	*x = UpdateMachineStatusResponse{}
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[23]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1838,7 +1908,7 @@ func (x *UpdateMachineStatusResponse) String() string {
 func (*UpdateMachineStatusResponse) ProtoMessage() {}
 
 func (x *UpdateMachineStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[23]
+	mi := &file_hangar_compute_v1alpha1_machine_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1851,7 +1921,7 @@ func (x *UpdateMachineStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateMachineStatusResponse.ProtoReflect.Descriptor instead.
 func (*UpdateMachineStatusResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{23}
+	return file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *UpdateMachineStatusResponse) GetMachine() *Machine {
@@ -1873,7 +1943,7 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x128\n" +
 	"\x04spec\x18\x04 \x01(\v2$.hangar.compute.v1alpha1.MachineSpecR\x04spec\x12>\n" +
 	"\x06status\x18\x05 \x01(\v2&.hangar.compute.v1alpha1.MachineStatusR\x06status:\x1d\x8a\xb5\x18\x19\n" +
-	"\aMachine\x12\bmachines\x1a\x02mc \x01\"\xbd\x05\n" +
+	"\aMachine\x12\bmachines\x1a\x02mc \x01\"\x83\x06\n" +
 	"\vMachineSpec\x12\x12\n" +
 	"\x04node\x18\x01 \x01(\tR\x04node\x12@\n" +
 	"\tresources\x18\x02 \x01(\v2\".hangar.compute.v1alpha1.ResourcesR\tresources\x12E\n" +
@@ -1888,8 +1958,14 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x0erestart_policy\x18\x15 \x01(\x0e2&.hangar.compute.v1alpha1.RestartPolicyR\rrestartPolicy\x12:\n" +
 	"\x05disks\x18\x16 \x03(\v2$.hangar.compute.v1alpha1.MachineDiskR\x05disks\x12J\n" +
 	"\vfile_shares\x18\x17 \x03(\v2).hangar.compute.v1alpha1.MachineFileShareR\n" +
-	"fileSharesB\x06\n" +
-	"\x04boot\"!\n" +
+	"fileShares\x12D\n" +
+	"\vmemory_pool\x18\x18 \x01(\v2#.hangar.compute.v1alpha1.MemoryPoolR\n" +
+	"memoryPoolB\x06\n" +
+	"\x04boot\"4\n" +
+	"\n" +
+	"MemoryPool\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\tR\x04size\"!\n" +
 	"\vMachineDisk\x12\x12\n" +
 	"\x04disk\x18\x01 \x01(\tR\x04disk\"h\n" +
 	"\x10MachineFileShare\x12\x1d\n" +
@@ -2034,90 +2110,92 @@ func file_hangar_compute_v1alpha1_machine_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_compute_v1alpha1_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_hangar_compute_v1alpha1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_hangar_compute_v1alpha1_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_hangar_compute_v1alpha1_machine_proto_goTypes = []any{
 	(MachineRunState)(0),                // 0: hangar.compute.v1alpha1.MachineRunState
 	(MachinePhase)(0),                   // 1: hangar.compute.v1alpha1.MachinePhase
 	(*Machine)(nil),                     // 2: hangar.compute.v1alpha1.Machine
 	(*MachineSpec)(nil),                 // 3: hangar.compute.v1alpha1.MachineSpec
-	(*MachineDisk)(nil),                 // 4: hangar.compute.v1alpha1.MachineDisk
-	(*MachineFileShare)(nil),            // 5: hangar.compute.v1alpha1.MachineFileShare
-	(*ContainerBoot)(nil),               // 6: hangar.compute.v1alpha1.ContainerBoot
-	(*ContainerBootVolume)(nil),         // 7: hangar.compute.v1alpha1.ContainerBootVolume
-	(*FirmwareBoot)(nil),                // 8: hangar.compute.v1alpha1.FirmwareBoot
-	(*FileShareServerBoot)(nil),         // 9: hangar.compute.v1alpha1.FileShareServerBoot
-	(*MachineCloudInit)(nil),            // 10: hangar.compute.v1alpha1.MachineCloudInit
-	(*MachineInterface)(nil),            // 11: hangar.compute.v1alpha1.MachineInterface
-	(*MachineStatus)(nil),               // 12: hangar.compute.v1alpha1.MachineStatus
-	(*MachineDiskWanted)(nil),           // 13: hangar.compute.v1alpha1.MachineDiskWanted
-	(*GetMachineRequest)(nil),           // 14: hangar.compute.v1alpha1.GetMachineRequest
-	(*GetMachineResponse)(nil),          // 15: hangar.compute.v1alpha1.GetMachineResponse
-	(*ListMachinesRequest)(nil),         // 16: hangar.compute.v1alpha1.ListMachinesRequest
-	(*ListMachinesResponse)(nil),        // 17: hangar.compute.v1alpha1.ListMachinesResponse
-	(*WatchMachinesRequest)(nil),        // 18: hangar.compute.v1alpha1.WatchMachinesRequest
-	(*WatchMachinesResponse)(nil),       // 19: hangar.compute.v1alpha1.WatchMachinesResponse
-	(*ApplyMachineRequest)(nil),         // 20: hangar.compute.v1alpha1.ApplyMachineRequest
-	(*ApplyMachineResponse)(nil),        // 21: hangar.compute.v1alpha1.ApplyMachineResponse
-	(*DeleteMachineRequest)(nil),        // 22: hangar.compute.v1alpha1.DeleteMachineRequest
-	(*DeleteMachineResponse)(nil),       // 23: hangar.compute.v1alpha1.DeleteMachineResponse
-	(*UpdateMachineStatusRequest)(nil),  // 24: hangar.compute.v1alpha1.UpdateMachineStatusRequest
-	(*UpdateMachineStatusResponse)(nil), // 25: hangar.compute.v1alpha1.UpdateMachineStatusResponse
-	(*v1.ObjectMeta)(nil),               // 26: hangar.meta.v1.ObjectMeta
-	(*Resources)(nil),                   // 27: hangar.compute.v1alpha1.Resources
-	(RestartPolicy)(0),                  // 28: hangar.compute.v1alpha1.RestartPolicy
-	(*EnvVar)(nil),                      // 29: hangar.compute.v1alpha1.EnvVar
-	(*ContainerTailscale)(nil),          // 30: hangar.compute.v1alpha1.ContainerTailscale
-	(*v1.Condition)(nil),                // 31: hangar.meta.v1.Condition
-	(*timestamppb.Timestamp)(nil),       // 32: google.protobuf.Timestamp
-	(v1.EventType)(0),                   // 33: hangar.meta.v1.EventType
+	(*MemoryPool)(nil),                  // 4: hangar.compute.v1alpha1.MemoryPool
+	(*MachineDisk)(nil),                 // 5: hangar.compute.v1alpha1.MachineDisk
+	(*MachineFileShare)(nil),            // 6: hangar.compute.v1alpha1.MachineFileShare
+	(*ContainerBoot)(nil),               // 7: hangar.compute.v1alpha1.ContainerBoot
+	(*ContainerBootVolume)(nil),         // 8: hangar.compute.v1alpha1.ContainerBootVolume
+	(*FirmwareBoot)(nil),                // 9: hangar.compute.v1alpha1.FirmwareBoot
+	(*FileShareServerBoot)(nil),         // 10: hangar.compute.v1alpha1.FileShareServerBoot
+	(*MachineCloudInit)(nil),            // 11: hangar.compute.v1alpha1.MachineCloudInit
+	(*MachineInterface)(nil),            // 12: hangar.compute.v1alpha1.MachineInterface
+	(*MachineStatus)(nil),               // 13: hangar.compute.v1alpha1.MachineStatus
+	(*MachineDiskWanted)(nil),           // 14: hangar.compute.v1alpha1.MachineDiskWanted
+	(*GetMachineRequest)(nil),           // 15: hangar.compute.v1alpha1.GetMachineRequest
+	(*GetMachineResponse)(nil),          // 16: hangar.compute.v1alpha1.GetMachineResponse
+	(*ListMachinesRequest)(nil),         // 17: hangar.compute.v1alpha1.ListMachinesRequest
+	(*ListMachinesResponse)(nil),        // 18: hangar.compute.v1alpha1.ListMachinesResponse
+	(*WatchMachinesRequest)(nil),        // 19: hangar.compute.v1alpha1.WatchMachinesRequest
+	(*WatchMachinesResponse)(nil),       // 20: hangar.compute.v1alpha1.WatchMachinesResponse
+	(*ApplyMachineRequest)(nil),         // 21: hangar.compute.v1alpha1.ApplyMachineRequest
+	(*ApplyMachineResponse)(nil),        // 22: hangar.compute.v1alpha1.ApplyMachineResponse
+	(*DeleteMachineRequest)(nil),        // 23: hangar.compute.v1alpha1.DeleteMachineRequest
+	(*DeleteMachineResponse)(nil),       // 24: hangar.compute.v1alpha1.DeleteMachineResponse
+	(*UpdateMachineStatusRequest)(nil),  // 25: hangar.compute.v1alpha1.UpdateMachineStatusRequest
+	(*UpdateMachineStatusResponse)(nil), // 26: hangar.compute.v1alpha1.UpdateMachineStatusResponse
+	(*v1.ObjectMeta)(nil),               // 27: hangar.meta.v1.ObjectMeta
+	(*Resources)(nil),                   // 28: hangar.compute.v1alpha1.Resources
+	(RestartPolicy)(0),                  // 29: hangar.compute.v1alpha1.RestartPolicy
+	(*EnvVar)(nil),                      // 30: hangar.compute.v1alpha1.EnvVar
+	(*ContainerTailscale)(nil),          // 31: hangar.compute.v1alpha1.ContainerTailscale
+	(*v1.Condition)(nil),                // 32: hangar.meta.v1.Condition
+	(*timestamppb.Timestamp)(nil),       // 33: google.protobuf.Timestamp
+	(v1.EventType)(0),                   // 34: hangar.meta.v1.EventType
 }
 var file_hangar_compute_v1alpha1_machine_proto_depIdxs = []int32{
-	26, // 0: hangar.compute.v1alpha1.Machine.metadata:type_name -> hangar.meta.v1.ObjectMeta
+	27, // 0: hangar.compute.v1alpha1.Machine.metadata:type_name -> hangar.meta.v1.ObjectMeta
 	3,  // 1: hangar.compute.v1alpha1.Machine.spec:type_name -> hangar.compute.v1alpha1.MachineSpec
-	12, // 2: hangar.compute.v1alpha1.Machine.status:type_name -> hangar.compute.v1alpha1.MachineStatus
-	27, // 3: hangar.compute.v1alpha1.MachineSpec.resources:type_name -> hangar.compute.v1alpha1.Resources
+	13, // 2: hangar.compute.v1alpha1.Machine.status:type_name -> hangar.compute.v1alpha1.MachineStatus
+	28, // 3: hangar.compute.v1alpha1.MachineSpec.resources:type_name -> hangar.compute.v1alpha1.Resources
 	0,  // 4: hangar.compute.v1alpha1.MachineSpec.run_state:type_name -> hangar.compute.v1alpha1.MachineRunState
-	6,  // 5: hangar.compute.v1alpha1.MachineSpec.container:type_name -> hangar.compute.v1alpha1.ContainerBoot
-	8,  // 6: hangar.compute.v1alpha1.MachineSpec.firmware:type_name -> hangar.compute.v1alpha1.FirmwareBoot
-	9,  // 7: hangar.compute.v1alpha1.MachineSpec.file_share_server:type_name -> hangar.compute.v1alpha1.FileShareServerBoot
-	11, // 8: hangar.compute.v1alpha1.MachineSpec.interfaces:type_name -> hangar.compute.v1alpha1.MachineInterface
-	28, // 9: hangar.compute.v1alpha1.MachineSpec.restart_policy:type_name -> hangar.compute.v1alpha1.RestartPolicy
-	4,  // 10: hangar.compute.v1alpha1.MachineSpec.disks:type_name -> hangar.compute.v1alpha1.MachineDisk
-	5,  // 11: hangar.compute.v1alpha1.MachineSpec.file_shares:type_name -> hangar.compute.v1alpha1.MachineFileShare
-	29, // 12: hangar.compute.v1alpha1.ContainerBoot.env:type_name -> hangar.compute.v1alpha1.EnvVar
-	7,  // 13: hangar.compute.v1alpha1.ContainerBoot.volumes:type_name -> hangar.compute.v1alpha1.ContainerBootVolume
-	30, // 14: hangar.compute.v1alpha1.ContainerBoot.tailscale:type_name -> hangar.compute.v1alpha1.ContainerTailscale
-	10, // 15: hangar.compute.v1alpha1.FirmwareBoot.cloud_init:type_name -> hangar.compute.v1alpha1.MachineCloudInit
-	31, // 16: hangar.compute.v1alpha1.MachineStatus.conditions:type_name -> hangar.meta.v1.Condition
-	1,  // 17: hangar.compute.v1alpha1.MachineStatus.phase:type_name -> hangar.compute.v1alpha1.MachinePhase
-	32, // 18: hangar.compute.v1alpha1.MachineStatus.boot_time:type_name -> google.protobuf.Timestamp
-	13, // 19: hangar.compute.v1alpha1.MachineStatus.disks_wanted:type_name -> hangar.compute.v1alpha1.MachineDiskWanted
-	2,  // 20: hangar.compute.v1alpha1.GetMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
-	2,  // 21: hangar.compute.v1alpha1.ListMachinesResponse.items:type_name -> hangar.compute.v1alpha1.Machine
-	33, // 22: hangar.compute.v1alpha1.WatchMachinesResponse.type:type_name -> hangar.meta.v1.EventType
-	2,  // 23: hangar.compute.v1alpha1.WatchMachinesResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
-	2,  // 24: hangar.compute.v1alpha1.ApplyMachineRequest.machine:type_name -> hangar.compute.v1alpha1.Machine
-	2,  // 25: hangar.compute.v1alpha1.ApplyMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
-	2,  // 26: hangar.compute.v1alpha1.DeleteMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
-	12, // 27: hangar.compute.v1alpha1.UpdateMachineStatusRequest.status:type_name -> hangar.compute.v1alpha1.MachineStatus
-	2,  // 28: hangar.compute.v1alpha1.UpdateMachineStatusResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
-	14, // 29: hangar.compute.v1alpha1.MachineService.GetMachine:input_type -> hangar.compute.v1alpha1.GetMachineRequest
-	16, // 30: hangar.compute.v1alpha1.MachineService.ListMachines:input_type -> hangar.compute.v1alpha1.ListMachinesRequest
-	18, // 31: hangar.compute.v1alpha1.MachineService.WatchMachines:input_type -> hangar.compute.v1alpha1.WatchMachinesRequest
-	20, // 32: hangar.compute.v1alpha1.MachineService.ApplyMachine:input_type -> hangar.compute.v1alpha1.ApplyMachineRequest
-	22, // 33: hangar.compute.v1alpha1.MachineService.DeleteMachine:input_type -> hangar.compute.v1alpha1.DeleteMachineRequest
-	24, // 34: hangar.compute.v1alpha1.MachineService.UpdateMachineStatus:input_type -> hangar.compute.v1alpha1.UpdateMachineStatusRequest
-	15, // 35: hangar.compute.v1alpha1.MachineService.GetMachine:output_type -> hangar.compute.v1alpha1.GetMachineResponse
-	17, // 36: hangar.compute.v1alpha1.MachineService.ListMachines:output_type -> hangar.compute.v1alpha1.ListMachinesResponse
-	19, // 37: hangar.compute.v1alpha1.MachineService.WatchMachines:output_type -> hangar.compute.v1alpha1.WatchMachinesResponse
-	21, // 38: hangar.compute.v1alpha1.MachineService.ApplyMachine:output_type -> hangar.compute.v1alpha1.ApplyMachineResponse
-	23, // 39: hangar.compute.v1alpha1.MachineService.DeleteMachine:output_type -> hangar.compute.v1alpha1.DeleteMachineResponse
-	25, // 40: hangar.compute.v1alpha1.MachineService.UpdateMachineStatus:output_type -> hangar.compute.v1alpha1.UpdateMachineStatusResponse
-	35, // [35:41] is the sub-list for method output_type
-	29, // [29:35] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	7,  // 5: hangar.compute.v1alpha1.MachineSpec.container:type_name -> hangar.compute.v1alpha1.ContainerBoot
+	9,  // 6: hangar.compute.v1alpha1.MachineSpec.firmware:type_name -> hangar.compute.v1alpha1.FirmwareBoot
+	10, // 7: hangar.compute.v1alpha1.MachineSpec.file_share_server:type_name -> hangar.compute.v1alpha1.FileShareServerBoot
+	12, // 8: hangar.compute.v1alpha1.MachineSpec.interfaces:type_name -> hangar.compute.v1alpha1.MachineInterface
+	29, // 9: hangar.compute.v1alpha1.MachineSpec.restart_policy:type_name -> hangar.compute.v1alpha1.RestartPolicy
+	5,  // 10: hangar.compute.v1alpha1.MachineSpec.disks:type_name -> hangar.compute.v1alpha1.MachineDisk
+	6,  // 11: hangar.compute.v1alpha1.MachineSpec.file_shares:type_name -> hangar.compute.v1alpha1.MachineFileShare
+	4,  // 12: hangar.compute.v1alpha1.MachineSpec.memory_pool:type_name -> hangar.compute.v1alpha1.MemoryPool
+	30, // 13: hangar.compute.v1alpha1.ContainerBoot.env:type_name -> hangar.compute.v1alpha1.EnvVar
+	8,  // 14: hangar.compute.v1alpha1.ContainerBoot.volumes:type_name -> hangar.compute.v1alpha1.ContainerBootVolume
+	31, // 15: hangar.compute.v1alpha1.ContainerBoot.tailscale:type_name -> hangar.compute.v1alpha1.ContainerTailscale
+	11, // 16: hangar.compute.v1alpha1.FirmwareBoot.cloud_init:type_name -> hangar.compute.v1alpha1.MachineCloudInit
+	32, // 17: hangar.compute.v1alpha1.MachineStatus.conditions:type_name -> hangar.meta.v1.Condition
+	1,  // 18: hangar.compute.v1alpha1.MachineStatus.phase:type_name -> hangar.compute.v1alpha1.MachinePhase
+	33, // 19: hangar.compute.v1alpha1.MachineStatus.boot_time:type_name -> google.protobuf.Timestamp
+	14, // 20: hangar.compute.v1alpha1.MachineStatus.disks_wanted:type_name -> hangar.compute.v1alpha1.MachineDiskWanted
+	2,  // 21: hangar.compute.v1alpha1.GetMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
+	2,  // 22: hangar.compute.v1alpha1.ListMachinesResponse.items:type_name -> hangar.compute.v1alpha1.Machine
+	34, // 23: hangar.compute.v1alpha1.WatchMachinesResponse.type:type_name -> hangar.meta.v1.EventType
+	2,  // 24: hangar.compute.v1alpha1.WatchMachinesResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
+	2,  // 25: hangar.compute.v1alpha1.ApplyMachineRequest.machine:type_name -> hangar.compute.v1alpha1.Machine
+	2,  // 26: hangar.compute.v1alpha1.ApplyMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
+	2,  // 27: hangar.compute.v1alpha1.DeleteMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
+	13, // 28: hangar.compute.v1alpha1.UpdateMachineStatusRequest.status:type_name -> hangar.compute.v1alpha1.MachineStatus
+	2,  // 29: hangar.compute.v1alpha1.UpdateMachineStatusResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
+	15, // 30: hangar.compute.v1alpha1.MachineService.GetMachine:input_type -> hangar.compute.v1alpha1.GetMachineRequest
+	17, // 31: hangar.compute.v1alpha1.MachineService.ListMachines:input_type -> hangar.compute.v1alpha1.ListMachinesRequest
+	19, // 32: hangar.compute.v1alpha1.MachineService.WatchMachines:input_type -> hangar.compute.v1alpha1.WatchMachinesRequest
+	21, // 33: hangar.compute.v1alpha1.MachineService.ApplyMachine:input_type -> hangar.compute.v1alpha1.ApplyMachineRequest
+	23, // 34: hangar.compute.v1alpha1.MachineService.DeleteMachine:input_type -> hangar.compute.v1alpha1.DeleteMachineRequest
+	25, // 35: hangar.compute.v1alpha1.MachineService.UpdateMachineStatus:input_type -> hangar.compute.v1alpha1.UpdateMachineStatusRequest
+	16, // 36: hangar.compute.v1alpha1.MachineService.GetMachine:output_type -> hangar.compute.v1alpha1.GetMachineResponse
+	18, // 37: hangar.compute.v1alpha1.MachineService.ListMachines:output_type -> hangar.compute.v1alpha1.ListMachinesResponse
+	20, // 38: hangar.compute.v1alpha1.MachineService.WatchMachines:output_type -> hangar.compute.v1alpha1.WatchMachinesResponse
+	22, // 39: hangar.compute.v1alpha1.MachineService.ApplyMachine:output_type -> hangar.compute.v1alpha1.ApplyMachineResponse
+	24, // 40: hangar.compute.v1alpha1.MachineService.DeleteMachine:output_type -> hangar.compute.v1alpha1.DeleteMachineResponse
+	26, // 41: hangar.compute.v1alpha1.MachineService.UpdateMachineStatus:output_type -> hangar.compute.v1alpha1.UpdateMachineStatusResponse
+	36, // [36:42] is the sub-list for method output_type
+	30, // [30:36] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_hangar_compute_v1alpha1_machine_proto_init() }
@@ -2131,15 +2209,15 @@ func file_hangar_compute_v1alpha1_machine_proto_init() {
 		(*MachineSpec_Firmware)(nil),
 		(*MachineSpec_FileShareServer)(nil),
 	}
-	file_hangar_compute_v1alpha1_machine_proto_msgTypes[20].OneofWrappers = []any{}
-	file_hangar_compute_v1alpha1_machine_proto_msgTypes[22].OneofWrappers = []any{}
+	file_hangar_compute_v1alpha1_machine_proto_msgTypes[21].OneofWrappers = []any{}
+	file_hangar_compute_v1alpha1_machine_proto_msgTypes[23].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_compute_v1alpha1_machine_proto_rawDesc), len(file_hangar_compute_v1alpha1_machine_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   24,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

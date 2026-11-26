@@ -182,8 +182,13 @@
           "type": "integer"
         },
         "memory": {
-          "description": "Memory, a quantity such as \"16Gi\".",
+          "description": "Memory, a quantity such as \"16Gi\": what machines asked to run are guaranteed, together (resources.memory_guaranteed, which is their memory when empty). Their memory together may come to memory_limit_percent of it. See docs/decisions/memory-pool.md.",
           "type": "string"
+        },
+        "memoryLimitPercent": {
+          "description": "How far the memory of the tenant's machines asked to run may add up, as a percent of memory; their guarantees still add up to no more than memory. Above 100, the tenant's machines share its memory as one pool and may be guaranteed less than their memory, unless its BillingAccount is PAY_AS_YOU_GO. Only a Plan sets it, from 100 to 400, and only with memory; unset, it is 100. A project's memory limit holds both sums the same way, with its tenant's percent. See docs/decisions/memory-pool.md.",
+          "format": "int32",
+          "type": "integer"
         },
         "networkEndpoints": {
           "description": "NetworkEndpoints, each holding an address of its network.",
@@ -294,6 +299,11 @@
           "type": "integer"
         },
         "memory": {
+          "description": "What counts against Limits.memory: the guaranteed memory of the machines asked to run.",
+          "type": "string"
+        },
+        "memoryCeiling": {
+          "description": "The memory of the machines asked to run, which may come to Limits.memory_limit_percent of Limits.memory.",
           "type": "string"
         },
         "networkEndpoints": {
