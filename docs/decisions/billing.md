@@ -21,7 +21,11 @@ events are compacted (`sqlite-store.md`).
 - **What is billed is what is held, not what is used.** A running machine
   is billed its vCPUs and memory, as asked for, whatever its load: memory is
   reserved in full and never overcommitted (`machine-sizes.md`), so an idle
-  machine costs what a busy one does. Disks, addresses, public endpoints,
+  machine costs what a busy one does. A machine in its tenant's memory pool
+  is billed its guarantee, `resources.memory_guaranteed`, which is what the
+  quota counts as its memory; its memory past that is a ceiling, never
+  billed (`memory-pool.md`). A PAY_AS_YOU_GO tenant has no pool, so its
+  machines are billed their memory. Disks, addresses, public endpoints,
   port forwards, file shares, network endpoints and custom domains are
   billed while they exist. Each object counts as the quota counts it
   (`quotaCounters` in `internal/apiserver/quota.go`), but for cpu and
