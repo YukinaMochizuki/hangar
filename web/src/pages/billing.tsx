@@ -366,7 +366,7 @@ export function TenantBilling() {
                   ) : stmts.error ? (
                     <ErrorNotice error={stmts.error} title="The statements did not load" onRetry={() => void stmts.refetch()} />
                   ) : stmts.statements.length === 0 ? (
-                    <p className="px-4 pb-4 text-[13px] text-muted">None yet: the first is made as the period ends.</p>
+                    <p className="px-4 py-3 text-[13px] text-muted">None yet: the first is made as the period ends.</p>
                   ) : (
                     <StatementsList statements={stmts.statements} zoneOf={() => zone} />
                   )}
@@ -587,7 +587,7 @@ export function PlatformBilling() {
               ) : error ? (
                 <ErrorNotice error={error} title="The accounts did not load" onRetry={() => void refetch()} />
               ) : accounts.length === 0 ? (
-                <p className="px-4 pb-4 text-[13px] text-muted">No tenant is billed.</p>
+                <p className="px-4 py-3 text-[13px] text-muted">No tenant is billed.</p>
               ) : (
                 <table className="w-full min-w-[760px] text-[13px]">
                   <thead>
@@ -641,7 +641,7 @@ export function PlatformBilling() {
                 ) : stmts.error ? (
                   <ErrorNotice error={stmts.error} title="The statements did not load" onRetry={() => void stmts.refetch()} />
                 ) : unpaid.length === 0 ? (
-                  <p className="px-4 pb-4 text-[13px] text-muted">Every statement is paid.</p>
+                  <p className="px-4 py-3 text-[13px] text-muted">Every statement is paid.</p>
                 ) : (
                   <StatementsList statements={unpaid} showTenant zoneOf={zoneOf} />
                 )}
