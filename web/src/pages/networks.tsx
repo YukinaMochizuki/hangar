@@ -14,7 +14,7 @@ import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } 
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
-import { Badge, buttonVariants, Card, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
+import { Badge, buttonVariants, Card, CardEmpty, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
 import { permission, useNetworkCan } from "@/lib/network-actions";
 import { date, machinePath } from "@/lib/machines";
 import {
@@ -204,7 +204,7 @@ export function AttachmentsCard({ title, items, state, empty }: { title: string;
       ) : state.error ? (
         <ErrorNotice error={state.error} title="The project's machines did not load" onRetry={state.refetch} />
       ) : items.length === 0 ? (
-        <div className="px-4 py-3 text-[13px] text-muted">{empty}</div>
+        <CardEmpty>{empty}</CardEmpty>
       ) : (
         <>
           <ul className="divide-y md:hidden">

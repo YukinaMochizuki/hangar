@@ -15,7 +15,7 @@ import { DetailBody, DetailFrame, DetailHead, LoadingTable, PageHead } from "@/c
 import { Topbar, useTenantName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
-import { Card, CardHeader, Field } from "@/components/ui";
+import { Card, CardEmpty, CardHeader, Field } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import {
   agreementOf,
@@ -98,7 +98,7 @@ function PeriodTrack({ share }: { share: number }) {
 /** What an amount is made of: one bar of its items, then a row each with its share. */
 function Breakdown({ groups, currency }: { groups: LineGroup[]; currency?: string }) {
   const total = groups.reduce((n, g) => n + g.amount, 0);
-  if (total <= 0) return <p className="px-5 pb-5 text-[13px] text-muted">Nothing held has come to anything yet.</p>;
+  if (total <= 0) return <CardEmpty>Nothing held has come to anything yet.</CardEmpty>;
   const sorted = [...groups].sort((a, b) => b.amount - a.amount);
   return (
     <div className="px-5 pb-3 pt-4">
@@ -366,7 +366,7 @@ export function TenantBilling() {
                   ) : stmts.error ? (
                     <ErrorNotice error={stmts.error} title="The statements did not load" onRetry={() => void stmts.refetch()} />
                   ) : stmts.statements.length === 0 ? (
-                    <p className="px-4 py-3 text-[13px] text-muted">None yet: the first is made as the period ends.</p>
+                    <CardEmpty>None yet: the first is made as the period ends.</CardEmpty>
                   ) : (
                     <StatementsList statements={stmts.statements} zoneOf={() => zone} />
                   )}
@@ -587,7 +587,7 @@ export function PlatformBilling() {
               ) : error ? (
                 <ErrorNotice error={error} title="The accounts did not load" onRetry={() => void refetch()} />
               ) : accounts.length === 0 ? (
-                <p className="px-4 py-3 text-[13px] text-muted">No tenant is billed.</p>
+                <CardEmpty>No tenant is billed.</CardEmpty>
               ) : (
                 <table className="w-full min-w-[760px] text-[13px]">
                   <thead>
@@ -641,7 +641,7 @@ export function PlatformBilling() {
                 ) : stmts.error ? (
                   <ErrorNotice error={stmts.error} title="The statements did not load" onRetry={() => void stmts.refetch()} />
                 ) : unpaid.length === 0 ? (
-                  <p className="px-4 py-3 text-[13px] text-muted">Every statement is paid.</p>
+                  <CardEmpty>Every statement is paid.</CardEmpty>
                 ) : (
                   <StatementsList statements={unpaid} showTenant zoneOf={zoneOf} />
                 )}

@@ -22,7 +22,7 @@ import { FormFooter, StaleNotice } from "@/components/resource";
 import { Topbar, useTenantName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
-import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led, StateText } from "@/components/ui";
+import { Button, buttonVariants, Card, CardEmpty, CardHeader, CopyButton, Field, Led, StateText } from "@/components/ui";
 import { domainOf, domainPerms, domainState, useCheckDomain, useCustomDomains, useDeleteDomain, useDomainCan, usesOf, useTenantEndpoints, type DomainUse } from "@/lib/custom-domains";
 import { errorMessage } from "@/lib/api";
 import { date } from "@/lib/machines";
@@ -405,7 +405,7 @@ function RecordsCard({ d }: { d: CustomDomain }) {
     <Card className="overflow-hidden">
       <CardHeader title="DNS records" />
       {records.length === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted">Not given yet.</p>
+        <CardEmpty>Not given yet.</CardEmpty>
       ) : (
         <>
           <p className="border-b px-4 py-2.5 text-[12.5px] text-muted">DNS only, no proxy (in Cloudflare, the grey cloud): behind a proxy no certificate is issued.</p>
@@ -515,7 +515,7 @@ function UsesCard({ uses }: { uses: Uses }) {
       ) : uses.error ? (
         <ErrorNotice error={uses.error} title="The tenant's endpoints did not load" onRetry={uses.refetch} />
       ) : uses.items.length === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted">No endpoints.</p>
+        <CardEmpty>No endpoints.</CardEmpty>
       ) : (
         <ul className="divide-y">
           {uses.items.map((u) => (

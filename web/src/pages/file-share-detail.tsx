@@ -31,7 +31,7 @@ import { DetailBody, DetailFrame, DetailHead } from "@/components/page";
 import { useProjectName } from "@/components/shell";
 import { Th } from "@/components/table";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
-import { Badge, Button, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Badge, Button, Card, CardEmpty, CardHeader, CopyButton, Field } from "@/components/ui";
 import {
   addressOn,
   shareGiB,
@@ -207,7 +207,7 @@ function Loaded({ s, can }: { s: FileShare; can: Can }) {
               {decls.loading && uses.length === 0 ? (
                 <SkeletonRows rows={2} />
               ) : decls.error != null && uses.length === 0 ? null : uses.length === 0 ? (
-                <div className="px-4 py-3 text-[13px] text-muted">No machines.</div>
+                <CardEmpty>No machines.</CardEmpty>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-[13px]">

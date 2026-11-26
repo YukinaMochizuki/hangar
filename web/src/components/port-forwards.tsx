@@ -19,7 +19,7 @@ import { useProjectName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
 import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
-import { buttonVariants, Card, CardHeader, CopyButton, phaseLabel, StateText } from "@/components/ui";
+import { buttonVariants, Card, CardEmpty, CardHeader, CopyButton, phaseLabel, StateText } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { machinePath, useMachines, type MachineView } from "@/lib/machines";
 import { nameOf, portForwardYaml, usePortForwards } from "@/lib/network";
@@ -367,9 +367,9 @@ export function MachinePortForwards({ m }: { m: MachineView }) {
       ) : forwards.error ? (
         <ErrorNotice error={forwards.error} title="The port forwards did not load" onRetry={forwards.refetch} />
       ) : mine.length === 0 ? (
-        <div className="px-4 py-3 text-[13px] text-muted">
+        <CardEmpty>
           No port forwards.
-        </div>
+        </CardEmpty>
       ) : (
         <ul className="divide-y">
           {mine.map((pf) => (

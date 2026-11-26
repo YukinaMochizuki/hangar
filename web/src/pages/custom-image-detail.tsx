@@ -16,7 +16,7 @@ import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
 import { DiskState, ImageStateCell } from "@/components/storage";
 import { Taxiway, type Stop } from "@/components/taxiway";
-import { Badge, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Badge, Card, CardEmpty, CardHeader, CopyButton, Field } from "@/components/ui";
 import { customImageFloorGiB, customImageState, sourceDisk, uploadedFraction, uploadSource, useCustomImages, type CustomImageStep } from "@/lib/custom-images";
 import { date } from "@/lib/machines";
 import { gib, useDisks } from "@/lib/storage";
@@ -151,7 +151,7 @@ function ProjectDisks({ ci, project }: { ci: CustomImage; project: string }) {
       {loading ? (
         <SkeletonRows rows={2} />
       ) : mine.length === 0 ? (
-        <div className="px-4 py-3 text-[13px] text-muted">None.</div>
+        <CardEmpty>None.</CardEmpty>
       ) : (
         <ul className="divide-y">
           {mine.map((d) => {

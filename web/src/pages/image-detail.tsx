@@ -12,7 +12,7 @@ import { useImageActions, useImageCan } from "@/components/image-actions";
 import type { Can } from "@/components/object-actions";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
 import { HeadActions } from "@/components/object-actions";
-import { Badge, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Badge, Card, CardEmpty, CardHeader, CopyButton, Field } from "@/components/ui";
 import { date } from "@/lib/machines";
 import { gib, diskImage, imageFloorGiB, imageState, useDisks, useImages } from "@/lib/storage";
 import { osLabel } from "@/pages/image-list";
@@ -65,7 +65,7 @@ function ProjectDisks({ img }: { img: Image }) {
       {loading ? (
         <SkeletonRows rows={2} />
       ) : mine.length === 0 ? (
-        <div className="px-4 py-3 text-[13px] text-muted">None.</div>
+        <CardEmpty>None.</CardEmpty>
       ) : (
         <ul className="divide-y">
           {mine.map((d) => {
