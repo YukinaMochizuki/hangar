@@ -19,7 +19,7 @@ import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/securi
 import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { customImageFloorGiB, customImageState, useCustomImages } from "@/lib/custom-images";
 import { imageFloorGiB } from "@/lib/storage";
-import { Box, Check, Globe, HardDrive, Lock, RotateCw, Server, SlidersHorizontal, Undo2, X } from "lucide-react";
+import { Box, Check, Clock, Globe, HardDrive, Lock, RotateCw, Server, SlidersHorizontal, Undo2, X } from "lucide-react";
 import { DiskLink } from "@/components/links";
 import { networksAfter, VolumePicker, volumeProblems, type ShareAdds, type VolumeRow } from "@/components/volume-picker";
 import { addNetworks, removeNetworks, sharePerms, shareName, shareUses, shareYaml, useFileShares, withNetworks } from "@/lib/file-shares";
@@ -31,6 +31,9 @@ import { advancedSpec, ContainerAdvanced, noAdvanced, type Advanced } from "@/co
 import { DiskGrowFields, diskGrowOf, diskGrowSpec, type DiskGrow } from "@/components/disk-grow";
 import { Choice, FormManifest, FormPage, FormSection as Section, FormSummary } from "@/components/form-page";
 import { gibText, SizeSliders } from "@/components/size-sliders";
+import { MemoryShare, type Share } from "@/components/memory-share";
+import { defaultReservedMiB, reservedProblem, useProjectPool } from "@/lib/memory-pool";
+import { useProjects } from "@/lib/projects";
 import { MachinePortForwards } from "@/components/machine-port-forwards";
 import { noVmAdvanced, sshKeysOf, VmAdvancedFields, vmAdvancedProblems, type VmAdvanced } from "@/components/vm-advanced";
 import { dataDiskProblems, VmDisks } from "@/components/vm-disks";
@@ -83,7 +86,7 @@ import {
 } from "@/lib/machine-sizes";
 import { isStale } from "@/lib/network-actions";
 import { useOverQuota } from "@/lib/over-quota";
-import { formatNumber, quantityCPU, quantityGiB, wholeGiB } from "@/lib/quantity";
+import { formatNumber, parseQuantity, quantityCPU, quantityGiB, wholeGiB } from "@/lib/quantity";
 
 export type CreateKind = "container" | "vm";
 
@@ -137,10 +140,13 @@ export type MachineEditing = {
   write: (o: MachineObject) => Promise<unknown>;
   /** Reads the object again, for the page to open the form on it anew. */
   reload: { pending: boolean; error: unknown; run: () => void };
+  /** The machine runs and is not in its tenant's memory pool yet: a reservation it is given waits for its next start. */
+  outsidePool?: boolean;
 };
 
-const effectTitle = (e: Effect, noun: string) => (e === "rebuild" ? "Rebuilds the root disk" : e === "restart" ? `Restarts the ${noun}` : "Restarts nothing");
-const effectIcon = { rebuild: HardDrive, restart: RotateCw, nothing: Check } as const;
+const effectTitle = (e: Effect, noun: string) =>
+  e === "rebuild" ? "Rebuilds the root disk" : e === "restart" ? `Restarts the ${noun}` : e === "next-restart" ? "Takes effect at the next restart" : "Restarts nothing";
+const effectIcon = { rebuild: HardDrive, restart: RotateCw, "next-restart": Clock, nothing: Check } as const;
 
 /** The right column's list of what applying does, grouped by effect, or that nothing differs. */
 function WhatApplyingDoes({ changes, noun }: { changes: Change[]; noun: string }) {
@@ -149,7 +155,7 @@ function WhatApplyingDoes({ changes, noun }: { changes: Change[]; noun: string }
   }
   return (
     <div className="space-y-3 px-4 py-3">
-      {(["rebuild", "restart", "nothing"] as const).map((e) => {
+      {(["rebuild", "restart", "next-restart", "nothing"] as const).map((e) => {
         const these = changes.filter((c) => c.effect === e);
         if (these.length === 0) return null;
         const Icon = effectIcon[e];
@@ -266,6 +272,18 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   // The port forward rows as edited; null until then, while they are the forwards the machine has.
   const [forwardEdits, setForwardEdits] = useState<ForwardRow[] | null>(null);
   const proc = advancedSpec(advanced);
+  // The machine's memory in its tenant's pool: Dedicated, or Shared with the
+  // reservation as typed once the field is open, else memory ÷ the plan's
+  // percent. An edited Shared machine opens on the reservation it has.
+  const pool = useProjectPool(project);
+  const { tenantName } = useProjects();
+  const [initialReserved] = useState(() => {
+    const r = (baseC ?? baseV)?.spec?.resources;
+    const mem = r?.memory || (baseC ? containerDefaults.memory : vmDefaults.memory);
+    return r?.memoryReserved && parseQuantity(r.memoryReserved) < parseQuantity(mem) ? r.memoryReserved : "";
+  });
+  const [share, setShare] = useState<Share>(initialReserved ? "shared" : "dedicated");
+  const [reservedTyped, setReservedTyped] = useState<string | null>(initialReserved ? gibText(parseQuantity(initialReserved) / 2 ** 20) : null);
 
   const images = useQuery(ImageService.method.listImages, { pageSize: 1000 }, { enabled: kind === "vm" });
   const customImages = useCustomImages(project);
@@ -328,6 +346,14 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
       }
     : undefined;
   const s = customSize ?? picked;
+  const memMiBOf = (z: Size) => (z.resources.memory ? parseQuantity(z.resources.memory) / 2 ** 20 : Math.round(z.memoryGi * 1024));
+  const sMiB = s ? memMiBOf(s) : NaN;
+  const shared = pool.pooled && share === "shared";
+  const typedMiB = reservedTyped === null ? NaN : Math.round(Number(reservedTyped) * 1024);
+  const reservedFieldProblem = shared && s && reservedTyped !== null ? reservedProblem(reservedTyped.trim() === "" ? NaN : typedMiB, sMiB) : undefined;
+  // What is reserved: what was typed while the API would take it, else the default.
+  const reservedMiB = !shared || !s ? sMiB : reservedTyped !== null && !reservedFieldProblem ? typedMiB : defaultReservedMiB(sMiB, pool.percent);
+  const memoryReserved = shared && s ? memoryQuantity(reservedMiB) : "";
   // The sliders reach twice the largest size, and always the machine's own shape.
   const ownShapes = [current, customFields && { cpu: customFields.cpu, memoryGi: customFields.memMiB / 1024 }].flatMap((x) =>
     x ? [{ memMiB: Math.round(x.memoryGi * 1024), cpu: x.cpu }] : [],
@@ -453,6 +479,8 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
       changed.cpu = s.resources.cpu;
       changed.memory = s.resources.memory;
     }
+    // With a pool, the reservation is written whenever it differs from the stored one, so a resize keeps it as shown.
+    if (pool.pooled && s && memoryReserved !== ((baseC ?? baseV)?.spec?.resources?.memoryReserved ?? "")) changed.memoryReserved = memoryReserved;
     obj = editedObject(edit.base, changed);
   } else {
     obj =
@@ -467,14 +495,14 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
               restartPolicy: proc.restartPolicy,
               interfaces,
               volumes: volumesOf(volumes),
-              resources: s && { ...s.resources, disk: diskQuantity, diskGrow: grow.spec },
+              resources: s && { ...s.resources, memoryReserved, disk: diskQuantity, diskGrow: grow.spec },
             },
           })
         : create(VirtualMachineSchema, {
             metadata: { name, project },
             spec: {
               interfaces,
-              resources: s && { cpu: s.resources.cpu, memory: s.resources.memory },
+              resources: s && { cpu: s.resources.cpu, memory: s.resources.memory, memoryReserved },
               rootDisk: {
                 source: { case: "fromImage", value: { image: { name: chosenImage, project: chosenCustom ? project : "" }, size: s ? diskQuantity : "" } },
               },
@@ -487,7 +515,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
             },
           });
   }
-  const machineChanges = edit ? changesOf(edit.base, obj) : [];
+  const machineChanges = edit ? changesOf(edit.base, obj, { outsidePool: edit.outsidePool }) : [];
   // The forwards are objects of their own, made and deleted beside the machine, which they do not restart.
   const forwardDetail = [...fwd.make.map((f) => `${f.name} added`), ...fwd.remove.map((n) => `${n} removed`)].join(", ");
   const changes: Change[] = forwardDetail ? [...machineChanges, { field: "portForwards", label: "Port forwards", effect: "nothing", detail: forwardDetail }] : machineChanges;
@@ -496,14 +524,22 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   // never the one typed: a raised disk's overage is the Disk field's to
   // state. An edit is checked on what it adds to the machine, never its
   // whole size.
-  const delta = edit ? quotaDelta(edit.base, obj) : undefined;
+  // With a pool, memory counts what is reserved, and the memory itself counts
+  // against the plan's percent of the limit (docs/decisions/memory-pool.md).
+  const delta = edit ? quotaDelta(edit.base, obj, { pooled: pool.pooled }) : undefined;
+  const ceilingDelta = edit && pool.pooled ? quotaDelta(edit.base, obj).memoryGi : undefined;
   const over = delta
-    ? overQuota({ machines: 0, cpu: delta.cpu, memoryGi: delta.memoryGi, diskGi: diskProblem ? 0 : delta.diskGi })
+    ? overQuota({ machines: 0, cpu: delta.cpu, memoryGi: delta.memoryGi, diskGi: diskProblem ? 0 : delta.diskGi, ceilingGi: ceilingDelta })
     : s
-      ? overQuota({ machines: 1, cpu: s.cpu, memoryGi: s.memoryGi, diskGi: diskProblem ? minDisk : diskGi })
+      ? overQuota({ machines: 1, cpu: s.cpu, memoryGi: reservedMiB / 1024, diskGi: diskProblem ? minDisk : diskGi, ceilingGi: pool.pooled ? s.memoryGi : undefined })
       : [];
+  // A card counts what it would reserve: its memory, or Shared its default reservation.
+  const countedGi = (z: Size) => (shared ? defaultReservedMiB(memMiBOf(z), pool.percent) / 1024 : z.memoryGi);
+  const currentCountedGi = current && pool.pooled && initialReserved ? parseQuantity(initialReserved) / 2 ** 30 : current?.memoryGi ?? 0;
   const cardOver = (z: Size) =>
-    current ? overQuota({ machines: 0, cpu: z.cpu - current.cpu, memoryGi: z.memoryGi - current.memoryGi, diskGi: 0 }) : overQuota({ machines: 1, cpu: z.cpu, memoryGi: z.memoryGi, diskGi: startOf(z) });
+    current
+      ? overQuota({ machines: 0, cpu: z.cpu - current.cpu, memoryGi: countedGi(z) - currentCountedGi, diskGi: 0, ceilingGi: pool.pooled ? z.memoryGi - current.memoryGi : undefined })
+      : overQuota({ machines: 1, cpu: z.cpu, memoryGi: countedGi(z), diskGi: startOf(z), ceilingGi: pool.pooled ? z.memoryGi : undefined });
   const diskOver = over.find((o) => o.key === "disk");
 
   const machineYaml = toYaml(manifestOf(obj, kind === "container" ? "Container" : "VirtualMachine"));
@@ -548,6 +584,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   if (!edit && kind === "vm" && !chosenImage) problems.push("No image is chosen.");
   if (!s) problems.push(machineSizes.loading ? "The machine sizes are loading." : "No machine size is chosen.");
   if (customProblem) problems.push(customProblem);
+  if (reservedFieldProblem) problems.push(reservedFieldProblem);
   if (s && diskProblem && !baseV) problems.push(diskProblem);
   // An edit is held back by growth fields only once they are changed: what is stored, the API took.
   if (!edit || JSON.stringify(diskGrow) !== JSON.stringify(initial.diskGrow)) problems.push(...grow.problems);
@@ -637,13 +674,16 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
         summary={
           <>
             {s ? (
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[20px] font-semibold">{s.label}</span>
-                <span className="text-[13px] text-muted tabular">
-                  {formatNumber(s.cpu)} vCPU · {formatNumber(s.memoryGi)} GiB
-                  {baseV ? "" : ` · ${diskTyped || "–"} GiB disk`}
-                </span>
-              </div>
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-[20px] font-semibold">{s.label}</span>
+                  <span className="text-[13px] text-muted tabular">
+                    {formatNumber(s.cpu)} vCPU · {formatNumber(s.memoryGi)} GiB
+                    {baseV ? "" : ` · ${diskTyped || "–"} GiB disk`}
+                  </span>
+                </div>
+                {shared && <div className="mt-0.5 text-[12.5px] text-muted tabular">Shared memory, {gibText(reservedMiB)} GiB reserved</div>}
+              </>
             ) : (
               <div className="text-[13px] text-muted">No size</div>
             )}
@@ -661,6 +701,9 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                     {o.unit}; {formatNumber(o.left)}
                     {o.unit} of {formatNumber(o.limit)}
                     {o.unit} is left.
+                    {o.key === "memory" && pool.pooled && !shared && s && (
+                      <span className="block">Shared counts only its reserved {gibText(defaultReservedMiB(sMiB, pool.percent))} GiB.</span>
+                    )}
                   </div>
                 ))}
               </Notice>
@@ -917,6 +960,19 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
               />
               {customProblem && <p className="mt-2 text-[12px] text-fail">{customProblem}</p>}
             </div>
+          )}
+          {pool.pooled && s && (
+            <MemoryShare
+              memMiB={sMiB}
+              percent={pool.percent}
+              tenant={tenantName(pool.tenant)}
+              share={share}
+              reservedMiB={reservedMiB}
+              typed={reservedTyped}
+              problem={reservedFieldProblem}
+              onShare={setShare}
+              onReserved={setReservedTyped}
+            />
           )}
           </>
         )}

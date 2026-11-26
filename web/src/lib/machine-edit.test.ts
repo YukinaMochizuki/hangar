@@ -197,3 +197,35 @@ describe("quotaDelta", () => {
     expect(quotaDelta(bare, editedObject(bare, { cpu: "1", memory: "512Mi", disk: "10Gi" }))).toEqual({ cpu: 0, memoryGi: 0, diskGi: 0 });
   });
 });
+
+describe("a reservation in a pool", () => {
+  const shared = (reserved: string) =>
+    create(ContainerSchema, { metadata: { name: "web", resourceVersion: 1n }, spec: { image: "a", resources: { cpu: "2", memory: "4Gi", memoryReserved: reserved, disk: "10Gi" } } });
+
+  it("is kept by a change of anything else in resources, and replaced when written", () => {
+    const grown = editedObject(shared("2Gi"), { disk: "20Gi" }) as Container;
+    expect(grown.spec?.resources).toMatchObject({ memory: "4Gi", memoryReserved: "2Gi", disk: "20Gi" });
+    const dedicated = editedObject(shared("2Gi"), { memoryReserved: "" }) as Container;
+    expect(dedicated.spec?.resources?.memoryReserved).toBe("");
+    const vm = editedObject(db(), { memoryReserved: "3Gi" }) as VirtualMachine;
+    expect(vm.spec?.resources).toMatchObject({ cpu: "3", memory: "6Gi", memoryReserved: "3Gi" });
+  });
+
+  it("restarts nothing, and waits for the next start of a running machine not in its pool", () => {
+    const to = (r: string) => editedObject(shared("2Gi"), { memoryReserved: r });
+    expect(changesOf(shared("2Gi"), to(""))).toEqual([{ field: "memoryReserved", label: "Memory", effect: "nothing", detail: "Shared, 2 GiB reserved → Dedicated" }]);
+    expect(changesOf(shared("2Gi"), to("1536Mi"), { outsidePool: true })).toEqual([
+      { field: "memoryReserved", label: "Memory", effect: "next-restart", detail: "Shared, 2 GiB reserved → Shared, 1.5 GiB reserved" },
+    ]);
+    // All of memory reserved is Dedicated, written or not.
+    expect(changesOf(shared(""), to("4Gi"))).toEqual([]);
+    // A VM's reservation is no size change.
+    expect(changesOf(db(), editedObject(db(), { memoryReserved: "3Gi" })).map((c) => c.field)).toEqual(["memoryReserved"]);
+  });
+
+  it("counts what is reserved against the memory limit in a pool, and the memory without one", () => {
+    const next = editedObject(shared("2Gi"), { memory: "8Gi", memoryReserved: "3Gi" });
+    expect(quotaDelta(shared("2Gi"), next, { pooled: true }).memoryGi).toBe(1);
+    expect(quotaDelta(shared("2Gi"), next).memoryGi).toBe(4);
+  });
+});

@@ -8,8 +8,13 @@ import { quantityCPU, quantityGiB } from "@/lib/quantity";
 
 export type Over = { key: string; label: string; need: number; left: number; limit: number; unit: string };
 
-/** What a machine, or a change to one, takes of each project limit. */
-export type Need = { machines: number; cpu: number; memoryGi: number; diskGi: number };
+/**
+ * What a machine, or a change to one, takes of each project limit. memoryGi
+ * is what counts against the memory limit, its reservation in a pool;
+ * ceilingGi, in a pool, its memory, which the machines asked to run hold
+ * together up to memory_limit_percent of the limit.
+ */
+export type Need = { machines: number; cpu: number; memoryGi: number; diskGi: number; ceilingGi?: number };
 
 /** The project limits the need would go past, from Project.status; a need of nothing passes whatever the usage. */
 export function useOverQuota(project: string) {
@@ -23,6 +28,11 @@ export function useOverQuota(project: string) {
       { key: "memory", label: "memory", used: quantityGiB(st.usage?.memory || "0"), limit: quantityGiB(st.limits?.memory), need: n.memoryGi, unit: " GiB" },
       { key: "disk", label: "disk", used: quantityGiB(st.usage?.disk || "0"), limit: quantityGiB(st.limits?.disk), need: n.diskGi, unit: " GiB" },
     ];
+    const percent = st.limits?.memoryLimitPercent ?? 100;
+    if (percent > 100 && n.ceilingGi !== undefined) {
+      const limit = (quantityGiB(st.limits?.memory) * percent) / 100;
+      checks.push({ key: "memoryCeiling", label: "shared memory", used: quantityGiB(st.usage?.memoryCeiling || "0"), limit, need: n.ceilingGi, unit: " GiB" });
+    }
     return checks
       .filter((c) => c.need > 0 && c.limit !== undefined && Number.isFinite(c.limit) && c.used + c.need > c.limit!)
       .map((c) => ({ key: c.key, label: c.label, need: c.need, left: Math.max(0, c.limit! - c.used), limit: c.limit!, unit: c.unit }));

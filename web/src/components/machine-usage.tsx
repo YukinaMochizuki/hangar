@@ -5,6 +5,7 @@
 import type { ReactNode } from "react";
 import { SeriesPlot, SeriesValue, type ChartSeries } from "@/components/series-chart";
 import { Card, CardEmpty, CardHeader } from "@/components/ui";
+import { formatNumber } from "@/lib/quantity";
 
 /** What the card draws: the samples' series and which memory they are. */
 export type Usage = {
@@ -12,6 +13,8 @@ export type Usage = {
   memory: ChartSeries;
   /** "guest" for a container's guest's own count, "host" for what a VM holds on the host. */
   memoryKind: "guest" | "host";
+  /** What its memory pool leaves the guest now, its memory less its balloon; unset when its node cannot tell. */
+  sizeNowBytes?: number;
 };
 
 /** The memory's name, by what it counts. */
@@ -40,16 +43,38 @@ function Section({ title, value, children }: { title: string; value?: ReactNode;
   );
 }
 
-/** The card with the hour's CPU and memory, each with its value now. */
-export function UsageCard({ usage, now }: { usage: Usage; now?: Date }) {
+/**
+ * The card with the hour's CPU and memory, each with its value now. A Shared
+ * machine's (`shared`) memory also shows what its pool leaves it now, a
+ * dashed line on the plot (docs/decisions/memory-pool.md).
+ */
+export function UsageCard({ usage, now, shared }: { usage: Usage; now?: Date; shared?: boolean }) {
   const memory = memoryTitle(usage.memoryKind);
+  const sizeNow = shared ? usage.sizeNowBytes : undefined;
+  const sizeNowGi = sizeNow === undefined ? undefined : formatNumber(sizeNow / 2 ** 30);
   return (
     <Frame>
       <Section title="CPU" value={<SeriesValue series={usage.cpu} />}>
         <SeriesPlot title="CPU" series={usage.cpu} range="1h" now={now} axis="inside" />
       </Section>
-      <Section title={memory} value={<SeriesValue series={usage.memory} />}>
-        <SeriesPlot title={memory} series={usage.memory} range="1h" now={now} axis="inside" />
+      <Section
+        title={memory}
+        value={
+          <>
+            <SeriesValue series={usage.memory} />
+            {sizeNowGi !== undefined && <span className="text-subtle"> of {sizeNowGi} GiB</span>}
+          </>
+        }
+      >
+        <SeriesPlot title={memory} series={usage.memory} range="1h" now={now} axis="inside" mark={sizeNow} />
+        {sizeNowGi !== undefined && (
+          <div className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-subtle">
+            <svg viewBox="0 0 12 2" className="h-0.5 w-3" aria-hidden>
+              <line x1={0} x2={12} y1={1} y2={1} className="stroke-pending" strokeWidth={2} strokeDasharray="3 2" />
+            </svg>
+            available now, {sizeNowGi} GiB
+          </div>
+        )}
       </Section>
     </Frame>
   );

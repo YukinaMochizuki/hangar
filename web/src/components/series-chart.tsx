@@ -107,19 +107,23 @@ export function SeriesPlot({
   range,
   now = new Date(),
   axis = "beside",
+  mark,
 }: {
   title: string;
   series: ChartSeries;
   range: SeriesRange;
   now?: Date;
   axis?: "beside" | "inside";
+  /** A value drawn as a dashed line as an alert is, such as what a Shared machine's pool leaves it now. */
+  mark?: number;
 }) {
   const max = axisMax(series);
   const { line, area, dots } = plotPaths(series, range, max, now);
   const last = series.points.at(-1);
   const start = new Date(now.getTime() - rangeSeconds[range] * 1000);
   const mid = new Date(now.getTime() - (rangeSeconds[range] * 1000) / 2);
-  const alertY = series.alertAbove !== undefined && series.alertAbove <= max ? H - (series.alertAbove / max) * H : undefined;
+  const dashed = mark ?? series.alertAbove;
+  const alertY = dashed !== undefined && dashed <= max ? H - (dashed / max) * H : undefined;
   const fmt = (v: number) => formatValue(v, series.unit);
 
   return (

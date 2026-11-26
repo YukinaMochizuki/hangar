@@ -43,6 +43,8 @@ import { VmFileSharesCard } from "@/components/file-shares";
 import { MachinePortForwards } from "@/components/port-forwards";
 import { UsageCard, UsageNote, UsagePlaceholder } from "@/components/machine-usage";
 import { isNotRunning, useMachineUsage } from "@/lib/usage";
+import { MemoryBanners, MemoryRow, SharedBadge } from "@/components/machine-memory";
+import { balloonStuck, machineMemory } from "@/lib/memory-pool";
 
 /**
  * The machine's CPU and memory over the last hour, asked of its node while
@@ -55,7 +57,7 @@ function Usage({ m }: { m: MachineView }) {
   if (!running || isNotRunning(error)) return <UsageNote>{m.name} is not running.</UsageNote>;
   // A failed ask hides the last answer, which would read as the value now.
   if (error) return <UsagePlaceholder memoryKind={memoryKind}>Usage did not load.</UsagePlaceholder>;
-  if (data) return <UsageCard usage={data} />;
+  if (data) return <UsageCard usage={data} shared={machineMemory(m).shared && !balloonStuck(m)} />;
   return <UsagePlaceholder memoryKind={memoryKind}>{loading ? "Loading…" : ""}</UsagePlaceholder>;
 }
 
@@ -109,6 +111,7 @@ function Header({ m, terminal, set }: { m: MachineView; terminal: boolean; set: 
           <span className="flex items-center gap-1.5">
             {size && <SizeBadge size={size.label} />}
             <span className="tabular">{sizeText(m)}</span>
+            <SharedBadge m={m} />
           </span>
           {nic?.ipv4 && <span className="font-mono text-[12px]">{bare(nic.ipv4)}</span>}
         </>
@@ -296,6 +299,11 @@ function Summary({ m, onEditLabels }: { m: MachineView; onEditLabels?: () => voi
             <span className="tabular">{sizeText(m)}</span>
           </span>
         </Field>
+        {machineMemory(m).shared && (
+          <Field label="Memory">
+            <MemoryRow m={m} />
+          </Field>
+        )}
         {m.container?.spec?.resources?.diskGrow && <DiskGrowth c={m.container} diskGi={m.diskGi} />}
         {m.container && <Field label="Restart policy">{restartPolicies[m.container.spec?.restartPolicy ?? 0]}</Field>}
         {m.vm && (
@@ -866,6 +874,7 @@ function Loaded({
           <span className="block">Stop withdraws the start.</span>
         </PageBanner>
       )}
+      {!m.deleting && <MemoryBanners m={m} />}
       <Header m={m} terminal={!!terminal} set={set} />
       <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-5">

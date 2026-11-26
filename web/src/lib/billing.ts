@@ -27,9 +27,9 @@ export function useMayReadBilling(): boolean {
   return usePlatformCan([listAccountsPermission]).can(listAccountsPermission);
 }
 
-/** A tenant's billing account; `none` once the API said it has none, `denied` once it refused. */
-export function useBillingAccount(tenant: string) {
-  const q = useQuery(BillingAccountService.method.getBillingAccount, { name: tenant }, { refetchInterval: 60_000, retry: false });
+/** A tenant's billing account, asked while `enabled`; `none` once the API said it has none, `denied` once it refused. */
+export function useBillingAccount(tenant: string, enabled = true) {
+  const q = useQuery(BillingAccountService.method.getBillingAccount, { name: tenant }, { refetchInterval: 60_000, retry: false, enabled });
   const none = !!q.error && isNotFound(q.error);
   const denied = !!q.error && isPermissionDenied(q.error);
   return { account: q.data?.billingAccount, loading: q.isPending, error: none || denied ? undefined : q.error, none, denied, refetch: q.refetch };
