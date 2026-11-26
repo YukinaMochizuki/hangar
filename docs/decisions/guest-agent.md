@@ -25,6 +25,17 @@ to boot again.
   The guest needs nothing else, so it boots again, after a crash or a
   restore, without the node. Not the kernel command line, which is short and
   readable by any process in the guest; not files written into the image.
+- **A Shared container of a memory pool waits for its boot balloon**
+  (`memory-pool.md`): its boot disk says the memory it boots with
+  (`boot_memory_mib`), its guarantee, which its balloon, inflated by the
+  guest's driver as it boots, leaves it, and hangar-init reads MemTotal every
+  50 ms until it is down to that and 64 MiB, before the network, the volumes
+  and the process: nothing the container does can take more memory first.
+  The driver takes some seconds (3.9 to 5.7 s on a testbed for 3 GiB of a
+  4 GiB guest); past 15 s hangar-init goes on all the same, saying so on the
+  console, and says how long it waited either way. Any other machine's boot
+  disk has no such memory, and it never waits. A firmware VM's operating
+  system is its own, and does not wait.
 - **A container's volumes are mounted before the switch to the root
   disk**, from the list the boot disk holds: a blank one formatted, a new
   one copied into from the image, as `container-volumes.md` says. The

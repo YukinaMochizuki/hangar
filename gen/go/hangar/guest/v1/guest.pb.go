@@ -134,6 +134,13 @@ type BootConfig struct {
 	// so it can join later: hangar-init mounts it at /run/hangar/tailscale as
 	// the container first joins. Empty when the host has none.
 	TailscaleDisk string `protobuf:"bytes,11,opt,name=tailscale_disk,json=tailscaleDisk,proto3" json:"tailscale_disk,omitempty"`
+	// Set, the memory, in MiB, the guest is given as it boots: its balloon,
+	// inflated by its driver as the guest boots, leaves it this. hangar-init
+	// waits for its MemTotal to come down to it, and a little more, before
+	// it mounts the volumes and starts the process, so nothing the container
+	// does takes more first; after a while it goes on, saying so. Zero for a
+	// guest given all its memory. See docs/decisions/memory-pool.md.
+	BootMemoryMib uint64 `protobuf:"varint,12,opt,name=boot_memory_mib,json=bootMemoryMib,proto3" json:"boot_memory_mib,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -243,6 +250,13 @@ func (x *BootConfig) GetTailscaleDisk() string {
 		return x.TailscaleDisk
 	}
 	return ""
+}
+
+func (x *BootConfig) GetBootMemoryMib() uint64 {
+	if x != nil {
+		return x.BootMemoryMib
+	}
+	return 0
 }
 
 // Tailscale is how a container joins a tailnet. The auth key is not here:
@@ -2003,7 +2017,7 @@ var File_hangar_guest_v1_guest_proto protoreflect.FileDescriptor
 
 const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhangar/guest/v1/guest.proto\x12\x0fhangar.guest.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fhangar/guest/v1/converter.proto\x1a hangar/guest/v1/file_share.proto\"\x9f\x04\n" +
+	"\x1bhangar/guest/v1/guest.proto\x12\x0fhangar.guest.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fhangar/guest/v1/converter.proto\x1a hangar/guest/v1/file_share.proto\"\xc7\x04\n" +
 	"\n" +
 	"BootConfig\x122\n" +
 	"\aprocess\x18\x01 \x01(\v2\x18.hangar.guest.v1.ProcessR\aprocess\x12:\n" +
@@ -2020,7 +2034,8 @@ const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\x0fimage_converter\x18\t \x01(\v2\x1f.hangar.guest.v1.ImageConverterR\x0eimageConverter\x128\n" +
 	"\ttailscale\x18\n" +
 	" \x01(\v2\x1a.hangar.guest.v1.TailscaleR\ttailscale\x12%\n" +
-	"\x0etailscale_disk\x18\v \x01(\tR\rtailscaleDisk\"L\n" +
+	"\x0etailscale_disk\x18\v \x01(\tR\rtailscaleDisk\x12&\n" +
+	"\x0fboot_memory_mib\x18\f \x01(\x04R\rbootMemoryMib\"L\n" +
 	"\tTailscale\x12\x1a\n" +
 	"\bhostname\x18\x01 \x01(\tR\bhostname\x12#\n" +
 	"\raccept_routes\x18\x02 \x01(\bR\facceptRoutes\"\xdb\x01\n" +
