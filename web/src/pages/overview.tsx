@@ -14,7 +14,7 @@ import { EditLimitsButton } from "@/components/project-limits-dialog";
 import { computeTiles, OtherLimits, otherTiles, QuotaTiles } from "@/components/quota";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
-import { buttonVariants, Card, CardHeader, CopyButton, SizeBadge, StatusDot, phaseLabel } from "@/components/ui";
+import { buttonVariants, Card, CardEmpty, CardHeader, CopyButton, phaseLabel, SizeBadge, StatusDot } from "@/components/ui";
 import { isNotFound, isPermissionDenied } from "@/lib/api";
 import { consoleRelease } from "@/lib/cli-install";
 import { cn } from "@/lib/cn";
@@ -182,7 +182,7 @@ function RecentChanges({ project }: { project: string }) {
       ) : error ? (
         <ErrorNotice error={error} title="The changes did not load" onRetry={refetch} />
       ) : changes.length === 0 ? (
-        <div className="px-4 py-3 text-[13px] text-muted">No changes recorded.</div>
+        <CardEmpty>No changes recorded.</CardEmpty>
       ) : (
         <ul className="divide-y">
           {changes.map(({ m, c, at }) => (

@@ -20,7 +20,7 @@ import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } 
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState } from "@/components/states";
-import { Badge, Button, buttonVariants, Card, CardHeader, Field } from "@/components/ui";
+import { Badge, Button, buttonVariants, Card, CardEmpty, CardHeader, Field } from "@/components/ui";
 import { checkName } from "@/lib/create";
 import { isStale, permission, useApplyAt, useCreate, useReload, useNetworkCan } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
@@ -261,7 +261,7 @@ function RulesView({ title, dir, rules, empty }: { title: string; dir: Direction
         }
       />
       {rules.length === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted">{empty}</p>
+        <CardEmpty>{empty}</CardEmpty>
       ) : (
         <ul className="divide-y">
           {rules.map((r, i) => (
@@ -413,7 +413,7 @@ function RulesEditor({
         </span>
       </div>
       {rules.length === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted">{empty}</p>
+        <CardEmpty>{empty}</CardEmpty>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] table-fixed text-[13px]">

@@ -4,7 +4,7 @@
 
 import type { ReactNode } from "react";
 import { SeriesPlot, SeriesValue, type ChartSeries } from "@/components/series-chart";
-import { Card, CardHeader } from "@/components/ui";
+import { Card, CardEmpty, CardHeader } from "@/components/ui";
 
 /** What the card draws: the samples' series and which memory they are. */
 export type Usage = {
@@ -59,7 +59,7 @@ export function UsageCard({ usage, now }: { usage: Usage; now?: Date }) {
 export function UsageNote({ children }: { children: ReactNode }) {
   return (
     <Frame>
-      <div className="px-4 py-3 text-[13px] text-muted">{children}</div>
+      <CardEmpty>{children}</CardEmpty>
     </Frame>
   );
 }

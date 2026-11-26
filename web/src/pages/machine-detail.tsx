@@ -30,7 +30,7 @@ import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
 import { Taxiway, type Stop, type StopState } from "@/components/taxiway";
-import { Badge, buttonVariants, Card, CardHeader, CopyButton, Field, SizeBadge, Status, StatusDot } from "@/components/ui";
+import { Badge, buttonVariants, Card, CardEmpty, CardHeader, CopyButton, Field, SizeBadge, Status, StatusDot } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { manifestOf, toYaml } from "@/lib/manifest";
 import { date, isLive, refetchInterval, uptime, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
@@ -338,7 +338,7 @@ function Networking({ m }: { m: MachineView }) {
     <Card>
       <CardHeader title="Networking" />
       {m.interfaces.length === 0 ? (
-        <div className="px-4 py-3 text-[13px] text-muted">No interfaces yet.</div>
+        <CardEmpty>No interfaces yet.</CardEmpty>
       ) : (
         <>
         {/* On a phone, each interface is a card of its own: the table's
@@ -591,7 +591,7 @@ function Logs({ m }: { m: MachineView }) {
     return (
       <Card className="overflow-hidden">
         <CardHeader title="Recent logs" />
-        <div className="px-4 py-3 text-[13px] text-muted">No logs: {m.name} has not started.</div>
+        <CardEmpty>No logs: {m.name} has not started.</CardEmpty>
       </Card>
     );
   }
@@ -681,7 +681,7 @@ function LogStream({ m, onRetry }: { m: MachineView; onRetry: () => void }) {
       ) : state === "loading" ? (
         <SkeletonRows rows={3} />
       ) : lines.length === 0 ? (
-        <div className="px-4 py-3 text-[13px] text-muted">No output recorded.</div>
+        <CardEmpty>No output recorded.</CardEmpty>
       ) : (
         <>
           {loop > 0 && (

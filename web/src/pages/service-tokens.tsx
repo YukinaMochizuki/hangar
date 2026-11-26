@@ -25,7 +25,7 @@ import { tbodyRow, Th, theadRow } from "@/components/table";
 import { EditLabelsDialog } from "@/components/labels-dialog";
 import { EquivalentCard, LabelsField } from "@/components/object";
 import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
-import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
+import { Badge, Button, buttonVariants, Card, CardEmpty, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import {
@@ -473,7 +473,7 @@ function Loaded({
             ) : held.error ? (
               <ErrorNotice error={held.error} title="The role bindings did not load" />
             ) : !tokenRoles?.length ? (
-              <p className="px-4 py-4 text-[13px] text-muted">No roles.</p>
+              <CardEmpty>No roles.</CardEmpty>
             ) : (
               <ul className="divide-y">
                 {tokenRoles.map((r) => (

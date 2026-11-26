@@ -45,6 +45,11 @@ export function CardHeader({ title, action, className }: { title: ReactNode; act
   );
 }
 
+/** The line a card shows in place of what it has none of, as "No file shares." under its header. */
+export function CardEmpty({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("px-4 py-3 text-[13px] text-muted", className)} {...props} />;
+}
+
 export function Badge({ className, ...props }: HTMLAttributes<HTMLSpanElement>) {
   return (
     <span

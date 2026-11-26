@@ -16,7 +16,7 @@ import { StaleNotice } from "@/components/resource";
 import { useProjectName } from "@/components/shell";
 import { ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { Th } from "@/components/table";
-import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, StateText } from "@/components/ui";
+import { Badge, Button, buttonVariants, Card, CardEmpty, CardHeader, CopyButton, StateText } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import {
@@ -620,7 +620,7 @@ export function NetworkFileSharesCard({ network, canApply }: { network: string; 
       ) : shares.error ? (
         <ErrorNotice error={shares.error} title="The file shares did not load" onRetry={shares.refetch} />
       ) : on.length === 0 ? (
-        <div className="px-4 py-3 text-[13px] text-muted">No file shares.</div>
+        <CardEmpty>No file shares.</CardEmpty>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
@@ -707,7 +707,7 @@ export function VmFileSharesCard({ m }: { m: MachineView }) {
     return (
       <Card>
         <CardHeader title="File shares" />
-        <div className="px-4 py-3 text-[13px] text-muted">No file shares.</div>
+        <CardEmpty>No file shares.</CardEmpty>
       </Card>
     );
   }
