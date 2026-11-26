@@ -11,10 +11,10 @@ and runs no cloud-init, or one stuck at its boot loader, could only be read,
 never typed at. Clouds give their VMs a serial console for that: GCE and
 EC2 behind a switch that is off by default, Azure with boot diagnostics.
 
-Cloud Hypervisor (v53, as pinned) takes the serial port as a file, a pty,
+Cloud Hypervisor (v54, as pinned) takes the serial port as a file, a pty,
 its own tty, or a socket it listens on (`--serial socket=`). The socket
 serves one client at a time: a second one's connection ends the first's.
-Two of its behaviours, seen on the testbed (2026-10), shape what follows. A
+Two of its behaviours, seen on the testbed (2026-10, v53), shape what follows. A
 client that closes its connection while output is unread ends Cloud
 Hypervisor's serial thread for good, silently, until it is started again.
 After a client has left, the guest's writing can stall until it is next

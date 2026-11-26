@@ -135,7 +135,7 @@ func TestAFirmwareVMBootsItsOwnKernel(t *testing.T) {
 
 // TestQuoteOptionRoundTrips: a quoted value reads back, as Cloud
 // Hypervisor's option parser reads it (option_parser's split_commas and
-// dequote, v53.0, rewritten here), as itself, whatever printable ASCII it
+// dequote, the same in v53.0 and v54.0, rewritten here), as itself, whatever printable ASCII it
 // holds, and the option after it is still an option of its own.
 func TestQuoteOptionRoundTrips(t *testing.T) {
 	for _, v := range []string{
