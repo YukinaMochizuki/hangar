@@ -4,7 +4,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { VirtualMachineDeletePolicy } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { ImagePlus, Pencil, Play, Square, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { EditLabelsDialog } from "@/components/labels-dialog";
 import { AnchoredLayer, type MenuAction } from "@/components/menu";
@@ -104,14 +104,16 @@ export function useMachineActions(m: MachineView, can: Can, after?: () => void):
 }
 
 /**
- * The machine's actions as its page's head draws them, with what the page
- * adds to their "..." menu, and the run state's error under them.
+ * The machine's actions as its page's head draws them, after `lead` (the
+ * page's Terminal) in the same row, with what the page adds to their "..."
+ * menu, and the run state's error under them.
  */
-export function MachineActions({ set, more }: { set: ReturnType<typeof useMachineActions>; more?: MenuAction[] }) {
+export function MachineActions({ set, more, lead }: { set: ReturnType<typeof useMachineActions>; more?: MenuAction[]; lead?: ReactNode }) {
   const run = set.run;
   return (
     <div className="flex flex-col items-stretch gap-2 md:items-end">
       <div className="flex flex-wrap items-center gap-2">
+        {lead}
         <HeadActions set={set} more={more} />
       </div>
       {run.error && (

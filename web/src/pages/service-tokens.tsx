@@ -18,14 +18,14 @@ import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
 import { CommandLine, FormField, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
-import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
+import { DetailHead, DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
 import { EditLabelsDialog } from "@/components/labels-dialog";
 import { EquivalentCard, LabelsField } from "@/components/object";
 import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
-import { Badge, Button, buttonVariants, Card, CardEmpty, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
+import { Button, buttonVariants, Card, CardEmpty, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import {
@@ -422,24 +422,18 @@ function Loaded({
   return (
     <div>
       {stale ? <StaleBanner what="service tokens" error={stale} onRetry={refetch} /> : null}
-      <div className="border-b px-4 pb-5 pt-6 md:px-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <h1 className="truncate text-[22px] font-semibold tracking-tight">{name}</h1>
-              <Badge>Service token</Badge>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
-              <TokenState t={t} />
-              {t.status?.expireTime && <span>Expires {day(t.status.expireTime)}</span>}
-              <span>{t.status?.lastUseTime ? `Used ${relative(t.status.lastUseTime)}` : "Never used"}</span>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <HeadActions set={set} />
-          </div>
-        </div>
-      </div>
+      <DetailHead
+        name={name}
+        kind="Service token"
+        facts={
+          <>
+            <TokenState t={t} />
+            {t.status?.expireTime && <span>Expires {day(t.status.expireTime)}</span>}
+            <span>{t.status?.lastUseTime ? `Used ${relative(t.status.lastUseTime)}` : "Never used"}</span>
+          </>
+        }
+        actions={<HeadActions set={set} />}
+      />
       <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-5">
           <Card>

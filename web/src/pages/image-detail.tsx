@@ -4,7 +4,7 @@
 import { Link } from "@tanstack/react-router";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { PageBanner } from "@/components/notice";
-import { DetailSkeleton } from "@/components/page";
+import { DetailHead, DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
 import { DiskState, ImageStateCell } from "@/components/storage";
@@ -12,7 +12,7 @@ import { useImageActions, useImageCan } from "@/components/image-actions";
 import type { Can } from "@/components/object-actions";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
 import { HeadActions } from "@/components/object-actions";
-import { Badge, Card, CardEmpty, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Card, CardEmpty, CardHeader, CopyButton, Field } from "@/components/ui";
 import { date } from "@/lib/machines";
 import { gib, diskImage, imageFloorGiB, imageState, useDisks, useImages } from "@/lib/storage";
 import { osLabel } from "@/pages/image-list";
@@ -155,28 +155,21 @@ function Loaded({ img, project, crumbs, can }: { img: Image; project: string; cr
           {s.message} No disk can be made from it.
         </PageBanner>
       )}
-      <div className="border-b px-4 pb-5 pt-6 md:px-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <h1 className="truncate font-mono text-[22px] font-semibold tracking-tight">{name}</h1>
-              <Badge>Image</Badge>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
-              <span className="inline-flex items-center gap-2">
-                <ImageStateCell s={{ ...s, reason: undefined }} />
-              </span>
-              <span>{osLabel(img.spec?.os ?? "", img.spec?.version ?? "")}</span>
-              {img.status?.diskSize && <span className="tabular">{gib(img.status.diskSize)}</span>}
-            </div>
-          </div>
-          {set.actions.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <HeadActions set={set} />
-            </div>
-          )}
-        </div>
-      </div>
+      <DetailHead
+        name={name}
+        mono
+        kind="Image"
+        facts={
+          <>
+            <span className="inline-flex items-center gap-2">
+              <ImageStateCell s={{ ...s, reason: undefined }} />
+            </span>
+            <span>{osLabel(img.spec?.os ?? "", img.spec?.version ?? "")}</span>
+            {img.status?.diskSize && <span className="tabular">{gib(img.status.diskSize)}</span>}
+          </>
+        }
+        actions={set.actions.length > 0 && <HeadActions set={set} />}
+      />
       <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-5">
           <Summary img={img} onEditLabels={set.editLabels?.onSelect} />

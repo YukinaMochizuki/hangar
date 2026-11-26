@@ -306,6 +306,14 @@ Settled with the owner on screenshots before the dialogs sent anything.
   a VM's Create image (an action marked `more`) and its serial console
   (`docs/decisions/serial-console.md`). A row's menu holds Create image
   as it holds every action; the serial console is the page's alone.
+- **A page's head buttons move as one row**: beside the name while the
+  name keeps 20rem, below it otherwise (where a phone too narrow for the
+  row wraps it), never split into rows beside the name and never folded
+  into the "..." for want of room, so every action stays in sight at every
+  width. Every object's page draws its head with `DetailHead`
+  (`web/src/components/page.tsx`); a machine's Terminal is in the same row.
+  Settled with the owner on screenshots of a head whose buttons wrapped
+  beside the name, at widths just past the phone layout and the sidebar's.
 - **Both are gated by one answer**: a kind's list and its page each ask
   TestPermissions one question at the project (its apply and delete
   permissions; for a network also `storage.fileshares.apply`, for its
