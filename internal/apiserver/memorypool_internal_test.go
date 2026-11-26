@@ -23,11 +23,11 @@ func pooledLimits(memory string, percent int32) *tenancyv1alpha1.Limits {
 	return &tenancyv1alpha1.Limits{Memory: proto.String(memory), MemoryLimitPercent: proto.Int32(percent)}
 }
 
-// guaranteed is a container of memory, with the fewest vCPUs the shape
-// rules allow it, guaranteed g; "" for none.
-func guaranteed(name, memory, g string) *computev1alpha1.Container {
+// reserved is a container of memory, with the fewest vCPUs the shape
+// rules allow it, reserved g; "" for none.
+func reserved(name, memory, g string) *computev1alpha1.Container {
 	c := ctr(name)
-	c.Spec.Resources = &computev1alpha1.Resources{Memory: memory, MemoryGuaranteed: g}
+	c.Spec.Resources = &computev1alpha1.Resources{Memory: memory, MemoryReserved: g}
 	return c
 }
 
@@ -95,14 +95,14 @@ func TestANodeHoldsAPoolOnce(t *testing.T) {
 	if mixed.memory() != gi(12) {
 		t.Errorf("a pool of sizes 12, 8 and 8Gi holds %d, want the largest, 12Gi", mixed.memory())
 	}
-	// Guarantees past the pool's size, as when a plan is lowered under its
+	// Reservations past the pool's size, as when a plan is lowered under its
 	// running machines: held whole.
 	var over nodeHeld
 	for range 3 {
-		over.take(held{memory: gi(4), guaranteed: gi(3), pool: "acme", poolSize: gi(8)})
+		over.take(held{memory: gi(4), reserved: gi(3), pool: "acme", poolSize: gi(8)})
 	}
 	if over.memory() != gi(9) {
-		t.Errorf("a pool of 8Gi guaranteeing 3+3+3Gi holds %d, want the guarantees, 9Gi", over.memory())
+		t.Errorf("a pool of 8Gi reserving 3+3+3Gi holds %d, want the reservations, 9Gi", over.memory())
 	}
 	// A stopped machine of a pool holds nothing.
 	if need := u.memoryFor(held{pool: "acme", poolSize: gi(8)}); need != 0 {
@@ -147,11 +147,11 @@ func TestMemoryLimitPercentIsAPlans(t *testing.T) {
 	wantInvalid(t, err, "memory_limit_percent is not a project's to set", "a project setting a percent")
 }
 
-// TestAGuaranteeBelowMemoryIsAPooledTenants: memory_guaranteed keeps to its
+// TestAReservationBelowMemoryIsAPooledTenants: memory_reserved keeps to its
 // steps and range for anyone, and is below memory only for a tenant whose
 // plan's percent is above 100 and who does not pay as it goes; root, whom
 // the shape rules exempt, included.
-func TestAGuaranteeBelowMemoryIsAPooledTenants(t *testing.T) {
+func TestAReservationBelowMemoryIsAPooledTenants(t *testing.T) {
 	t.Parallel()
 	s, system, root, alice := billedWith(t, false)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Memory: proto.String("16Gi")})
@@ -160,51 +160,51 @@ func TestAGuaranteeBelowMemoryIsAPooledTenants(t *testing.T) {
 		_, err := cb.Apply(ctx, c)
 		return err
 	}
-	wantInvalid(t, apply(alice, guaranteed("a", "1Gi", "300Mi")), "memory_guaranteed 300Mi is not a whole number of 256Mi steps", "a guarantee off the steps")
-	wantInvalid(t, apply(alice, guaranteed("a", "1Gi", "2Gi")), "memory_guaranteed 2Gi is above spec.resources.memory 1024Mi", "a guarantee above memory")
-	wantInvalid(t, apply(alice, guaranteed("a", "1Gi", "lots")), "spec.resources.memory_guaranteed:", "a guarantee that is no quantity")
-	if err := apply(alice, guaranteed("a", "1Gi", "1Gi")); err != nil {
-		t.Errorf("a guarantee of all its memory, with no pool: %v", err)
+	wantInvalid(t, apply(alice, reserved("a", "1Gi", "300Mi")), "memory_reserved 300Mi is not a whole number of 256Mi steps", "a reservation off the steps")
+	wantInvalid(t, apply(alice, reserved("a", "1Gi", "2Gi")), "memory_reserved 2Gi is above spec.resources.memory 1024Mi", "a reservation above memory")
+	wantInvalid(t, apply(alice, reserved("a", "1Gi", "lots")), "spec.resources.memory_reserved:", "a reservation that is no quantity")
+	if err := apply(alice, reserved("a", "1Gi", "1Gi")); err != nil {
+		t.Errorf("a reservation of all its memory, with no pool: %v", err)
 	}
 	const noPool = `tenant "acme"'s plan "default" has a memory_limit_percent of 100`
-	wantPrecondition(t, apply(alice, guaranteed("b", "1Gi", "512Mi")), noPool, "a guarantee below memory with no pool")
-	wantPrecondition(t, apply(root, guaranteed("b", "1Gi", "512Mi")), noPool, "root's guarantee below memory with no pool")
+	wantPrecondition(t, apply(alice, reserved("b", "1Gi", "512Mi")), noPool, "a reservation below memory with no pool")
+	wantPrecondition(t, apply(root, reserved("b", "1Gi", "512Mi")), noPool, "root's reservation below memory with no pool")
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
 	}
 	vm := vmFromImage("vm", "noble")
-	vm.Spec.Resources = &computev1alpha1.VirtualMachineResources{Memory: "2Gi", MemoryGuaranteed: "1Gi"}
+	vm.Spec.Resources = &computev1alpha1.VirtualMachineResources{Memory: "2Gi", MemoryReserved: "1Gi"}
 	_, err := s.backend(registry.VirtualMachine).Apply(alice, vm)
-	wantPrecondition(t, err, noPool, "a VM's guarantee below memory with no pool")
+	wantPrecondition(t, err, noPool, "a VM's reservation below memory with no pool")
 
 	setDefaultPlan(t, s, pooledLimits("16Gi", 200))
-	if err := apply(alice, guaranteed("b", "1Gi", "512Mi")); err != nil {
-		t.Errorf("a guarantee below memory in a pool, with no billing account: %v", err)
+	if err := apply(alice, reserved("b", "1Gi", "512Mi")); err != nil {
+		t.Errorf("a reservation below memory in a pool, with no billing account: %v", err)
 	}
 	if _, err := s.backend(registry.VirtualMachine).Apply(alice, vm); err != nil {
-		t.Errorf("a VM's guarantee below memory in a pool: %v", err)
+		t.Errorf("a VM's reservation below memory in a pool: %v", err)
 	}
 
 	now := minuteNow(s)
 	mustApply(t, s, root, registry.PriceList, priceList("std", "TWD"))
 	mustApply(t, s, root, registry.BillingAccount, payg("acme", "std", 1, now))
-	wantPrecondition(t, apply(alice, guaranteed("c", "1Gi", "512Mi")), `tenant "acme"'s billing account is PAY_AS_YOU_GO`, "a guarantee below memory paying as it goes")
+	wantPrecondition(t, apply(alice, reserved("c", "1Gi", "512Mi")), `tenant "acme"'s billing account is PAY_AS_YOU_GO`, "a reservation below memory paying as it goes")
 	// What a write leaves as it was is not judged again.
-	if err := apply(alice, guaranteed("b", "1Gi", "512Mi")); err != nil {
+	if err := apply(alice, reserved("b", "1Gi", "512Mi")); err != nil {
 		t.Errorf("applying a pooled container again, unchanged, paying as it goes: %v", err)
 	}
-	wantPrecondition(t, apply(alice, guaranteed("b", "1Gi", "256Mi")), "PAY_AS_YOU_GO", "lowering a guarantee paying as it goes")
-	wantPrecondition(t, apply(alice, guaranteed("b", "2Gi", "512Mi")), "PAY_AS_YOU_GO", "growing the memory over a guarantee paying as it goes")
-	if err := apply(alice, guaranteed("b", "1Gi", "")); err != nil {
+	wantPrecondition(t, apply(alice, reserved("b", "1Gi", "256Mi")), "PAY_AS_YOU_GO", "lowering a reservation paying as it goes")
+	wantPrecondition(t, apply(alice, reserved("b", "2Gi", "512Mi")), "PAY_AS_YOU_GO", "growing the memory over a reservation paying as it goes")
+	if err := apply(alice, reserved("b", "1Gi", "")); err != nil {
 		t.Errorf("giving a container all its memory again: %v", err)
 	}
 }
 
-// TestQuotaCountsGuaranteesAndMemory: memory counts what machines are
-// guaranteed against the memory limit, and their memory against the limit
-// times the plan's percent; at 100 with no guarantee, both are the memory
+// TestQuotaCountsReservationsAndMemory: memory counts what machines are
+// reserved against the memory limit, and their memory against the limit
+// times the plan's percent; at 100 with no reservation, both are the memory
 // as before.
-func TestQuotaCountsGuaranteesAndMemory(t *testing.T) {
+func TestQuotaCountsReservationsAndMemory(t *testing.T) {
 	t.Parallel()
 	s, _, user := running(t)
 	cb := s.backend(registry.Container)
@@ -220,7 +220,7 @@ func TestQuotaCountsGuaranteesAndMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 	if u := tl.tenant.usage(); u.GetMemory() != "1Gi" || u.GetMemoryCeiling() != "1Gi" {
-		t.Errorf("with no guarantee, acme uses %v; want memory and memory_ceiling both 1Gi", u)
+		t.Errorf("with no reservation, acme uses %v; want memory and memory_ceiling both 1Gi", u)
 	}
 	_, err = cb.Apply(user, ctr("p3"))
 	wantExhausted(t, err, `tenant "acme"'s memory limit is 1Gi (plan "default") and it uses 1Gi; this would bring it to 1536Mi`, "past the memory limit at 100 percent")
@@ -231,29 +231,29 @@ func TestQuotaCountsGuaranteesAndMemory(t *testing.T) {
 	}
 
 	setDefaultPlan(t, s, pooledLimits("2Gi", 200))
-	for _, c := range []*computev1alpha1.Container{guaranteed("a", "1Gi", "512Mi"), guaranteed("b", "2Gi", "512Mi")} {
+	for _, c := range []*computev1alpha1.Container{reserved("a", "1Gi", "512Mi"), reserved("b", "2Gi", "512Mi")} {
 		if _, err := cb.Apply(user, c); err != nil {
 			t.Fatalf("container %s: %v", c.GetMetadata().GetName(), err)
 		}
 	}
-	_, err = cb.Apply(user, guaranteed("c", "2Gi", "512Mi"))
+	_, err = cb.Apply(user, reserved("c", "2Gi", "512Mi"))
 	wantExhausted(t, err, `the memory of tenant "acme"'s machines asked to run may come to 4Gi, 200% of its memory limit of 2Gi (plan "default", memory_limit_percent), and comes to 3Gi; this would bring it to 5Gi`,
 		"memory past the limit times the percent")
-	if _, err := cb.Apply(user, guaranteed("c", "1Gi", "512Mi")); err != nil {
+	if _, err := cb.Apply(user, reserved("c", "1Gi", "512Mi")); err != nil {
 		t.Fatalf("memory up to the limit times the percent: %v", err)
 	}
-	_, err = cb.Apply(user, stopped(guaranteed("d", "1Gi", "")))
+	_, err = cb.Apply(user, stopped(reserved("d", "1Gi", "")))
 	if err != nil {
 		t.Fatalf("a stopped container counts no memory: %v", err)
 	}
-	_, err = cb.Apply(user, guaranteed("d", "1Gi", ""))
-	wantExhausted(t, err, `tenant "acme"'s memory limit is 2Gi (plan "default") and it uses 1536Mi; this would bring it to 2560Mi`, "guarantees past the memory limit")
+	_, err = cb.Apply(user, reserved("d", "1Gi", ""))
+	wantExhausted(t, err, `tenant "acme"'s memory limit is 2Gi (plan "default") and it uses 1536Mi; this would bring it to 2560Mi`, "reservations past the memory limit")
 	tl, err = s.tally(context.Background(), "acme", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if u := tl.tenant.usage(); u.GetMemory() != "1536Mi" || u.GetMemoryCeiling() != "4Gi" {
-		t.Errorf("acme uses %v; want memory 1536Mi guaranteed, memory_ceiling 4Gi", u)
+		t.Errorf("acme uses %v; want memory 1536Mi reserved, memory_ceiling 4Gi", u)
 	}
 
 	// A project's memory limit holds both sums, with its tenant's percent.
@@ -264,14 +264,14 @@ func TestQuotaCountsGuaranteesAndMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 	setDefaultPlan(t, s, pooledLimits("4Gi", 400))
-	_, err = cb.Apply(user, guaranteed("e", "5Gi", "256Mi"))
+	_, err = cb.Apply(user, reserved("e", "5Gi", "256Mi"))
 	wantExhausted(t, err, `the memory of project "web"'s machines asked to run may come to 8Gi, 400% (tenant "acme"'s memory_limit_percent) of its memory limit of 2Gi (its spec.limits), and comes to 4Gi; this would bring it to 9Gi`,
 		"a project's memory past its limit times the percent")
-	if _, err := cb.Apply(user, guaranteed("e", "4Gi", "256Mi")); err != nil {
+	if _, err := cb.Apply(user, reserved("e", "4Gi", "256Mi")); err != nil {
 		t.Fatalf("a project's memory up to its limit times the percent: %v", err)
 	}
-	_, err = cb.Apply(user, guaranteed("f", "1Gi", "512Mi"))
-	wantExhausted(t, err, `project "web"'s memory limit is 2Gi (its spec.limits) and it uses 1792Mi; this would bring it to 2304Mi`, "a project's guarantees past its limit")
+	_, err = cb.Apply(user, reserved("f", "1Gi", "512Mi"))
+	wantExhausted(t, err, `project "web"'s memory limit is 2Gi (its spec.limits) and it uses 1792Mi; this would bring it to 2304Mi`, "a project's reservations past its limit")
 }
 
 // TestPooledMachinesCarryTheirPool: the controllers give the machines of a
@@ -281,7 +281,7 @@ func TestPooledMachinesCarryTheirPool(t *testing.T) {
 	t.Parallel()
 	s, system, root, alice := billed(t)
 	setDefaultPlan(t, s, pooledLimits("8Gi", 200))
-	applyCtr(t, s, alice, guaranteed("api", "1Gi", "512Mi"))
+	applyCtr(t, s, alice, reserved("api", "1Gi", "512Mi"))
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
 	}
@@ -304,8 +304,8 @@ func TestPooledMachinesCarryTheirPool(t *testing.T) {
 		}
 	}
 	m := waitMachine(t, s, system, "ct-api", "in acme's pool", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetMemoryPool() != nil })
-	if r := m.GetSpec().GetResources(); r.GetMemory() != "1024Mi" || r.GetMemoryGuaranteed() != "512Mi" {
-		t.Errorf("the machine's resources are %v, want 1024Mi guaranteed 512Mi", r)
+	if r := m.GetSpec().GetResources(); r.GetMemory() != "1024Mi" || r.GetMemoryReserved() != "512Mi" {
+		t.Errorf("the machine's resources are %v, want 1024Mi reserved 512Mi", r)
 	}
 	waitPools("in acme's pool of 8Gi", &computev1alpha1.MemoryPool{Name: "acme", Size: "8192Mi"})
 	waitSettled(t, s)
@@ -345,7 +345,7 @@ func TestAPoolFitsOnANodeOnce(t *testing.T) {
 	nodeWithRoom(t, s, system, "n1", 8192)
 	setDefaultPlan(t, s, pooledLimits("8Gi", 400))
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
-		applyCtr(t, s, user, guaranteed(name, "4Gi", "1Gi"))
+		applyCtr(t, s, user, reserved(name, "4Gi", "1Gi"))
 		placedOn(t, s, system, name, "n1")
 	}
 	got, err := s.nodeUsageSummary(system)
@@ -368,14 +368,14 @@ func TestAPoolFitsOnANodeOnce(t *testing.T) {
 		}
 	}
 	// Stopped, a machine leaves the pool, holding nothing.
-	stopCtr(t, s, system, user, guaranteed("a", "4Gi", "1Gi"))
+	stopCtr(t, s, system, user, reserved("a", "4Gi", "1Gi"))
 	if m := getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-a"}); m.GetSpec().GetMemoryPool() != nil {
 		t.Errorf("a stopped machine kept its pool: %v", m.GetSpec().GetMemoryPool())
 	}
 }
 
 // TestLosingThePoolCountsFullMemory: once its tenant has no pool, by its
-// plan's percent or its account, a machine guaranteed less than its memory
+// plan's percent or its account, a machine with less than its memory reserved
 // counts and is billed its memory, the quota and the meter alike; over its
 // limit then, the tenant can still stop and change machines, but not add.
 func TestLosingThePoolCountsFullMemory(t *testing.T) {
@@ -391,7 +391,7 @@ func TestLosingThePoolCountsFullMemory(t *testing.T) {
 	onPlan(t, s, root, "acme", "pooled")
 	mustApply(t, s, root, registry.BillingAccount, fixed("acme", now))
 	for _, name := range []string{"a", "b"} {
-		applyCtr(t, s, alice, guaranteed(name, "2Gi", "512Mi"))
+		applyCtr(t, s, alice, reserved(name, "2Gi", "512Mi"))
 		m := waitMachine(t, s, system, machineName(name), "placed in its pool", func(m *computev1alpha1.Machine) bool {
 			return m.GetSpec().GetNode() == "n1" && m.GetSpec().GetMemoryPool() != nil
 		})
@@ -432,21 +432,21 @@ func TestLosingThePoolCountsFullMemory(t *testing.T) {
 	// what it has, but not add.
 	plan(&tenancyv1alpha1.Limits{Memory: proto.String("2Gi")})
 	cb := s.backend(registry.Container)
-	changed := guaranteed("a", "2Gi", "512Mi")
+	changed := reserved("a", "2Gi", "512Mi")
 	changed.Spec.Image = "redis"
 	if _, err := cb.Apply(alice, changed); err != nil {
 		t.Errorf("changing a container's image over the limit: %v", err)
 	}
-	if _, err := cb.Apply(alice, stopped(guaranteed("b", "2Gi", "512Mi"))); err != nil {
+	if _, err := cb.Apply(alice, stopped(reserved("b", "2Gi", "512Mi"))); err != nil {
 		t.Errorf("stopping a container over the limit: %v", err)
 	}
-	_, err := cb.Apply(alice, guaranteed("c", "512Mi", ""))
+	_, err := cb.Apply(alice, reserved("c", "512Mi", ""))
 	wantExhausted(t, err, `tenant "acme"'s memory limit is 2Gi (plan "pooled") and it uses 2Gi; this would bring it to 2560Mi`, "a new container over the limit")
 }
 
-// TestThePoolsMeterIsItsGuarantee: a pooled machine running is billed what
-// it is guaranteed, not its memory.
-func TestThePoolsMeterIsItsGuarantee(t *testing.T) {
+// TestThePoolsMeterIsItsReservation: a pooled machine running is billed what
+// is reserved for it, not its memory.
+func TestThePoolsMeterIsItsReservation(t *testing.T) {
 	t.Parallel()
 	s, system, root, alice := billed(t)
 	now := minuteNow(s)
@@ -455,7 +455,7 @@ func TestThePoolsMeterIsItsGuarantee(t *testing.T) {
 	mustApply(t, s, root, registry.Plan, plan)
 	onPlan(t, s, root, "acme", "pooled")
 	mustApply(t, s, root, registry.BillingAccount, fixed("acme", now))
-	applyCtr(t, s, alice, guaranteed("api", "2Gi", "512Mi"))
+	applyCtr(t, s, alice, reserved("api", "2Gi", "512Mi"))
 	m := waitMachine(t, s, system, "ct-api", "placed in its pool", func(m *computev1alpha1.Machine) bool {
 		return m.GetSpec().GetNode() == "n1" && m.GetSpec().GetMemoryPool() != nil
 	})
@@ -468,6 +468,6 @@ func TestThePoolsMeterIsItsGuarantee(t *testing.T) {
 		t.Fatal(err)
 	}
 	if held["memory"] != 512 {
-		t.Errorf("a pooled machine's minute = %v, want 512 MiB of memory, its guarantee", held)
+		t.Errorf("a pooled machine's minute = %v, want 512 MiB of memory, its reservation", held)
 	}
 }

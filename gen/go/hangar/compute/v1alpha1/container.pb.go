@@ -784,16 +784,16 @@ type Resources struct {
 	// fills, up to disk_grow.max; unset, it never does. See
 	// docs/decisions/disk-autogrow.md.
 	DiskGrow *DiskGrow `protobuf:"bytes,6,opt,name=disk_grow,json=diskGrow,proto3" json:"disk_grow,omitempty"`
-	// The memory the machine is guaranteed, never squeezed below while its
+	// The memory reserved for the machine, never squeezed below while its
 	// tenant's machines share its memory as a pool; empty is memory. A whole
 	// number of 256Mi, at least the machine's minimum memory and at most
 	// memory. Below memory only for a tenant whose plan's
 	// memory_limit_percent is above 100 and whose BillingAccount is not
 	// PAY_AS_YOU_GO. It is what counts against the memory quota. A Machine
 	// carries it only when below memory. See docs/decisions/memory-pool.md.
-	MemoryGuaranteed string `protobuf:"bytes,7,opt,name=memory_guaranteed,json=memoryGuaranteed,proto3" json:"memory_guaranteed,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	MemoryReserved string `protobuf:"bytes,7,opt,name=memory_reserved,json=memoryReserved,proto3" json:"memory_reserved,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Resources) Reset() {
@@ -854,9 +854,9 @@ func (x *Resources) GetDiskGrow() *DiskGrow {
 	return nil
 }
 
-func (x *Resources) GetMemoryGuaranteed() string {
+func (x *Resources) GetMemoryReserved() string {
 	if x != nil {
-		return x.MemoryGuaranteed
+		return x.MemoryReserved
 	}
 	return ""
 }
@@ -1729,13 +1729,13 @@ const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\x05R\x04port\x12=\n" +
 	"\bprotocol\x18\x03 \x01(\x0e2!.hangar.compute.v1alpha1.ProtocolR\bprotocol\x12\x16\n" +
-	"\x06public\x18\x04 \x01(\bR\x06public\"\xd5\x01\n" +
+	"\x06public\x18\x04 \x01(\bR\x06public\"\xd1\x01\n" +
 	"\tResources\x12\x10\n" +
 	"\x03cpu\x18\x03 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x04 \x01(\tR\x06memory\x12\x12\n" +
 	"\x04disk\x18\x05 \x01(\tR\x04disk\x12>\n" +
-	"\tdisk_grow\x18\x06 \x01(\v2!.hangar.compute.v1alpha1.DiskGrowR\bdiskGrow\x12+\n" +
-	"\x11memory_guaranteed\x18\a \x01(\tR\x10memoryGuaranteedJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x05vcpusR\n" +
+	"\tdisk_grow\x18\x06 \x01(\v2!.hangar.compute.v1alpha1.DiskGrowR\bdiskGrow\x12'\n" +
+	"\x0fmemory_reserved\x18\a \x01(\tR\x0ememoryReservedJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x05vcpusR\n" +
 	"memory_mib\"N\n" +
 	"\bDiskGrow\x12\x10\n" +
 	"\x03max\x18\x01 \x01(\tR\x03max\x12\x1c\n" +

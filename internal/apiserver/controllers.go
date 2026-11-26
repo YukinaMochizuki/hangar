@@ -500,7 +500,7 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 	key := resource.Key{Project: meta.GetProject(), Name: name}
 	owner := ipv6Owner{project: meta.GetProject(), kind: r.Kind, name: meta.GetName(), machine: name}
 	// A FileShare's server is in no pool: it counts toward no quota, so
-	// its memory would come out of its tenant's guarantees unseen.
+	// its memory would come out of its tenant's reservations unseen.
 	if r.Kind != registry.FileShare.Kind {
 		pool, err := s.memoryPoolOf(ctx, meta.GetProject())
 		if err != nil {
@@ -630,12 +630,12 @@ func machineSpec(name string, cs *computev1alpha1.ContainerSpec, st *computev1al
 		return nil, err
 	}
 	sz.disk = max(sz.disk, grownDisk(st)*quantity.GiB)
-	guaranteed, err := guaranteedMemory(cs.GetResources().GetMemoryGuaranteed(), sz.memory)
+	reserved, err := reservedMemory(cs.GetResources().GetMemoryReserved(), sz.memory)
 	if err != nil {
-		return nil, fmt.Errorf("spec.resources.memory_guaranteed: %w", err)
+		return nil, fmt.Errorf("spec.resources.memory_reserved: %w", err)
 	}
 	resources := sz.canonical()
-	resources.MemoryGuaranteed = canonicalGuaranteed(guaranteed, sz.memory)
+	resources.MemoryReserved = canonicalReserved(reserved, sz.memory)
 	if g := cs.GetResources().GetDiskGrow(); g != nil {
 		resources.DiskGrow = proto.Clone(g).(*computev1alpha1.DiskGrow)
 	}

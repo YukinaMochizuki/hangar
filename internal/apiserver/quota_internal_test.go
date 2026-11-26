@@ -71,7 +71,7 @@ func askedFor(t *testing.T, r *computev1alpha1.Resources) amounts {
 	}
 	a[dimCPU], a[dimMemory], a[dimDisk] = cpu, int64(h.memory), int64(h.disk)
 	a[dimMemoryCeiling] = int64(h.memory)
-	if g := r.GetMemoryGuaranteed(); g != "" {
+	if g := r.GetMemoryReserved(); g != "" {
 		b, err := quantity.Bytes(g)
 		if err != nil {
 			t.Fatal(err)

@@ -22,7 +22,7 @@ events are compacted (`sqlite-store.md`).
   is billed its vCPUs and memory, as asked for, whatever its load: memory is
   reserved in full and never overcommitted (`machine-sizes.md`), so an idle
   machine costs what a busy one does. While its tenant has a memory pool,
-  a machine is billed its guarantee, `resources.memory_guaranteed`, which
+  a machine is billed its reservation, `resources.memory_reserved`, which
   is what the quota counts as its memory; its memory past that is a
   ceiling, never billed (`memory-pool.md`). A tenant without a pool, every
   PAY_AS_YOU_GO one among them, is billed its machines' memory, which the

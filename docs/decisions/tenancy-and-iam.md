@@ -350,13 +350,13 @@ tenant's: what all its projects together hold, against its Plan.
   `usage` does not count it, and a project may not set it. How the calls
   are counted is in `node-tunnel.md`.
 - Memory counts two sums of the machines asked to run. `limits.memory`
-  holds their guarantees, `resources.memory_guaranteed`, each its memory
+  holds their reservations, `resources.memory_reserved`, each its memory
   when empty; a Plan's `memory_limit_percent`, from 100 to 400 and only
   with `memory`, holds their memory to that percent of `limits.memory`.
-  Unset it is 100, and with no guarantee below memory both sums are the
+  Unset it is 100, and with no reservation below memory both sums are the
   memory, as before. Above 100 the tenant's machines share its memory as a
-  pool, and may be guaranteed less than their memory unless it pays as it
-  goes (`memory-pool.md`). A guarantee counts only while the tenant has
+  pool, and may reserve less than their memory unless it pays as it
+  goes (`memory-pool.md`). A reservation counts only while the tenant has
   such a pool; without one, as after its plan's percent is lowered to 100
   or its account becomes PAY_AS_YOU_GO, its machines count their memory
   in full, as the meter bills them, which may put it over its limit, as a

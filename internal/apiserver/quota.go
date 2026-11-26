@@ -72,7 +72,7 @@ const (
 	// dimCPU is in millicores.
 	dimCPU dim = iota
 	// dimMemory, dimMemoryCeiling and dimDisk are in bytes. dimMemory is
-	// machines' guaranteed memory, dimMemoryCeiling their memory, which no
+	// machines' reserved memory, dimMemoryCeiling their memory, which no
 	// limit of its own caps (limitSet.memoryCeiling).
 	dimMemory
 	dimDisk
@@ -331,7 +331,7 @@ func countsOne(d dim) func(proto.Message, projectObjects) amounts {
 // defaults and in the canonical sizes the container controller gives it,
 // plus a public endpoint for each public port, which the apiserver makes
 // for it. Its disk is what its root disk has grown to by itself, if more
-// than the spec asks. Its memory is what it is guaranteed, and its memory
+// than the spec asks. Its memory is what is reserved for it, and its memory
 // ceiling its memory. A stopped container holds its disk, its endpoints and
 // its place among machines, but no cpu or memory.
 func containerAmounts(obj proto.Message, _ projectObjects) amounts {
@@ -353,16 +353,16 @@ func containerAmounts(obj proto.Message, _ projectObjects) amounts {
 	a[dimDisk] = int64(max(wholeGi(sz.disk), grownDisk(c.GetStatus())) * quantity.GiB)
 	if spec.GetRunState() != computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED {
 		a[dimCPU] = int64(sz.cpu) * 1000
-		a.addMemory(spec.GetResources().GetMemoryGuaranteed(), sz.memory)
+		a.addMemory(spec.GetResources().GetMemoryReserved(), sz.memory)
 	}
 	return a
 }
 
-// addMemory counts a machine of memory asked to run, guaranteed as
-// memory_guaranteed says: no more than its memory, which a stored one that
-// no longer parses is guaranteed.
-func (a *amounts) addMemory(memoryGuaranteed string, memory uint64) {
-	g, err := guaranteedMemory(memoryGuaranteed, memory)
+// addMemory counts a machine of memory asked to run, reserved as
+// memory_reserved says: no more than its memory, all of it for a stored one
+// that no longer parses.
+func (a *amounts) addMemory(memoryReserved string, memory uint64) {
+	g, err := reservedMemory(memoryReserved, memory)
 	if err != nil || g > memory {
 		g = memory
 	}
@@ -394,7 +394,7 @@ func vmAmounts(obj proto.Message, in projectObjects) amounts {
 	}
 	if sz, err := vmSizes(vm.GetSpec().GetResources()); err == nil {
 		a[dimCPU] = int64(sz.cpu) * 1000
-		a.addMemory(vm.GetSpec().GetResources().GetMemoryGuaranteed(), sz.memory)
+		a.addMemory(vm.GetSpec().GetResources().GetMemoryReserved(), sz.memory)
 	}
 	return a
 }
@@ -509,7 +509,7 @@ type tally struct {
 // tally counts what tenant holds, read straight from the store, with over,
 // if any, in place of what is stored at its key. A project counts its
 // default network before the controller has made it. Machines count their
-// guarantees as memory only while the tenant has a memory pool
+// reservations as memory only while the tenant has a memory pool
 // (poolTerms.pooled), and their memory otherwise, as the meter bills them.
 func (s *Server) tally(ctx context.Context, tenant string, over *override) (tally, error) {
 	t := tally{projects: map[string]amounts{}, objects: map[string]*tenancyv1alpha1.Project{}}

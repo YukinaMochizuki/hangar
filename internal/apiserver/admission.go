@@ -927,16 +927,16 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 	// Its resources parse: validateContainerResources read them.
 	cur, _ := containerShape(c)
 	var was *machineShape
-	var wasGuarantee *guarantee
+	var wasReserved *reservation
 	if o, ok := old.(*computev1alpha1.Container); ok {
 		if shape, ok := containerShape(o); ok {
 			was = &shape
-			if g, err := guaranteedMemory(o.GetSpec().GetResources().GetMemoryGuaranteed(), shape.memory); err == nil {
-				wasGuarantee = &guarantee{g, shape.memory}
+			if g, err := reservedMemory(o.GetSpec().GetResources().GetMemoryReserved(), shape.memory); err == nil {
+				wasReserved = &reservation{g, shape.memory}
 			}
 		}
 	}
-	if err := s.checkGuarantee(ctx, meta.GetProject(), spec.GetResources().GetMemoryGuaranteed(), cur.memory, minMemory, wasGuarantee); err != nil {
+	if err := s.checkReserved(ctx, meta.GetProject(), spec.GetResources().GetMemoryReserved(), cur.memory, minMemory, wasReserved); err != nil {
 		return err
 	}
 	return s.checkMachineShape(p, was, cur, "spec.resources.disk "+cmp.Or(spec.GetResources().GetDisk(), defaultDisk))
@@ -1151,10 +1151,10 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	if err := checkMaximums(sz, "spec.resources", res.GetCpu(), res.GetMemory(), res.GetDisk()); err != nil {
 		return err
 	}
-	if g, err := guaranteedMemory(res.GetMemoryGuaranteed(), h.memory); err != nil {
-		return invalid("spec.resources.memory_guaranteed: %v", err)
+	if g, err := reservedMemory(res.GetMemoryReserved(), h.memory); err != nil {
+		return invalid("spec.resources.memory_reserved: %v", err)
 	} else if g > h.memory {
-		return invalid("spec.resources.memory_guaranteed %s is above spec.resources.memory %s", res.GetMemoryGuaranteed(), res.GetMemory())
+		return invalid("spec.resources.memory_reserved %s is above spec.resources.memory %s", res.GetMemoryReserved(), res.GetMemory())
 	}
 	if pool := spec.GetMemoryPool(); pool != nil {
 		if err := ValidName(pool.GetName()); err != nil {

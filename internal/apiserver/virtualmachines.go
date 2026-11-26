@@ -199,18 +199,18 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 	// Its resources and root disk parse: they were checked above.
 	cur, _ := vmShape(vm)
 	var was *machineShape
-	var wasGuarantee *guarantee
+	var wasReserved *reservation
 	if o, ok := old.(*computev1alpha1.VirtualMachine); ok {
 		if shape, ok := vmShape(o); ok {
 			was = &shape
 		}
 		if osz, err := vmSizes(o.GetSpec().GetResources()); err == nil {
-			if g, err := guaranteedMemory(o.GetSpec().GetResources().GetMemoryGuaranteed(), osz.memory); err == nil {
-				wasGuarantee = &guarantee{g, osz.memory}
+			if g, err := reservedMemory(o.GetSpec().GetResources().GetMemoryReserved(), osz.memory); err == nil {
+				wasReserved = &reservation{g, osz.memory}
 			}
 		}
 	}
-	if err := s.checkGuarantee(ctx, vm.GetMetadata().GetProject(), spec.GetResources().GetMemoryGuaranteed(), sz.memory, minVMMemory, wasGuarantee); err != nil {
+	if err := s.checkReserved(ctx, vm.GetMetadata().GetProject(), spec.GetResources().GetMemoryReserved(), sz.memory, minVMMemory, wasReserved); err != nil {
 		return err
 	}
 	return s.checkMachineShape(p, was, cur,
@@ -543,14 +543,14 @@ func vmMachineSpec(vm *computev1alpha1.VirtualMachine, caKey string) (*computev1
 	if spec.GetRunState() == computev1alpha1.VirtualMachineRunState_VIRTUAL_MACHINE_RUN_STATE_STOPPED {
 		runState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
 	}
-	guaranteed, err := guaranteedMemory(spec.GetResources().GetMemoryGuaranteed(), sz.memory)
+	reserved, err := reservedMemory(spec.GetResources().GetMemoryReserved(), sz.memory)
 	if err != nil {
-		return nil, fmt.Errorf("spec.resources.memory_guaranteed: %w", err)
+		return nil, fmt.Errorf("spec.resources.memory_reserved: %w", err)
 	}
 	out := &computev1alpha1.MachineSpec{
 		Resources: &computev1alpha1.Resources{
 			Cpu: quantity.FormatCPU(sz.cpu), Memory: quantity.FormatMemory(sz.memory),
-			MemoryGuaranteed: canonicalGuaranteed(guaranteed, sz.memory),
+			MemoryReserved: canonicalReserved(reserved, sz.memory),
 		},
 		RunState: runState,
 		Boot: &computev1alpha1.MachineSpec_Firmware{Firmware: &computev1alpha1.FirmwareBoot{

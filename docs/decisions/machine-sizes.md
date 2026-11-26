@@ -98,5 +98,5 @@ can choose a shape within rules instead.
   a tenant's own memory pool, whose machines on a node hold together no
   more than its size and which is never shared with another tenant
   (`memory-pool.md`). The shape rules read a machine's memory, not its
-  guarantee. The CPU a machine is sure of under full load follows its
+  reservation. The CPU a machine is sure of under full load follows its
   memory; it can use idle CPU up to its vCPUs at any time.

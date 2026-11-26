@@ -80,38 +80,38 @@ func (s *Server) memoryPoolOf(ctx context.Context, project string) (*computev1al
 	return s.tenantMemoryPool(ctx, obj.(*tenancyv1alpha1.Project).GetSpec().GetTenant())
 }
 
-// guarantee is a machine's guaranteed memory and its memory.
-type guarantee struct {
-	guaranteed, memory uint64
+// reservation is a machine's reserved memory and its memory.
+type reservation struct {
+	reserved, memory uint64
 }
 
-// checkGuarantee holds a Container's or VirtualMachine's
-// spec.resources.memory_guaranteed to its rules: written, a whole number of
+// checkReserved holds a Container's or VirtualMachine's
+// spec.resources.memory_reserved to its rules: written, a whole number of
 // 256Mi from minimum, the kind's least memory, up to memory; and below
 // memory only for a tenant whose machines share its memory as a pool
 // (poolTerms.pooled). It is about the tenant, so no caller is exempt. was
-// is the stored object's, nil on create; a guarantee below memory that the
+// is the stored object's, nil on create; a reservation below memory that the
 // write leaves as it was is not checked against the tenant again, so a
 // manifest applied again passes after the tenant's plan has changed.
-func (s *Server) checkGuarantee(ctx context.Context, project, written string, memory, minimum uint64, was *guarantee) error {
+func (s *Server) checkReserved(ctx context.Context, project, written string, memory, minimum uint64, was *reservation) error {
 	if written == "" {
 		return nil
 	}
 	g, err := quantity.Bytes(written)
 	if err != nil {
-		return invalid("spec.resources.memory_guaranteed: %v", err)
+		return invalid("spec.resources.memory_reserved: %v", err)
 	}
 	switch {
 	case g < shapeMemoryStep || g%shapeMemoryStep != 0:
-		return invalid("spec.resources.memory_guaranteed %s is not a whole number of 256Mi steps, at least one", written)
+		return invalid("spec.resources.memory_reserved %s is not a whole number of 256Mi steps, at least one", written)
 	case g < minimum:
-		return invalid("spec.resources.memory_guaranteed %s is below the minimum of %s", written, quantity.FormatMemory(minimum))
+		return invalid("spec.resources.memory_reserved %s is below the minimum of %s", written, quantity.FormatMemory(minimum))
 	case g > memory:
-		return invalid("spec.resources.memory_guaranteed %s is above spec.resources.memory %s", written, quantity.FormatMemory(memory))
+		return invalid("spec.resources.memory_reserved %s is above spec.resources.memory %s", written, quantity.FormatMemory(memory))
 	case g == memory:
 		return nil
 	}
-	if was != nil && *was == (guarantee{g, memory}) {
+	if was != nil && *was == (reservation{g, memory}) {
 		return nil
 	}
 	obj, err := s.get(ctx, registry.Project, resource.Key{Name: project})
@@ -126,7 +126,7 @@ func (s *Server) checkGuarantee(ctx context.Context, project, written string, me
 	if err != nil {
 		return err
 	}
-	below := fmt.Sprintf("spec.resources.memory_guaranteed %s is below spec.resources.memory %s, which only a tenant whose machines share its memory as a pool may ask",
+	below := fmt.Sprintf("spec.resources.memory_reserved %s is below spec.resources.memory %s, which only a tenant whose machines share its memory as a pool may ask",
 		written, quantity.FormatMemory(memory))
 	switch {
 	case !ok:

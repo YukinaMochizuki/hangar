@@ -284,8 +284,8 @@ type Limits struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// vCPUs, a quantity in Kubernetes syntax, such as "8" or "2500m".
 	Cpu *string `protobuf:"bytes,1,opt,name=cpu,proto3,oneof" json:"cpu,omitempty"`
-	// Memory, a quantity such as "16Gi": what machines asked to run are
-	// guaranteed, together (resources.memory_guaranteed, which is their
+	// Memory, a quantity such as "16Gi": what machines asked to run have
+	// reserved, together (resources.memory_reserved, which is their
 	// memory when empty). Their memory together may come to
 	// memory_limit_percent of it. See docs/decisions/memory-pool.md.
 	Memory *string `protobuf:"bytes,2,opt,name=memory,proto3,oneof" json:"memory,omitempty"`
@@ -323,9 +323,9 @@ type Limits struct {
 	// NetworkEndpoints, each holding an address of its network.
 	NetworkEndpoints *int32 `protobuf:"varint,15,opt,name=network_endpoints,json=networkEndpoints,proto3,oneof" json:"network_endpoints,omitempty"`
 	// How far the memory of the tenant's machines asked to run may add up,
-	// as a percent of memory; their guarantees still add up to no more than
+	// as a percent of memory; their reservations still add up to no more than
 	// memory. Above 100, the tenant's machines share its memory as one pool
-	// and may be guaranteed less than their memory, unless its
+	// and may reserve less than their memory, unless its
 	// BillingAccount is PAY_AS_YOU_GO. Only a Plan sets it, from 100 to 400,
 	// and only with memory; unset, it is 100. A project's memory limit holds
 	// both sums the same way, with its tenant's percent. See
@@ -482,7 +482,7 @@ func (x *Limits) GetMemoryLimitPercent() int32 {
 type Usage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Cpu   string                 `protobuf:"bytes,1,opt,name=cpu,proto3" json:"cpu,omitempty"`
-	// What counts against Limits.memory: the guaranteed memory of the
+	// What counts against Limits.memory: the reserved memory of the
 	// machines asked to run.
 	Memory           string `protobuf:"bytes,2,opt,name=memory,proto3" json:"memory,omitempty"`
 	Disk             string `protobuf:"bytes,3,opt,name=disk,proto3" json:"disk,omitempty"`

@@ -157,8 +157,8 @@
           "description": "Guest memory, at least 256Mi; the default is 1Gi.",
           "type": "string"
         },
-        "memoryGuaranteed": {
-          "description": "The memory the VM is guaranteed, as a container's resources.memory_guaranteed is; empty is memory.",
+        "memoryReserved": {
+          "description": "The memory reserved for the VM, as a container's resources.memory_reserved is; empty is memory.",
           "type": "string"
         }
       },

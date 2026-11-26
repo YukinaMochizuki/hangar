@@ -162,8 +162,8 @@ export type Limits = Message<"hangar.tenancy.v1alpha1.Limits"> & {
   cpu?: string | undefined;
 
   /**
-   * Memory, a quantity such as "16Gi": what machines asked to run are
-   * guaranteed, together (resources.memory_guaranteed, which is their
+   * Memory, a quantity such as "16Gi": what machines asked to run have
+   * reserved, together (resources.memory_reserved, which is their
    * memory when empty). Their memory together may come to
    * memory_limit_percent of it. See docs/decisions/memory-pool.md.
    *
@@ -268,9 +268,9 @@ export type Limits = Message<"hangar.tenancy.v1alpha1.Limits"> & {
 
   /**
    * How far the memory of the tenant's machines asked to run may add up,
-   * as a percent of memory; their guarantees still add up to no more than
+   * as a percent of memory; their reservations still add up to no more than
    * memory. Above 100, the tenant's machines share its memory as one pool
-   * and may be guaranteed less than their memory, unless its
+   * and may reserve less than their memory, unless its
    * BillingAccount is PAY_AS_YOU_GO. Only a Plan sets it, from 100 to 400,
    * and only with memory; unset, it is 100. A project's memory limit holds
    * both sums the same way, with its tenant's percent. See
@@ -301,7 +301,7 @@ export type Usage = Message<"hangar.tenancy.v1alpha1.Usage"> & {
   cpu: string;
 
   /**
-   * What counts against Limits.memory: the guaranteed memory of the
+   * What counts against Limits.memory: the reserved memory of the
    * machines asked to run.
    *
    * @generated from field: string memory = 2;

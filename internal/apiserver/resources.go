@@ -65,23 +65,23 @@ func (s sizes) canonical() *computev1alpha1.Resources {
 	}
 }
 
-// guaranteedMemory reads the resources.memory_guaranteed of a machine of
+// reservedMemory reads the resources.memory_reserved of a machine of
 // memory: memory when empty.
-func guaranteedMemory(s string, memory uint64) (uint64, error) {
+func reservedMemory(s string, memory uint64) (uint64, error) {
 	if s == "" {
 		return memory, nil
 	}
 	return quantity.Bytes(s)
 }
 
-// canonicalGuaranteed is the memory_guaranteed a machine of memory carries:
-// empty unless below memory, so a machine guaranteed its memory is written
-// as one that names no guarantee.
-func canonicalGuaranteed(guaranteed, memory uint64) string {
-	if guaranteed >= memory {
+// canonicalReserved is the memory_reserved a machine of memory carries:
+// empty unless below memory, so a machine reserved its memory is written
+// as one that names no reservation.
+func canonicalReserved(reserved, memory uint64) string {
+	if reserved >= memory {
 		return ""
 	}
-	return quantity.FormatMemory(guaranteed)
+	return quantity.FormatMemory(reserved)
 }
 
 // held is the memory and disk a machine holds on its node, and the memory
@@ -89,9 +89,9 @@ func canonicalGuaranteed(guaranteed, memory uint64) string {
 type held struct {
 	memory, disk uint64
 	// pool is empty for a machine in no pool, which holds its memory alone;
-	// guaranteed is what of its memory a pool's machine is guaranteed.
-	pool                 string
-	poolSize, guaranteed uint64
+	// reserved is how much of a pool's machine's memory is reserved.
+	pool               string
+	poolSize, reserved uint64
 }
 
 // machineHeld is heldBy of spec's resources, with its memory pool.
@@ -105,12 +105,12 @@ func machineHeld(spec *computev1alpha1.MachineSpec) (held, error) {
 			return held{}, fmt.Errorf("memory_pool.size: %w", err)
 		}
 		h.pool = p.GetName()
-		h.guaranteed = h.memory
-		if g := spec.GetResources().GetMemoryGuaranteed(); g != "" {
-			if h.guaranteed, err = quantity.Bytes(g); err != nil {
-				return held{}, fmt.Errorf("memory_guaranteed: %w", err)
+		h.reserved = h.memory
+		if g := spec.GetResources().GetMemoryReserved(); g != "" {
+			if h.reserved, err = quantity.Bytes(g); err != nil {
+				return held{}, fmt.Errorf("memory_reserved: %w", err)
 			}
-			h.guaranteed = min(h.guaranteed, h.memory)
+			h.reserved = min(h.reserved, h.memory)
 		}
 	}
 	return h, nil
@@ -127,16 +127,16 @@ type nodeHeld struct {
 }
 
 // poolHeld is the memory of one pool's machines on a node, what they are
-// guaranteed of it, and the pool's size: the largest any of them carries,
+// reserved of it, and the pool's size: the largest any of them carries,
 // as they may disagree while their controllers bring each up to date.
 type poolHeld struct {
-	memory, guaranteed, size uint64
+	memory, reserved, size uint64
 }
 
 // holds is what the pool's machines hold together: the least of their
-// memory and the pool's size, but never less than their guarantees, which a
+// memory and the pool's size, but never less than their reservations, which a
 // plan lowered past them while they run leaves above its size.
-func (p poolHeld) holds() uint64 { return min(p.memory, max(p.size, p.guaranteed)) }
+func (p poolHeld) holds() uint64 { return min(p.memory, max(p.size, p.reserved)) }
 
 // memory is the memory the node holds.
 func (u nodeHeld) memory() uint64 {
@@ -161,7 +161,7 @@ func (u *nodeHeld) take(h held) {
 		u.pools = map[string]poolHeld{}
 	}
 	p := u.pools[h.pool]
-	p.memory, p.guaranteed, p.size = add(p.memory, h.memory), add(p.guaranteed, h.guaranteed), max(p.size, h.poolSize)
+	p.memory, p.reserved, p.size = add(p.memory, h.memory), add(p.reserved, h.reserved), max(p.size, h.poolSize)
 	u.pools[h.pool] = p
 }
 
@@ -177,7 +177,7 @@ func (u nodeHeld) memoryFor(h held) uint64 {
 		return 0
 	}
 	p := u.pools[h.pool]
-	after := poolHeld{memory: add(p.memory, h.memory), guaranteed: add(p.guaranteed, h.guaranteed), size: max(p.size, h.poolSize)}
+	after := poolHeld{memory: add(p.memory, h.memory), reserved: add(p.reserved, h.reserved), size: max(p.size, h.poolSize)}
 	return after.holds() - p.holds()
 }
 

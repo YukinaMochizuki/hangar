@@ -167,7 +167,7 @@ func (s *Server) meterReadings(ctx context.Context, tenant string) ([]store.Mete
 // runningShapes are the cpu and memory of each machine running in project
 // for a Container or a VirtualMachine, by the uid of the object it runs
 // for: its Machine's own, which is what runs, whatever its object's spec
-// asks for since. Its memory is what it is guaranteed while its tenant has
+// asks for since. Its memory is what is reserved for it while its tenant has
 // a memory pool, as pooled says (poolTerms.pooled), which is what the quota
 // counts too, and all of its memory otherwise, which is what a machine of a
 // tenant that pays as it goes always is. A file share's server is the
@@ -193,7 +193,7 @@ func (s *Server) runningShapes(ctx context.Context, project string, pooled bool)
 			}
 			if mem, err := quantity.Bytes(m.GetSpec().GetResources().GetMemory()); err == nil {
 				if pooled {
-					if g, err := guaranteedMemory(m.GetSpec().GetResources().GetMemoryGuaranteed(), mem); err == nil {
+					if g, err := reservedMemory(m.GetSpec().GetResources().GetMemoryReserved(), mem); err == nil {
 						mem = min(mem, g)
 					}
 				}
