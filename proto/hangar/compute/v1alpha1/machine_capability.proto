@@ -116,6 +116,11 @@ message UsageResponse {
   // once it is more than three samples old, as when the node no longer
   // reaches the machine.
   MachineUsagePoint latest = 5;
+  // How much of its memory the machine's memory pool has taken back from
+  // its guest now, in bytes, by its balloon: its guest has
+  // memory_limit_bytes less this. Zero when nothing is taken; unset when
+  // its node could not tell. See docs/decisions/memory-pool.md.
+  optional int64 balloon_bytes = 6;
 }
 
 // MachineUsagePoint is a machine's usage at a time, or over the minute from

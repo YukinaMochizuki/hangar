@@ -16,12 +16,18 @@ import (
 )
 
 // Usage reads the counters of the cgroup of the VM's unit, in the machines'
-// slice: its CPU time and the memory it holds.
+// slice or its pool's: its CPU time and the memory it holds.
 func (h *Hypervisor) Usage(_ context.Context, machineUID string) (driver.VMUsage, error) {
 	if err := checkUID(machineUID); err != nil {
 		return driver.VMUsage{}, err
 	}
-	dir := filepath.Join(h.cfg.cgroupRoot, machinesSlice, unitName(machineUID))
+	dir, err := h.cgroupDir(machineUID)
+	if errors.Is(err, os.ErrNotExist) {
+		return driver.VMUsage{}, fmt.Errorf("machine %s has no running VM: %w", machineUID, err)
+	}
+	if err != nil {
+		return driver.VMUsage{}, err
+	}
 	u, err := readCgroupUsage(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return driver.VMUsage{}, fmt.Errorf("machine %s has no running VM: %w", machineUID, err)

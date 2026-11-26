@@ -48,6 +48,9 @@ const (
 	// exitFile records how the VM's last run ended, written by the
 	// launcher when Cloud Hypervisor exits by itself.
 	exitFile = "exit.json"
+	// oomFile is when the host's OOM killer last killed the VM's unit
+	// whole, which outlives the unit's restarts (RecordOOMKill).
+	oomFile = "oom-killed"
 	// stopFile marks a VM being stopped: once its guest powers off, the
 	// launcher waits to be stopped instead of exiting, so the restart
 	// policy never starts it again.
@@ -227,6 +230,9 @@ type exitRecord struct {
 	Signal int `json:",omitempty"`
 	// Error says why the launcher could not start the VM.
 	Error string `json:",omitempty"`
+	// OOMKilled says the kernel's OOM killer killed the VM's unit whole,
+	// the launcher with it, with Code ExitNoRecord (RecordOOMKill).
+	OOMKilled bool `json:",omitempty"`
 	// Started and Ended bound the run.
 	Started, Ended time.Time
 }

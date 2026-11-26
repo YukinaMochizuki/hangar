@@ -10,12 +10,19 @@ import (
 )
 
 // TestUsageReadsTheUnitsCgroup: a VM's usage is its unit's cgroup's, in the
-// machines' slice, read as cgroup v2 writes it; a VM with no cgroup has
-// none, and a file not as the kernel writes it is an error.
+// machines' slice or its pool's, read as cgroup v2 writes it; a VM with no
+// cgroup has none, and a file not as the kernel writes it is an error.
 func TestUsageReadsTheUnitsCgroup(t *testing.T) {
 	root := t.TempDir()
 	h := newDriverWith(t, shortDir(t), newFakeSystemd(), &fakeGuest{}, func(c *Config) { c.cgroupRoot = root })
 	ctx := t.Context()
+	pooled := testSpec("m3", driver.RestartAlways)
+	pooled.MemoryPool = &driver.MemoryPool{Name: "acme-corp", SizeMiB: 4096}
+	for _, spec := range []driver.VMSpec{testSpec("m1", driver.RestartAlways), pooled} {
+		if err := h.Start(ctx, spec); err != nil {
+			t.Fatal(err)
+		}
+	}
 	unit := filepath.Join(root, "hangar.slice", "hangar-vm-m1.service")
 	write := func(name, content string) {
 		t.Helper()
@@ -39,6 +46,14 @@ func TestUsageReadsTheUnitsCgroup(t *testing.T) {
 	if want := (driver.VMUsage{CPU: 81234567 * time.Microsecond, Memory: 512 << 20}); u != want {
 		t.Errorf("used %+v, want %+v", u, want)
 	}
+	// A pool's VM's unit is in its pool's slice, its dashes underscores.
+	unit = filepath.Join(root, "hangar.slice", "hangar-pool_acme_corp.slice", "hangar-vm-m3.service")
+	write("cpu.stat", "usage_usec 5\n")
+	write("memory.current", "1048576\n")
+	if u, err := h.Usage(ctx, "m3"); err != nil || u != (driver.VMUsage{CPU: 5 * time.Microsecond, Memory: 1 << 20}) {
+		t.Errorf("the pool's VM used %+v (%v), want its pool's slice's unit's", u, err)
+	}
+	unit = filepath.Join(root, "hangar.slice", "hangar-vm-m1.service")
 	// Another VM's cgroup is not this one's.
 	if u, err := h.Usage(ctx, "m2"); err == nil {
 		t.Errorf("m2, with no cgroup, used %+v", u)

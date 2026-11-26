@@ -221,6 +221,20 @@ const (
 	ReasonNetworkFailed = "NetworkFailed"
 	ReasonBootFailed    = "BootFailed"
 	ReasonExited        = "Exited"
+	// ReasonOutOfMemory means the node killed the machine's VM whole, as
+	// the machines of its memory pool on the node held more than the pool
+	// lets them (docs/decisions/memory-pool.md); its restart policy keeps
+	// it down.
+	ReasonOutOfMemory = "OutOfMemory"
+	// MachineOOMKilled is the node's: True once the host's OOM killer
+	// killed the machine's VM whole, its memory pool out of memory, whatever
+	// its restart policy did then; its message says when.
+	MachineOOMKilled = "OOMKilled"
+	// MachineBalloonResponsive is the node's: False, BalloonUnresponsive,
+	// while the balloon of a pool's machine does not follow what it is
+	// asked, as a guest with no balloon driver; absent otherwise.
+	MachineBalloonResponsive  = "BalloonResponsive"
+	ReasonBalloonUnresponsive = "BalloonUnresponsive"
 	// ReasonPoweredOff means a firmware machine's guest powered itself
 	// off, which keeps it off until it is stopped and started; a firmware
 	// machine that ended otherwise is Exited, and boots again.

@@ -78,7 +78,7 @@ func firmwareArgs(ln launch, dir string, taps int) []string {
 		// v54 turned it off by default (docs/decisions/vm-boot.md).
 		"--cpus", fmt.Sprintf("boot=%d,nested=on", s.VCPUs),
 		"--memory", fmt.Sprintf("size=%dM", s.MemoryMiB),
-		"--balloon", freePageReporting,
+		"--balloon", balloonArg(s),
 		"--platform", "system_serial_number=" + quoteOption(cmp.Or(s.SystemSerialNumber, NoCloudSerial)),
 		"--disk",
 	}

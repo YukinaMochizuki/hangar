@@ -48,6 +48,13 @@ message BootConfig {
   // so it can join later: hangar-init mounts it at /run/hangar/tailscale as
   // the container first joins. Empty when the host has none.
   string tailscale_disk = 11;
+  // Set, the memory, in MiB, the guest is given as it boots: its balloon,
+  // inflated by its driver as the guest boots, leaves it this. hangar-init
+  // waits for its MemTotal to come down to it, and a little more, before
+  // it mounts the volumes and starts the process, so nothing the container
+  // does takes more first; after a while it goes on, saying so. Zero for a
+  // guest given all its memory. See docs/decisions/memory-pool.md.
+  uint64 boot_memory_mib = 12;
 }
 
 // Tailscale is how a container joins a tailnet. The auth key is not here:

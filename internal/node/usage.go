@@ -296,6 +296,12 @@ func (s nodeService) MachineUsage(ctx context.Context, req *connect.Request[node
 			res.Latest = usagePoint(*v.latest)
 		}
 	}
+	// Read as asked: the squeeze changes it every few seconds.
+	if b, err := s.a.cfg.Drivers.Hypervisor.Balloon(ctx, uid); err == nil {
+		res.BalloonBytes = &b.Actual
+	} else {
+		s.a.cfg.Log.Debug("reading the machine's balloon", "machine_uid", uid, "error", err)
+	}
 	return connect.NewResponse(res), nil
 }
 

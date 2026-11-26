@@ -24,6 +24,11 @@ func TestARoundTripOnAPaddedDisk(t *testing.T) {
 				{Name: "media", Target: "/srv/media", ReadOnly: true, Subpath: "public", FileShare: &guestv1.FileShareMount{Address: "10.0.0.9"}},
 			},
 		},
+		"a Shared container of a memory pool": {
+			Process:       &guestv1.Process{Args: []string{"sh"}},
+			MachineUid:    "5d0c3f4e-0000-4000-8000-000000000003",
+			BootMemoryMib: 1024,
+		},
 		"a FileShare's server": {
 			Interfaces: []*guestv1.Interface{{Mac: "02:00:00:00:00:02", Address: "10.0.0.9/24"}},
 			FileShareServer: &guestv1.FileShareServer{Export: &guestv1.FileShareExport{

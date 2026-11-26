@@ -33,6 +33,9 @@ type systemd interface {
 	resetFailed(ctx context.Context, name string) error
 	// list lists the units loaded whose names start with unitPrefix.
 	list(ctx context.Context) ([]unitState, error)
+	// listSlices lists the names of the slices loaded whose names start
+	// with poolSlicePrefix.
+	listSlices(ctx context.Context) ([]string, error)
 	close()
 }
 
@@ -60,25 +63,46 @@ func property(name string, v any) sd.Property {
 }
 
 // unitProps are the properties of a VM's unit, which systemd gives
-// stopTimeout to stop, confined as sb says. Explicit stops never restart a
-// unit, whatever its Restart=.
-func unitProps(spec driver.VMSpec, argv []string, restart string, stopTimeout time.Duration, sb sandbox) []sd.Property {
-	return append(baseProps(spec, argv, restart, stopTimeout), sb.props(spec)...)
+// stopTimeout to stop, confined as sb says, and which runs stopPost once
+// stopped. Explicit stops never restart a unit, whatever its Restart=.
+func unitProps(spec driver.VMSpec, argv, stopPost []string, restart string, stopTimeout time.Duration, sb sandbox) []sd.Property {
+	return append(baseProps(spec, argv, stopPost, restart, stopTimeout), sb.props(spec)...)
+}
+
+// sharedOOMScore is the OOMScoreAdjust of a VM whose pool may squeeze it
+// below its memory, against 0 for one with all of it reserved: the most, so
+// past its pool's MemoryMax the kernel kills such a VM first, whole, however
+// large the others (docs/decisions/node-agent.md).
+const sharedOOMScore = 1000
+
+// oomScore is a VM's OOMScoreAdjust.
+func oomScore(spec driver.VMSpec) int32 {
+	if spec.Reserved() < spec.MemoryMiB {
+		return sharedOOMScore
+	}
+	return 0
 }
 
 // baseProps are the properties of a VM's unit but its confinement: all of
-// them, for a launcher that runs Cloud Hypervisor as root.
-func baseProps(spec driver.VMSpec, argv []string, restart string, stopTimeout time.Duration) []sd.Property {
-	return []sd.Property{
+// them, for a launcher that runs Cloud Hypervisor as root. A nil stopPost
+// runs nothing once the unit has stopped.
+func baseProps(spec driver.VMSpec, argv, stopPost []string, restart string, stopTimeout time.Duration) []sd.Property {
+	props := []sd.Property{
 		sd.PropDescription(fmt.Sprintf("Hangar VM of machine %s (%s)", spec.Machine, spec.MachineUID)),
 		// systemd takes the flag go-systemd calls uncleanIsFailure as
 		// ExecStart='s "-": true would make every exit a success, and
 		// Restart=on-failure would never restart.
 		sd.PropExecStart(argv, false),
 		sd.PropType("exec"),
-		// The VMs share their slice's CPUs by memory.
-		sd.PropSlice(machinesSlice),
+		// The VMs share their slice's CPUs by memory; a pool's VMs share
+		// their pool's slice's, and its memory.
+		sd.PropSlice(sliceOf(spec)),
 		property("CPUWeight", cpuWeight(spec)),
+		// The kernel's OOM killer takes all of the unit's processes or
+		// none (systemd sets memory.oom.group), and the unit's result is
+		// oom-kill, a failure to Restart=on-failure.
+		property("OOMPolicy", "kill"),
+		property("OOMScoreAdjust", oomScore(spec)),
 		property("Restart", restart),
 		property("RestartUSec", usec(restartFirst)),
 		property("RestartSteps", uint32(restartSteps)),
@@ -104,6 +128,14 @@ func baseProps(spec driver.VMSpec, argv []string, restart string, stopTimeout ti
 		// An exited VM's record is its exit file: the unit goes.
 		property("CollectMode", "inactive-or-failed"),
 	}
+	if stopPost != nil {
+		// Whatever it exits with: it only records an OOM kill, which the
+		// unit's result says already.
+		p := sd.PropExecStart(stopPost, true)
+		p.Name = "ExecStopPost"
+		props = append(props, p)
+	}
+	return props
 }
 
 // sandbox is what confines a VM's unit: what of the host it sees and may
@@ -546,6 +578,24 @@ func (s *dbusSystemd) resetFailed(ctx context.Context, name string) error {
 		return err
 	}
 	return nil
+}
+
+func (s *dbusSystemd) listSlices(ctx context.Context) ([]string, error) {
+	c, err := s.connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	units, err := c.ListUnitsByPatternsContext(ctx, nil, []string{poolSlicePrefix + "*.slice"})
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, u := range units {
+		if u.LoadState != "not-found" {
+			out = append(out, u.Name)
+		}
+	}
+	return out, nil
 }
 
 func (s *dbusSystemd) list(ctx context.Context) ([]unitState, error) {

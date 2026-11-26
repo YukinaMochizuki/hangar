@@ -119,6 +119,13 @@ func sweep() {
 	for _, u := range decoyUnits {
 		_ = exec.Command("systemctl", "stop", u).Run()
 	}
+	// Memory pools' slices, once no VM is left in them.
+	slices, _ := exec.Command("systemctl", "list-units", "--all", "--plain", "--no-legend", "hangar-pool_*.slice").Output()
+	for _, line := range strings.Split(string(slices), "\n") {
+		if f := strings.Fields(line); len(f) > 0 {
+			_ = exec.Command("systemctl", "stop", f[0]).Run()
+		}
+	}
 	if d, err := hostnet.New(hostnet.Config{Uplink: "lo"}); err == nil {
 		ctx := context.Background()
 		nets, _ := d.Networks(ctx)

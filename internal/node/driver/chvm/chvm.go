@@ -142,7 +142,14 @@ type Hypervisor struct {
 	locks       keylock.Map
 	changes     chan struct{}
 	// users is held while a Start picks its VM's id and writes it down.
-	users     sync.Mutex
+	users sync.Mutex
+	// pools is held while a pool's slice is set for its VMs, and while a
+	// VM is started into one, so no sweep stops a slice a VM is starting
+	// in and no update leaves out a VM starting.
+	pools sync.Mutex
+	// memEvents is MemoryEvents, signalled through pressure.
+	memEvents chan struct{}
+	pressure  pressure
 	procUsers func() (map[uint32]bool, error)
 	removeAll func(string) error
 	giveFile  func(path string, gid int) error
@@ -238,7 +245,7 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	if err := os.MkdirAll(cfg.Dir, 0o700); err != nil {
 		return nil, err
 	}
-	h := &Hypervisor{cfg: cfg, changes: make(chan struct{}, 1), procUsers: cfg.procUsers, nrOpen: nrOpen}
+	h := &Hypervisor{cfg: cfg, changes: make(chan struct{}, 1), memEvents: make(chan struct{}, 1), procUsers: cfg.procUsers, nrOpen: nrOpen}
 	if h.procUsers == nil {
 		h.procUsers = procUsers
 	}
@@ -305,8 +312,10 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 
 // updateRunning gives each running confined VM unit the limits a unit
 // started now has: its TasksMax raised to what its launch has now, never
-// lowered, and no swap (docs/decisions/node-agent.md). A unit gone
-// meanwhile, or whose launch cannot be read, is left to VMs.
+// lowered, no swap, and memory.oom.group, which systemd clears as it sets
+// the others on a unit started without OOMPolicy=kill, and that cannot be
+// set at runtime (docs/decisions/node-agent.md). A unit gone meanwhile, or
+// whose launch cannot be read, is left to VMs.
 func (h *Hypervisor) updateRunning(ctx context.Context) error {
 	units, err := h.sd.list(ctx)
 	if err != nil {
@@ -331,6 +340,9 @@ func (h *Hypervisor) updateRunning(ctx context.Context) error {
 			}
 			err = h.sd.setProps(ctx, u.Name, props)
 		}
+		if err == nil {
+			err = setOOMGroup(h.unitCgroup(ln.Spec, uid))
+		}
 		if err != nil && !notLoaded(err) {
 			return fmt.Errorf("%s: %w", u.Name, err)
 		}
@@ -341,6 +353,7 @@ func (h *Hypervisor) updateRunning(ctx context.Context) error {
 // Close releases the connection to systemd. The VMs run on.
 func (h *Hypervisor) Close() error {
 	h.sd.close()
+	h.closePressure()
 	return nil
 }
 
@@ -407,7 +420,8 @@ func (h *Hypervisor) vm(uid string, unit *unitState) (driver.VM, bool, error) {
 		return driver.VM{}, false, err
 	}
 	vm := driver.VM{
-		MachineUID: uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces, RootSize: ln.Spec.Root.Size,
+		LastOOMKill: lastOOMKill(dir),
+		MachineUID:  uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces, RootSize: ln.Spec.Root.Size,
 		VCPUs: ln.Spec.VCPUs, Firmware: ln.Spec.Firmware, FileShareServer: ln.Spec.FileShareServer != nil,
 	}
 	for _, v := range ln.Spec.Disks {
@@ -420,7 +434,7 @@ func (h *Hypervisor) vm(uid string, unit *unitState) (driver.VM, bool, error) {
 	case unit != nil && running(*unit) && !offInStop:
 		vm.State, vm.Started = driver.VMRunning, unit.Started
 	case hasSpec && exited:
-		vm.State, vm.ExitCode, vm.Started = driver.VMExited, rec.Code, rec.Started
+		vm.State, vm.ExitCode, vm.Started, vm.OOMKilled = driver.VMExited, rec.Code, rec.Started, rec.OOMKilled
 	case hasSpec && ln.Spec.Restart == driver.RestartNever && !exists(filepath.Join(dir, stopFile)):
 		// Interrupted: its unit gone with no record, as by the host
 		// rebooting or its launcher killed outright, and not by a stop.
@@ -617,13 +631,28 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 		}
 	}
 	argv := append(slices.Clone(h.cfg.Launcher), "--dir", h.cfg.Dir, "--vm-user", fmt.Sprint(user), uid)
+	stopPost := append(slices.Clone(h.cfg.Launcher), "--dir", h.cfg.Dir, "--stopped", uid)
 	grace, slack := ln.stopTimes()
-	props := unitProps(spec, argv, restart, stopTimeout(grace, slack, spec), sb)
+	props := unitProps(spec, argv, stopPost, restart, stopTimeout(grace, slack, spec), sb)
 	if spec.Converter != nil {
 		props = append(props, property("RuntimeMaxUSec", usec(h.cfg.ConverterRuntime)))
 	}
+	if spec.MemoryPool != nil {
+		h.pools.Lock()
+		defer h.pools.Unlock()
+		if err := h.startPool(ctx, spec); err != nil {
+			return err
+		}
+	}
 	if err := h.sd.start(ctx, unitName(uid), props); err != nil {
 		return fmt.Errorf("starting %s: %w", unitName(uid), err)
+	}
+	if spec.MemoryPool != nil {
+		// A pool's VM started: the squeeze gives it its allowance now.
+		select {
+		case h.memEvents <- struct{}{}:
+		default:
+		}
 	}
 	return nil
 }
@@ -752,6 +781,14 @@ func checkSpec(s driver.VMSpec) error {
 	if s.VCPUs < 1 || s.MemoryMiB < 1 {
 		return fmt.Errorf("machine %s: %d vCPUs and %d MiB of memory", s.MachineUID, s.VCPUs, s.MemoryMiB)
 	}
+	if s.MemoryPool != nil {
+		if err := checkPool(*s.MemoryPool); err != nil {
+			return fmt.Errorf("machine %s: %w", s.MachineUID, err)
+		}
+	}
+	if s.ReservedMiB < 0 || s.ReservedMiB > s.MemoryMiB {
+		return fmt.Errorf("machine %s: reserved %d of its %d MiB of memory", s.MachineUID, s.ReservedMiB, s.MemoryMiB)
+	}
 	switch srv := s.FileShareServer; {
 	case s.Converter != nil:
 		c := s.Converter
@@ -848,6 +885,10 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec, tailscaleDisk string) ([]byte,
 		Nameservers: spec.Nameservers,
 		Search:      spec.Search,
 		MachineUid:  spec.MachineUID,
+	}
+	if balloonArg(spec) != freePageReporting {
+		// Its guest boots at its reservation (balloonArg), and waits for it.
+		cfg.BootMemoryMib = uint64(spec.Reserved())
 	}
 	if srv := spec.FileShareServer; srv != nil {
 		cfg.Process = nil
@@ -1089,4 +1130,18 @@ func (h *Hypervisor) DeleteLogs(ctx context.Context, uid string) error {
 		return fmt.Errorf("machine %s's unit %s is %s; stop it first", uid, unit.Name, unit.Active)
 	}
 	return os.RemoveAll(h.dir(uid))
+}
+
+// lastOOMKill is when RecordOOMKill last recorded the VM killed whole, zero
+// for never.
+func lastOOMKill(dir string) time.Time {
+	b, err := os.ReadFile(filepath.Join(dir, oomFile))
+	if err != nil {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(string(b)))
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }

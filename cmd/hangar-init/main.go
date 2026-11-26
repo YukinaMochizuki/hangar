@@ -101,6 +101,12 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 	if cfg.GetFileShareServer() != nil {
 		return runServer(cfg, logf, started)
 	}
+	// Nothing the container does may take more memory than its pool gave
+	// it to boot with before its balloon has taken the rest back: a volume
+	// filled from the image, its process.
+	if d := boot.WaitForBalloon(context.Background(), "/proc/meminfo", cfg.GetBootMemoryMib(), boot.BalloonPoll, boot.BalloonTimeout, logf); d > 0 {
+		logf("hangar-init: waited %v for the guest's memory to come down to %d MiB", d.Round(time.Millisecond), cfg.GetBootMemoryMib())
+	}
 	// Before the volumes, which a FileShare's are reached over.
 	if err := boot.Network(cfg.GetInterfaces()); err != nil {
 		return failed, fmt.Errorf("network: %w", err)

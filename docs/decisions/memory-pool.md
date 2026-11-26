@@ -1,7 +1,7 @@
 # A tenant's machines may share its memory as a pool
 
-Status: accepted, 2026-11. The apiserver's part is built; the node's
-squeeze, described below, is not yet.
+Status: accepted, 2026-11. Built: the apiserver's part, and the node's
+(`node-agent.md`, "Memory pools").
 
 ## Context
 
@@ -83,20 +83,27 @@ GiB nobody measured.
   otherwise, so the quota and the meter never disagree (`billing.md`). A
   PAY_AS_YOU_GO tenant has no pool, so its bills are as before; a FIXED
   tenant pays its plan's fee whatever it holds.
-- **The node squeezes a pool's machines, never another tenant's.** This is
-  the node agent's part, and not built yet: the units of a pool's machines
-  run in a slice of their own whose `MemoryMax` is the pool's size plus
-  their overheads, a backstop only. When the pool's actual use (the units'
-  `memory.current`) passes about 90% of its size, the node inflates the
-  balloon of its machines in proportion to how far each is above its
-  reservation, first only down to what its guest uses plus a margin, read
-  from its balloon statistics, then, if still over, down to its reservation,
-  where the guest may kill a process of its own; it deflates them under
-  about 80%. As the backstop, a pooled VM's unit kills as a whole
-  (`memory.oom.group`), a machine with a reservation below its memory before
-  one without, and the node reports it on the machine. A machine's CPU
-  weight follows its reservation rather than its memory, so a pool of 200%
-  does not double its tenant's share of the CPUs.
+- **The node squeezes a pool's machines, never another tenant's**
+  (`node-agent.md`, "Memory pools"). The units of a pool's machines run in
+  a slice of their own whose `MemoryMax` is the pool's size plus their
+  overheads, a backstop only. The node shares the pool's size among them,
+  or their reservations together if more, as the scheduler holds it; a
+  machine counts in its pool as it was started until its VM is gone. A
+  machine with all its memory reserved (Dedicated) is never squeezed nor
+  slowed, and its whole memory is held for it, used or not. Each machine with less reserved (Shared) is held by its
+  balloon at an allowance of what that leaves, so the pool cannot be
+  overrun: what it uses, read from its balloon statistics, and a margin,
+  and a share of what is left, given first to those whose guests are short
+  of memory; when the pool is short, down to its reservation, where the guest
+  may kill a process of its own. A balloon is given back only into room
+  the others' balloons have already freed. A Shared machine boots at its
+  reservation; a container's guest waits for that before it runs anything of
+  the container's. As the backstop, a pooled VM's unit kills as a whole (`memory.oom.group`), a
+  Shared machine before a Dedicated one, and the node reports it on the
+  machine as `OOMKilled`, `OutOfMemory`, whatever its restart policy. A machine's CPU weight follows its reservation
+  rather than its memory, so a pool of 200% does not double its tenant's
+  share of the CPUs. A machine joins a pool's slice, or leaves it, as it
+  starts; its reservation's effects follow while it runs.
 
 ## Consequences
 
@@ -111,6 +118,11 @@ GiB nobody measured.
   pool as their node's room allows.
 - A FileShare's server is in no pool: its node holds its memory whole,
   as before pools.
-- Until the node squeezes, a pooled machine's memory is held by the
-  scheduler as above but nothing on its node keeps the pool's machines
-  within its size.
+- A Shared machine's guest sees its memory move as its tenant's other
+  machines use the pool: past its reservation, none of it is sure, page
+  cache or not. A Shared container starts some seconds later than it
+  would (3.9 to 5.7 s measured), its guest waiting for its boot balloon.
+- A Shared firmware VM has a boot window: its operating system does not
+  wait for its boot balloon, so for the few seconds it takes (4.2 s
+  measured, `node-agent.md`), a fill fast enough can reach the pool's
+  slice's limit, where the backstop kills a Shared VM whole, by score.

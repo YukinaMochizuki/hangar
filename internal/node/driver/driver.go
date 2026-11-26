@@ -907,6 +907,70 @@ type Hypervisor interface {
 	// the VM's whole unit, its VMM's own work included. A machine with no
 	// running VM fails.
 	Usage(ctx context.Context, machineUID string) (VMUsage, error)
+
+	// SetMemoryShare gives a running VM what follows its memory pool and
+	// reservation while it runs (VMSpec.MemoryPool, ReservedMiB): its share
+	// of the CPUs and how early the host's OOM killer takes it. The pool it
+	// runs in stays the one it started in. A machine with no running VM
+	// fails.
+	SetMemoryShare(ctx context.Context, machineUID string, pool *MemoryPool, reservedMiB int64) error
+	// PoolVMs lists the VMs that run, or are about to again, in a memory
+	// pool on the host, as each was started: what the pool holds until its
+	// VM is gone, whatever its machine's spec says now.
+	PoolVMs(ctx context.Context) ([]PoolVM, error)
+	// SetMemoryPool holds the VMs running in a pool on the host to guestMiB
+	// of their guests' memory together, past their VMMs' own overheads:
+	// past that the host kills one of them whole. Zero or less lifts the
+	// limit. A pool no VM runs in is left alone.
+	SetMemoryPool(ctx context.Context, name string, guestMiB int64) error
+	// SweepMemoryPools removes what holds a pool no VM runs in any more.
+	SweepMemoryPools(ctx context.Context) error
+	// Balloon reads a running VM's balloon, and its guest's memory as the
+	// guest last reported it. A machine with no running VM fails.
+	Balloon(ctx context.Context, machineUID string) (Balloon, error)
+	// SetBalloon inflates or deflates a running VM's balloon to size bytes,
+	// at most its memory: what the balloon holds its guest cannot use. It
+	// returns once asked, not once the guest has given the memory up.
+	SetBalloon(ctx context.Context, machineUID string, size uint64) error
+	// OOMGroupKills counts the VMs the host's OOM killer has killed whole
+	// since the host booted.
+	OOMGroupKills(ctx context.Context) (uint64, error)
+	// MemoryEvents signals that a pool's VM has started, or that what a
+	// pool's VMs hold has reached SetMemoryPool's limit. Signals coalesce.
+	MemoryEvents() <-chan struct{}
+}
+
+// MemoryPool is memory VMs share on the host: together they hold at most
+// its size (docs/decisions/memory-pool.md). Name is the API's pool name, a
+// DNS label.
+type MemoryPool struct {
+	Name    string
+	SizeMiB int64
+}
+
+// PoolVM is a VM running in a memory pool, as it was started: its pool,
+// memory and reservation, in MiB, and when its running boot started.
+type PoolVM struct {
+	MachineUID             string
+	Pool                   MemoryPool
+	MemoryMiB, ReservedMiB int64
+	Started                time.Time
+}
+
+// Balloon is a VM's balloon and what its guest last reported of its
+// memory, in bytes.
+type Balloon struct {
+	// Actual is what the balloon holds now.
+	Actual uint64
+	// Total and Available are the guest's MemTotal and MemAvailable, which
+	// the balloon lowers, as of Updated; zero Updated when the guest has
+	// reported none, as a guest without the balloon's statistics.
+	Total, Available uint64
+	Updated          time.Time
+	// Reclaims counts the guest's stalled allocations and reclaims since it
+	// booted, if HasReclaims; OOMKills its own OOM kills, if HasOOMKills.
+	Reclaims, OOMKills       uint64
+	HasReclaims, HasOOMKills bool
 }
 
 // VMUsage is what a running VM has used, as the cgroup of its unit counts
@@ -1051,6 +1115,22 @@ type VMSpec struct {
 	// Every container VM gets the platform's tailscale disk, where the host
 	// has one, whether or not it joins, so it can join later.
 	Tailscale *TailscaleSpec `json:",omitempty"`
+	// MemoryPool is the pool the VM shares memory in, nil for none, and
+	// ReservedMiB the least of its memory it is left when the pool is
+	// short, zero for all of it. Neither is part of the hash: they change
+	// while the VM runs (Hypervisor.SetMemoryShare), though it stays in
+	// the pool it started in.
+	MemoryPool  *MemoryPool `json:",omitempty"`
+	ReservedMiB int64       `json:",omitempty"`
+}
+
+// Reserved is the memory, in MiB, the VM is left when its pool is short:
+// all of it outside a pool.
+func (s VMSpec) Reserved() int64 {
+	if s.MemoryPool == nil || s.ReservedMiB <= 0 || s.ReservedMiB > s.MemoryMiB {
+		return s.MemoryMiB
+	}
+	return s.ReservedMiB
 }
 
 // TailscaleSpec is how a container's guest joins a tailnet. The auth key
@@ -1227,6 +1307,7 @@ func (s VMSpec) Runs(vm VM) bool {
 }
 
 func (s VMSpec) hash() string {
+	s.MemoryPool, s.ReservedMiB = nil, 0
 	b, err := json.Marshal(s.noExport())
 	if err != nil {
 		panic(fmt.Sprintf("encoding a VM spec: %v", err)) // every field encodes
@@ -1280,6 +1361,13 @@ type VM struct {
 	// Firmware and FileShareServer say what it runs, as its spec's do:
 	// neither is a container's.
 	Firmware, FileShareServer bool
+	// OOMKilled says an exited VM was killed whole by the host's OOM
+	// killer, its pool being out of memory, rather than ending by itself.
+	OOMKilled bool
+	// LastOOMKill is when the host's OOM killer last killed the VM whole,
+	// whatever its restart policy did then; zero for never since it was
+	// last started by the driver.
+	LastOOMKill time.Time
 }
 
 // VMState is where a VM is.

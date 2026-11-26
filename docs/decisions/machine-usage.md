@@ -15,7 +15,8 @@ each VM's unit, and, for what a guest uses of its memory, the guest itself.
 
 - **The node agent samples, and keeps it in memory alone.** Every 10
   seconds it reads each running machine's unit's cgroup
-  (`hangar.slice/hangar-vm-<uid>.service`): `cpu.stat`'s `usage_usec` and
+  (`hangar.slice/hangar-vm-<uid>.service`, or in its memory pool's slice,
+  `hangar.slice/hangar-pool_<pool>.slice/hangar-vm-<uid>.service`): `cpu.stat`'s `usage_usec` and
   `memory.current`. Per machine it keeps one point a minute, at most 60,
   and the latest sample with a CPU value, which it answers only while it is
   at most three samples old. Nothing is stored, written to a status, or
@@ -41,6 +42,12 @@ each VM's unit, and, for what a guest uses of its memory, the guest itself.
   has no agent in its guest: it includes the guest's page cache and the
   VMM's own overhead, and seldom shrinks. That is accepted, and the answer
   says which of the two it is.
+- **The answer says how far the machine is squeezed**: what its balloon
+  holds now, `balloon_bytes`, read from Cloud Hypervisor as it is asked,
+  not sampled, as a machine's memory pool changes it every few seconds
+  (`memory-pool.md`). Its guest has its memory less that. It is zero for a
+  machine never squeezed, and unset when the node cannot tell, as for a VM
+  whose VMM serves no API.
 - **The apiserver reads it from the node, under the object's get.**
   `MachineCapabilityService.Usage` resolves kind and name to the machine
   as `Logs` does and asks its node over the tunnel (`node-tunnel.md`). It

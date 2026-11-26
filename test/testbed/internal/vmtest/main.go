@@ -54,6 +54,11 @@ type Inputs struct {
 	// HANGAR_TESTBED_CHPROBE; a package that uses it checks that it is
 	// there.
 	CHProbe string
+	// MemHog holds the memory it is told to in a guest
+	// (test/testbed/vms/memhog), built by make e2e-host, or
+	// HANGAR_TESTBED_MEMHOG; a package that uses it checks that it is
+	// there.
+	MemHog string
 	// VsockProbe tries to reach the guest agent from inside a guest
 	// (test/testbed/guest/vsockprobe), built by make e2e-host, or
 	// HANGAR_TESTBED_VSOCKPROBE; a package that uses it checks that it is
@@ -267,6 +272,7 @@ func loadInputs() (Inputs, error) {
 		CLI:                  pick("HANGAR_TESTBED_CLI", "bin/hangar"),
 		Edge:                 pick("HANGAR_TESTBED_EDGE", "bin/hangar-edge"),
 		CHProbe:              pick("HANGAR_TESTBED_CHPROBE", "bin/ch-probe"),
+		MemHog:               pick("HANGAR_TESTBED_MEMHOG", "bin/mem-hog"),
 		VsockProbe:           pick("HANGAR_TESTBED_VSOCKPROBE", "bin/vsock-probe"),
 		ServerProbeInitramfs: pick("HANGAR_TESTBED_SERVER_PROBE_INITRAMFS", "bin/guest-testbed/initramfs.cpio"),
 		ConverterInitramfs:   pick("HANGAR_TESTBED_CONVERTER_INITRAMFS", "bin/guest/converter.cpio"),

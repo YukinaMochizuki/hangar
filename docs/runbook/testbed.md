@@ -57,7 +57,7 @@ It rebuilds the initramfs, and the testbed's own
 `HANGAR_TESTBED_SERVER_PROBE_INITRAMFS` names another), makes the root disk image on first use, builds
 `bin/hangar-node` (the VMs' launcher, `HANGAR_TESTBED_NODE` names another),
 `bin/hangar-apiserver` and `bin/hangar` (`HANGAR_TESTBED_APISERVER`,
-`HANGAR_TESTBED_CLI`), `bin/ch-probe` (`HANGAR_TESTBED_CHPROBE`), the swtpm bundle (`make host-swtpm`, unpacked as `bin/host/swtpm`, `HANGAR_TESTBED_SWTPM`) and
+`HANGAR_TESTBED_CLI`), `bin/ch-probe` (`HANGAR_TESTBED_CHPROBE`), `bin/mem-hog` (`HANGAR_TESTBED_MEMHOG`, which the memory pools' tests, `test/testbed/vms/pool_test.go`, put in a guest's image to hold memory and time its vCPUs), the swtpm bundle (`make host-swtpm`, unpacked as `bin/host/swtpm`, `HANGAR_TESTBED_SWTPM`) and
 `bin/vsock-probe` (`HANGAR_TESTBED_VSOCKPROBE`, which the guest tests write
 into a guest's root disk with `debugfs`), all
 static (`CGO_ENABLED=0`): a VM's unit has an empty root with no dynamic

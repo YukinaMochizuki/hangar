@@ -84,6 +84,10 @@ func (h machineCapabilities) Usage(ctx context.Context, req *connect.Request[com
 	for _, p := range used.Msg.GetPoints() {
 		res.Points = append(res.Points, usagePoint(p))
 	}
+	if used.Msg.BalloonBytes != nil {
+		b := int64(min(used.Msg.GetBalloonBytes(), memory))
+		res.BalloonBytes = &b
+	}
 	return connect.NewResponse(res), nil
 }
 

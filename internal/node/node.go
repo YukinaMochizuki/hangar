@@ -37,6 +37,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/metadata"
+	"github.com/YukinaMochizuki/hangar/internal/node/squeeze"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
@@ -89,6 +90,9 @@ type Config struct {
 	// UsagePoll is how often each running machine's usage is sampled.
 	// Zero means DefaultUsagePoll.
 	UsagePoll time.Duration
+	// SqueezePoll is how often each memory pool on the node is checked.
+	// Zero means DefaultSqueezePoll.
+	SqueezePoll time.Duration
 	// RetryMaxBackoff caps the delay before the agent's controllers retry a
 	// key that failed. Zero means the controllers' own cap, a minute.
 	RetryMaxBackoff time.Duration
@@ -237,9 +241,15 @@ type Agent struct {
 	// rootGrowths and volumeGrowths whether each one's root and volumes
 	// grew while it ran in its current boot (RootGrowth, VolumeGrowth), by
 	// machine uid. Guarded by host.
-	toldDisks     map[grownKey]toldDisk
-	growings      map[string]growing
-	growWatches   map[string]*growWatch
+	toldDisks   map[grownKey]toldDisk
+	growings    map[string]growing
+	growWatches map[string]*growWatch
+	// memoryShares are what the specs of the machines on the node wanted
+	// running say of their memory, as their last reconciles read them,
+	// for the squeeze (memorypool.go).
+	memoryShares map[string]memoryShare
+	// squeezer keeps what the squeeze keeps of the pools' guests.
+	squeezer      *squeeze.Squeezer
 	rootGrowths   map[string]diskGrowth
 	volumeGrowths map[string]diskGrowth
 	// tailnets are the running containers that join a tailnet, by machine
@@ -339,6 +349,9 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.UsagePoll == 0 {
 		cfg.UsagePoll = DefaultUsagePoll
 	}
+	if cfg.SqueezePoll == 0 {
+		cfg.SqueezePoll = DefaultSqueezePoll
+	}
 	if cfg.PullTimeout == 0 {
 		cfg.PullTimeout = 30 * time.Minute
 	}
@@ -416,6 +429,8 @@ func New(cfg Config) (*Agent, error) {
 		toldDisks:        map[grownKey]toldDisk{},
 		growings:         map[string]growing{},
 		growWatches:      map[string]*growWatch{},
+		memoryShares:     map[string]memoryShare{},
+		squeezer:         squeeze.NewSqueezer(),
 		rootGrowths:      map[string]diskGrowth{},
 		volumeGrowths:    map[string]diskGrowth{},
 		shareWaiters:     map[controller.Key]bool{},
@@ -543,6 +558,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		wg.Go(func() { a.rootLoop(ctx) })
 		wg.Go(func() { a.tailnetLoop(ctx) })
 		wg.Go(func() { a.usageLoop(ctx) })
+		wg.Go(func() { a.squeezeLoop(ctx) })
 		wg.Go(func() { _ = a.sharesCtl.Run(ctx) })
 		wg.Go(func() { _ = a.forwardsCtl.Run(ctx) })
 		wg.Go(func() { _ = a.endpointsCtl.Run(ctx) })

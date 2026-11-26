@@ -218,7 +218,12 @@ type UsageResponse struct {
 	// The last sample with a CPU value; unset before the node has one, and
 	// once it is more than three samples old, as when the node no longer
 	// reaches the machine.
-	Latest        *MachineUsagePoint `protobuf:"bytes,5,opt,name=latest,proto3" json:"latest,omitempty"`
+	Latest *MachineUsagePoint `protobuf:"bytes,5,opt,name=latest,proto3" json:"latest,omitempty"`
+	// How much of its memory the machine's memory pool has taken back from
+	// its guest now, in bytes, by its balloon: its guest has
+	// memory_limit_bytes less this. Zero when nothing is taken; unset when
+	// its node could not tell. See docs/decisions/memory-pool.md.
+	BalloonBytes  *int64 `protobuf:"varint,6,opt,name=balloon_bytes,json=balloonBytes,proto3,oneof" json:"balloon_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -286,6 +291,13 @@ func (x *UsageResponse) GetLatest() *MachineUsagePoint {
 		return x.Latest
 	}
 	return nil
+}
+
+func (x *UsageResponse) GetBalloonBytes() int64 {
+	if x != nil && x.BalloonBytes != nil {
+		return *x.BalloonBytes
+	}
+	return 0
 }
 
 // MachineUsagePoint is a machine's usage at a time, or over the minute from
@@ -1776,14 +1788,16 @@ const file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc = "" +
 	"\fUsageRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\"\xa8\x02\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\xe4\x02\n" +
 	"\rUsageResponse\x12\x14\n" +
 	"\x05vcpus\x18\x01 \x01(\x05R\x05vcpus\x12,\n" +
 	"\x12memory_limit_bytes\x18\x02 \x01(\x03R\x10memoryLimitBytes\x12K\n" +
 	"\vmemory_kind\x18\x03 \x01(\x0e2*.hangar.compute.v1alpha1.MachineMemoryKindR\n" +
 	"memoryKind\x12B\n" +
 	"\x06points\x18\x04 \x03(\v2*.hangar.compute.v1alpha1.MachineUsagePointR\x06points\x12B\n" +
-	"\x06latest\x18\x05 \x01(\v2*.hangar.compute.v1alpha1.MachineUsagePointR\x06latest\"\x8e\x01\n" +
+	"\x06latest\x18\x05 \x01(\v2*.hangar.compute.v1alpha1.MachineUsagePointR\x06latest\x12(\n" +
+	"\rballoon_bytes\x18\x06 \x01(\x03H\x00R\fballoonBytes\x88\x01\x01B\x10\n" +
+	"\x0e_balloon_bytes\"\x8e\x01\n" +
 	"\x11MachineUsagePoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x10\n" +
 	"\x03cpu\x18\x02 \x01(\x01R\x03cpu\x12&\n" +
@@ -1978,6 +1992,7 @@ func file_hangar_compute_v1alpha1_machine_capability_proto_init() {
 		return
 	}
 	file_hangar_compute_v1alpha1_container_proto_init()
+	file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[1].OneofWrappers = []any{}
 	file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[2].OneofWrappers = []any{}
 	file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[3].OneofWrappers = []any{}
 	file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[5].OneofWrappers = []any{

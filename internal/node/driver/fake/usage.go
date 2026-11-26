@@ -27,6 +27,7 @@ func (d hypervisor) Usage(_ context.Context, machineUID string) (driver.VMUsage,
 	if !ok {
 		held = uint64(v.spec.MemoryMiB) << 20 / 2
 	}
+	held = min(held, uint64(v.spec.MemoryMiB)<<20-v.balloon)
 	return driver.VMUsage{CPU: v.cpuNow(), Memory: held}, nil
 }
 

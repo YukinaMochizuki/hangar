@@ -441,7 +441,11 @@ type MachineUsageResponse struct {
 	Points []*UsagePoint `protobuf:"bytes,2,rep,name=points,proto3" json:"points,omitempty"`
 	// The last sample with a CPU value; unset before there is one, and once
 	// it is more than three polls old.
-	Latest        *UsagePoint `protobuf:"bytes,3,opt,name=latest,proto3" json:"latest,omitempty"`
+	Latest *UsagePoint `protobuf:"bytes,3,opt,name=latest,proto3" json:"latest,omitempty"`
+	// What the machine's balloon holds now, in bytes: how much of its memory
+	// its memory pool has taken back from its guest. Unset when the node
+	// could not tell.
+	BalloonBytes  *uint64 `protobuf:"varint,4,opt,name=balloon_bytes,json=balloonBytes,proto3,oneof" json:"balloon_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -495,6 +499,13 @@ func (x *MachineUsageResponse) GetLatest() *UsagePoint {
 		return x.Latest
 	}
 	return nil
+}
+
+func (x *MachineUsageResponse) GetBalloonBytes() uint64 {
+	if x != nil && x.BalloonBytes != nil {
+		return *x.BalloonBytes
+	}
+	return 0
 }
 
 // UsagePoint is a machine's usage at a time, or over the minute from it.
@@ -2281,11 +2292,13 @@ const file_hangar_node_v1_node_proto_rawDesc = "" +
 	"modifyTime\"6\n" +
 	"\x13MachineUsageRequest\x12\x1f\n" +
 	"\vmachine_uid\x18\x01 \x01(\tR\n" +
-	"machineUid\"\xc1\x01\n" +
+	"machineUid\"\xfd\x01\n" +
 	"\x14MachineUsageResponse\x12A\n" +
 	"\rmemory_source\x18\x01 \x01(\x0e2\x1c.hangar.node.v1.MemorySourceR\fmemorySource\x122\n" +
 	"\x06points\x18\x02 \x03(\v2\x1a.hangar.node.v1.UsagePointR\x06points\x122\n" +
-	"\x06latest\x18\x03 \x01(\v2\x1a.hangar.node.v1.UsagePointR\x06latest\"\x87\x01\n" +
+	"\x06latest\x18\x03 \x01(\v2\x1a.hangar.node.v1.UsagePointR\x06latest\x12(\n" +
+	"\rballoon_bytes\x18\x04 \x01(\x04H\x00R\fballoonBytes\x88\x01\x01B\x10\n" +
+	"\x0e_balloon_bytes\"\x87\x01\n" +
 	"\n" +
 	"UsagePoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x10\n" +
@@ -2528,6 +2541,7 @@ func file_hangar_node_v1_node_proto_init() {
 	if File_hangar_node_v1_node_proto != nil {
 		return
 	}
+	file_hangar_node_v1_node_proto_msgTypes[4].OneofWrappers = []any{}
 	file_hangar_node_v1_node_proto_msgTypes[5].OneofWrappers = []any{}
 	file_hangar_node_v1_node_proto_msgTypes[6].OneofWrappers = []any{}
 	file_hangar_node_v1_node_proto_msgTypes[8].OneofWrappers = []any{

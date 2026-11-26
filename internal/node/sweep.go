@@ -50,6 +50,11 @@ func (a *Agent) sweep(ctx context.Context) error {
 			delete(a.stops.ended, uid)
 		}
 	}
+	for uid := range a.memoryShares {
+		if !mine[uid] {
+			a.trackMemory(uid, nil)
+		}
+	}
 	// A machine being stopped is passed by: its VM still uses its disk and
 	// interfaces, and its stop must be the only one.
 	gone := func(uid string) bool { return !mine[uid] && !a.stops.running[uid] }
@@ -61,6 +66,7 @@ func (a *Agent) sweep(ctx context.Context) error {
 		return err == nil
 	}
 	if vms, err := d.Hypervisor.VMs(ctx); keep(err) {
+		a.deflateLeft(ctx, vms)
 		listed := map[string]bool{}
 		for _, vm := range vms {
 			listed[vm.MachineUID] = true
@@ -75,6 +81,8 @@ func (a *Agent) sweep(ctx context.Context) error {
 			}
 		}
 	}
+	// A pool's slice goes with the last VM in it, whoever stopped it.
+	keep(d.Hypervisor.SweepMemoryPools(ctx))
 	// A failed stop leaves the VM listed, and DeleteLogs refuses it.
 	if logs, err := d.Hypervisor.Logs(ctx); keep(err) {
 		for _, uid := range logs {
