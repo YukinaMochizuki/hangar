@@ -583,9 +583,14 @@ only its guarantee for sure.
   size. Not MemAvailable alone, nor `memory.current`: a guest full of
   clean page cache has plenty available, and its unit holds all its size,
   whether it reads on or sits idle; its reclaims tell the two apart. While
-  some guest needs more, the others are held at their floors and what the
-  floors leave goes to those in need, by how far each could grow; while
-  none does, each keeps its size, nobody gives any back, and what the
+  some guest needs more, what the floors leave goes first to those in
+  need, by how far each could grow, up to all their memory; the others
+  give up only what that takes, kept at their sizes as far as what is
+  left allows and at their floors at the least, and anything left past
+  that is handed out as below. Holding the others at their floors whatever
+  was left made two guests, each in need once cut, trade the pool's room
+  back and forth every poll (found in `test/e2e`, 2026-11-26). While none
+  does, each keeps its size, nobody gives any back, and what the
   Dedicated memory and their sizes leave is handed out, by how far each
   could grow, so a guest has room at once. When the floors themselves are
   past what the Dedicated memory leaves, what they are past is taken from

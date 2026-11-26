@@ -222,3 +222,23 @@ func TestADedicatedBalloonComesBackOnlyIntoRoom(t *testing.T) {
 	r = decide(5120, []state{sharedVM("a", 1000, 1000, 950, 50), sharedVM("c", 2000, 1900, 100, 1900), d}, StepMiB)
 	check(t, r, Safe, map[string]int64{"a": 3096 - 72, "c": 2096 + StepMiB, "d": 0})
 }
+
+// TestAGuestInNeedTakesOnlyWhatItCanUse: the others give up only what
+// those in need can take; with room for all, nobody is cut. Before, the
+// others were held at their floors whatever was left, and two guests, each
+// in need once cut, traded the pool's room back and forth every poll.
+func TestAGuestInNeedTakesOnlyWhatItCanUse(t *testing.T) {
+	t.Parallel()
+	a := sharedVM("a", 2048, 2000, 1900, 148)
+	c := sharedVM("c", 4096, 2000, 100, 3996)
+	r := decide(8192, []state{a, c}, PressureStepMiB)
+	check(t, r, Deflate, map[string]int64{"a": 0})
+	if want := map[string]int64{"a": 4096, "c": 4096}; !maps.Equal(r.Allowances, want) {
+		t.Errorf("allowances %v, want %v", r.Allowances, want)
+	}
+	// Short of room for both, the others give what the needy can use, no more.
+	r = decide(6144, []state{a, c}, StepMiB)
+	if want := map[string]int64{"a": 4096, "c": 2048}; !maps.Equal(r.Allowances, want) {
+		t.Errorf("short: allowances %v, want %v", r.Allowances, want)
+	}
+}

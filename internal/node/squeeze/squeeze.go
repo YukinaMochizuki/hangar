@@ -400,35 +400,61 @@ func allowances(sizeMiB int64, members []state) map[string]int64 {
 		}
 		return out
 	}
-	base := floors
-	if !needy {
-		// Nobody needs more: nobody gives any back.
-		base = make([]int64, len(shared))
-		sum = 0
+	vals := slices.Clone(floors)
+	spare := budget - sum
+	// kept is what a Shared guest keeps of its size when nobody needs more.
+	kept := make([]int64, len(shared))
+	for i, m := range shared {
+		kept[i] = min(max(m.size(), floors[i]), m.MemoryMiB)
+		if m.booting() {
+			kept[i] = floors[i]
+		}
+	}
+	memory := make([]int64, len(shared))
+	for i, m := range shared {
+		memory[i] = m.MemoryMiB
+	}
+	if needy {
+		// Those in need grow first; the others give up only what they take.
+		needs := slices.Clone(floors)
 		for i, m := range shared {
-			base[i] = min(max(m.size(), floors[i]), m.MemoryMiB)
-			if m.booting() {
-				base[i] = floors[i]
-			}
-			sum += base[i]
-		}
-		if sum > budget {
-			base, sum = floors, 0
-			for _, f := range floors {
-				sum += f
+			if m.needs() {
+				needs[i] = m.MemoryMiB
 			}
 		}
-	}
-	grow := make([]int64, len(shared))
-	for i, m := range shared {
-		if !needy || m.needs() {
-			grow[i] = m.MemoryMiB - base[i]
+		spare = handOut(vals, spare, needs)
+		spare = handOut(vals, spare, kept)
+	} else {
+		// Nobody needs more: nobody gives any back, if all fit.
+		var keep int64
+		for _, k := range kept {
+			keep += k
+		}
+		if keep <= budget {
+			vals, spare = kept, budget-keep
 		}
 	}
+	handOut(vals, spare, memory)
 	for i, m := range shared {
-		out[m.UID] = min(base[i]+portion(budget-sum, grow, i, false), m.MemoryMiB)
+		out[m.UID] = vals[i]
 	}
 	return out
+}
+
+// handOut raises vals toward caps by spare, by how far each is below its
+// cap, and returns what is left of spare.
+func handOut(vals []int64, spare int64, caps []int64) int64 {
+	room := make([]int64, len(vals))
+	for i := range vals {
+		room[i] = max(caps[i]-vals[i], 0)
+	}
+	given := int64(0)
+	for i := range vals {
+		more := min(portion(spare, room, i, false), room[i])
+		vals[i] += more
+		given += more
+	}
+	return spare - given
 }
 
 // portion is weights[i]'s part of total, rounded down, or up if up.
