@@ -499,11 +499,15 @@ func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container
 func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta *metav1.ObjectMeta, name string, want *computev1alpha1.MachineSpec, m *computev1alpha1.Machine) (*computev1alpha1.Machine, error) {
 	key := resource.Key{Project: meta.GetProject(), Name: name}
 	owner := ipv6Owner{project: meta.GetProject(), kind: r.Kind, name: meta.GetName(), machine: name}
-	pool, err := s.memoryPoolOf(ctx, meta.GetProject())
-	if err != nil {
-		return m, err
+	// A FileShare's server is in no pool: it counts toward no quota, so
+	// its memory would come out of its tenant's guarantees unseen.
+	if r.Kind != registry.FileShare.Kind {
+		pool, err := s.memoryPoolOf(ctx, meta.GetProject())
+		if err != nil {
+			return m, err
+		}
+		want.MemoryPool = pool
 	}
-	want.MemoryPool = pool
 	if m == nil {
 		// Addresses are chosen and written as one decision.
 		s.ipam.Lock()

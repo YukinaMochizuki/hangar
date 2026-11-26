@@ -88,9 +88,10 @@ func canonicalGuaranteed(guaranteed, memory uint64) string {
 // pool it holds its memory in, if any.
 type held struct {
 	memory, disk uint64
-	// pool is empty for a machine in no pool, which holds its memory alone.
-	pool     string
-	poolSize uint64
+	// pool is empty for a machine in no pool, which holds its memory alone;
+	// guaranteed is what of its memory a pool's machine is guaranteed.
+	pool                 string
+	poolSize, guaranteed uint64
 }
 
 // machineHeld is heldBy of spec's resources, with its memory pool.
@@ -104,6 +105,13 @@ func machineHeld(spec *computev1alpha1.MachineSpec) (held, error) {
 			return held{}, fmt.Errorf("memory_pool.size: %w", err)
 		}
 		h.pool = p.GetName()
+		h.guaranteed = h.memory
+		if g := spec.GetResources().GetMemoryGuaranteed(); g != "" {
+			if h.guaranteed, err = quantity.Bytes(g); err != nil {
+				return held{}, fmt.Errorf("memory_guaranteed: %w", err)
+			}
+			h.guaranteed = min(h.guaranteed, h.memory)
+		}
 	}
 	return h, nil
 }
@@ -118,14 +126,17 @@ type nodeHeld struct {
 	pools map[string]poolHeld
 }
 
-// poolHeld is the memory of one pool's machines on a node, and the pool's
-// size: the largest any of them carries, as they may disagree while their
-// controllers bring each up to date.
+// poolHeld is the memory of one pool's machines on a node, what they are
+// guaranteed of it, and the pool's size: the largest any of them carries,
+// as they may disagree while their controllers bring each up to date.
 type poolHeld struct {
-	memory, size uint64
+	memory, guaranteed, size uint64
 }
 
-func (p poolHeld) holds() uint64 { return min(p.memory, p.size) }
+// holds is what the pool's machines hold together: the least of their
+// memory and the pool's size, but never less than their guarantees, which a
+// plan lowered past them while they run leaves above its size.
+func (p poolHeld) holds() uint64 { return min(p.memory, max(p.size, p.guaranteed)) }
 
 // memory is the memory the node holds.
 func (u nodeHeld) memory() uint64 {
@@ -150,7 +161,7 @@ func (u *nodeHeld) take(h held) {
 		u.pools = map[string]poolHeld{}
 	}
 	p := u.pools[h.pool]
-	p.memory, p.size = add(p.memory, h.memory), max(p.size, h.poolSize)
+	p.memory, p.guaranteed, p.size = add(p.memory, h.memory), add(p.guaranteed, h.guaranteed), max(p.size, h.poolSize)
 	u.pools[h.pool] = p
 }
 
@@ -166,7 +177,7 @@ func (u nodeHeld) memoryFor(h held) uint64 {
 		return 0
 	}
 	p := u.pools[h.pool]
-	after := poolHeld{memory: add(p.memory, h.memory), size: max(p.size, h.poolSize)}
+	after := poolHeld{memory: add(p.memory, h.memory), guaranteed: add(p.guaranteed, h.guaranteed), size: max(p.size, h.poolSize)}
 	return after.holds() - p.holds()
 }
 

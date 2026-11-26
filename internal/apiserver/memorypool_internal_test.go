@@ -95,6 +95,15 @@ func TestANodeHoldsAPoolOnce(t *testing.T) {
 	if mixed.memory() != gi(12) {
 		t.Errorf("a pool of sizes 12, 8 and 8Gi holds %d, want the largest, 12Gi", mixed.memory())
 	}
+	// Guarantees past the pool's size, as when a plan is lowered under its
+	// running machines: held whole.
+	var over nodeHeld
+	for range 3 {
+		over.take(held{memory: gi(4), guaranteed: gi(3), pool: "acme", poolSize: gi(8)})
+	}
+	if over.memory() != gi(9) {
+		t.Errorf("a pool of 8Gi guaranteeing 3+3+3Gi holds %d, want the guarantees, 9Gi", over.memory())
+	}
 	// A stopped machine of a pool holds nothing.
 	if need := u.memoryFor(held{pool: "acme", poolSize: gi(8)}); need != 0 {
 		t.Errorf("a stopped pooled machine needs %d", need)
@@ -282,11 +291,16 @@ func TestPooledMachinesCarryTheirPool(t *testing.T) {
 	if _, err := s.backend(registry.FileShare).Apply(alice, fileShare("data", "2Gi")); err != nil {
 		t.Fatal(err)
 	}
-	machines := []string{"ct-api", vmMachineName("vm"), shareServerName("data")}
+	machines := []string{"ct-api", vmMachineName("vm")}
 	waitPools := func(what string, want *computev1alpha1.MemoryPool) {
 		t.Helper()
 		for _, name := range machines {
 			waitMachine(t, s, system, name, what, func(m *computev1alpha1.Machine) bool { return proto.Equal(m.GetSpec().GetMemoryPool(), want) })
+		}
+		// A FileShare's server counts toward no quota, so it is in no pool.
+		waitSettled(t, s)
+		if p := getMachine(t, s, system, resource.Key{Project: "web", Name: shareServerName("data")}).GetSpec().GetMemoryPool(); p != nil {
+			t.Errorf("%s: the share's server is in pool %v", what, p)
 		}
 	}
 	m := waitMachine(t, s, system, "ct-api", "in acme's pool", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetMemoryPool() != nil })

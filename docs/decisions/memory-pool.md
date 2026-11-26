@@ -49,8 +49,10 @@ GiB nobody measured.
   anywhere both are what memory counted before.
 - **The Machine carries its pool.** `Machine.spec.memory_pool` names the
   tenant and gives its size, the Plan's `limits.memory`, set by the
-  container, VM and FileShare controllers for the machines of a pooled
-  tenant and absent otherwise; a Machine carries `memory_guaranteed` only
+  container and VM controllers for the machines of a pooled tenant and
+  absent otherwise, and never on a FileShare's server, which counts toward
+  no quota, so its memory would come out of its tenant's guarantees
+  unseen: the scheduler holds a server's memory on its own; a Machine carries `memory_guaranteed` only
   when below its memory. They follow the Plan, the tenant's `spec.plan` and
   its `BillingAccount` changing. Changing the pool restarts nothing: a
   machine is restarted when what its node runs it with changes, and the
@@ -63,7 +65,10 @@ GiB nobody measured.
   pool free or billed, so that stays an extension and not a migration.
 - **The scheduler holds a pool once per node.** On a node, the running
   machines of one pool hold the least of their memory together and the
-  pool's size; a machine in no pool holds its memory, as before. Placing,
+  pool's size, but never less than their guarantees together, which a plan
+  lowered while they run can leave past its size (the quota is not judged
+  again for machines running); a machine in no pool holds its memory, as
+  before. Placing,
   starting or growing a pooled machine needs only what it raises its
   pool's hold on that node by, and a machine changing pools, as when its
   tenant's plan changes, is held to the node's room as a resize is: one
@@ -103,8 +108,8 @@ GiB nobody measured.
   over its memory limit: as over a lowered limit, it can still shrink and
   change anything else (`tenancy-and-iam.md`). Its machines leave the
   pool as their node's room allows.
-- A FileShare's server is in its tenant's pool like any of its machines,
-  though it counts toward no quota.
+- A FileShare's server is in no pool: its node holds its memory whole,
+  as before pools.
 - Until the node squeezes, a pooled machine's memory is held by the
   scheduler as above but nothing on its node keeps the pool's machines
   within its size.
