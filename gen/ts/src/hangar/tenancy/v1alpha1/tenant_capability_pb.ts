@@ -4,13 +4,17 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { MachinePhase } from "../../compute/v1alpha1/machine_pb";
+import { file_hangar_compute_v1alpha1_machine } from "../../compute/v1alpha1/machine_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file hangar/tenancy/v1alpha1/tenant_capability.proto.
  */
 export const file_hangar_tenancy_v1alpha1_tenant_capability: GenFile = /*@__PURE__*/
-  fileDesc("Ci9oYW5nYXIvdGVuYW5jeS92MWFscGhhMS90ZW5hbnRfY2FwYWJpbGl0eS5wcm90bxIXaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEiJQoTQ1BVUG9vbFVzYWdlUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkicgoUQ1BVUG9vbFVzYWdlUmVzcG9uc2USEwoGc2xvd2VkGAEgASgBSACIAQESFgoJbWlsbGlfY3B1GAIgASgDSAGIAQESFAoMbm9kZXNfdW5yZWFkGAMgASgFQgkKB19zbG93ZWRCDAoKX21pbGxpX2NwdTKGAQoXVGVuYW50Q2FwYWJpbGl0eVNlcnZpY2USawoMQ1BVUG9vbFVzYWdlEiwuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuQ1BVUG9vbFVzYWdlUmVxdWVzdBotLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkNQVVBvb2xVc2FnZVJlc3BvbnNlQoQCChtjb20uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTFCFVRlbmFudENhcGFiaWxpdHlQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci90ZW5hbmN5L3YxYWxwaGExO3RlbmFuY3l2MWFscGhhMaICA0hUWKoCF0hhbmdhci5UZW5hbmN5LlYxYWxwaGExygIXSGFuZ2FyXFRlbmFuY3lcVjFhbHBoYTHiAiNIYW5nYXJcVGVuYW5jeVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6VGVuYW5jeTo6VjFhbHBoYTFiBnByb3RvMw");
+  fileDesc("Ci9oYW5nYXIvdGVuYW5jeS92MWFscGhhMS90ZW5hbnRfY2FwYWJpbGl0eS5wcm90bxIXaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEiJQoTQ1BVUG9vbFVzYWdlUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkicgoUQ1BVUG9vbFVzYWdlUmVzcG9uc2USEwoGc2xvd2VkGAEgASgBSACIAQESFgoJbWlsbGlfY3B1GAIgASgDSAGIAQESFAoMbm9kZXNfdW5yZWFkGAMgASgFQgkKB19zbG93ZWRCDAoKX21pbGxpX2NwdSIoChZNZW1vcnlQb29sVXNhZ2VSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCSL/AQoXTWVtb3J5UG9vbFVzYWdlUmVzcG9uc2USFwoKc2l6ZV9ieXRlcxgBIAEoA0gAiAEBEi8KC3NhbXBsZV90aW1lGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxub2Rlc191bnJlYWQYAyABKAUSPAoIbWFjaGluZXMYBCADKAsyKi5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5NZW1vcnlQb29sTWFjaGluZRI3CgVvdGhlchgFIAEoCzIoLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLk1lbW9yeVBvb2xUb3RhbEINCgtfc2l6ZV9ieXRlcyLKAgoRTWVtb3J5UG9vbE1hY2hpbmUSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAIgASgJEgwKBG5hbWUYAyABKAkSNAoFcGhhc2UYBCABKA4yJS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lUGhhc2USFAoMbWVtb3J5X2J5dGVzGAUgASgDEhYKDnJlc2VydmVkX2J5dGVzGAYgASgDEhoKDWN1cnJlbnRfYnl0ZXMYByABKANIAIgBARI2ChJsYXN0X29vbV9raWxsX3RpbWUYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEj4KGmJhbGxvb25fdW5yZXNwb25zaXZlX3NpbmNlGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIQCg5fY3VycmVudF9ieXRlcyJWCg9NZW1vcnlQb29sVG90YWwSFAoMbWVtb3J5X2J5dGVzGAEgASgDEhYKDnJlc2VydmVkX2J5dGVzGAIgASgDEhUKDWN1cnJlbnRfYnl0ZXMYAyABKAMy/AEKF1RlbmFudENhcGFiaWxpdHlTZXJ2aWNlEmsKDENQVVBvb2xVc2FnZRIsLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkNQVVBvb2xVc2FnZVJlcXVlc3QaLS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5DUFVQb29sVXNhZ2VSZXNwb25zZRJ0Cg9NZW1vcnlQb29sVXNhZ2USLy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5NZW1vcnlQb29sVXNhZ2VSZXF1ZXN0GjAuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTWVtb3J5UG9vbFVzYWdlUmVzcG9uc2VChAIKG2NvbS5oYW5nYXIudGVuYW5jeS52MWFscGhhMUIVVGVuYW50Q2FwYWJpbGl0eVByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL3RlbmFuY3kvdjFhbHBoYTE7dGVuYW5jeXYxYWxwaGExogIDSFRYqgIXSGFuZ2FyLlRlbmFuY3kuVjFhbHBoYTHKAhdIYW5nYXJcVGVuYW5jeVxWMWFscGhhMeICI0hhbmdhclxUZW5hbmN5XFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpUZW5hbmN5OjpWMWFscGhhMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_machine]);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.CPUPoolUsageRequest
@@ -68,6 +72,183 @@ export const CPUPoolUsageResponseSchema: GenMessage<CPUPoolUsageResponse> = /*@_
   messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 1);
 
 /**
+ * @generated from message hangar.tenancy.v1alpha1.MemoryPoolUsageRequest
+ */
+export type MemoryPoolUsageRequest = Message<"hangar.tenancy.v1alpha1.MemoryPoolUsageRequest"> & {
+  /**
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+};
+
+/**
+ * Describes the message hangar.tenancy.v1alpha1.MemoryPoolUsageRequest.
+ * Use `create(MemoryPoolUsageRequestSchema)` to create a new message.
+ */
+export const MemoryPoolUsageRequestSchema: GenMessage<MemoryPoolUsageRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 2);
+
+/**
+ * @generated from message hangar.tenancy.v1alpha1.MemoryPoolUsageResponse
+ */
+export type MemoryPoolUsageResponse = Message<"hangar.tenancy.v1alpha1.MemoryPoolUsageResponse"> & {
+  /**
+   * The pool's size in bytes, the plan's memory; unset when the tenant
+   * has no memory pool.
+   *
+   * @generated from field: optional int64 size_bytes = 1;
+   */
+  sizeBytes?: bigint | undefined;
+
+  /**
+   * When the oldest of the nodes read last looked at the pool; unset when
+   * none read has looked at it yet.
+   *
+   * @generated from field: google.protobuf.Timestamp sample_time = 2;
+   */
+  sampleTime?: Timestamp | undefined;
+
+  /**
+   * How many nodes the pool's running machines are on, that could not be
+   * read, as one not connected.
+   *
+   * @generated from field: int32 nodes_unread = 3;
+   */
+  nodesUnread: number;
+
+  /**
+   * The running machines in the pool the caller may read, Dedicated
+   * first, then by current size, largest first, then by project and
+   * name. FileShare servers are in no pool, so never here.
+   *
+   * @generated from field: repeated hangar.tenancy.v1alpha1.MemoryPoolMachine machines = 4;
+   */
+  machines: MemoryPoolMachine[];
+
+  /**
+   * The running machines in the pool the caller may not read, summed;
+   * unset when there are none.
+   *
+   * @generated from field: hangar.tenancy.v1alpha1.MemoryPoolTotal other = 5;
+   */
+  other?: MemoryPoolTotal | undefined;
+};
+
+/**
+ * Describes the message hangar.tenancy.v1alpha1.MemoryPoolUsageResponse.
+ * Use `create(MemoryPoolUsageResponseSchema)` to create a new message.
+ */
+export const MemoryPoolUsageResponseSchema: GenMessage<MemoryPoolUsageResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 3);
+
+/**
+ * MemoryPoolMachine is a running machine in a memory pool.
+ *
+ * @generated from message hangar.tenancy.v1alpha1.MemoryPoolMachine
+ */
+export type MemoryPoolMachine = Message<"hangar.tenancy.v1alpha1.MemoryPoolMachine"> & {
+  /**
+   * @generated from field: string project = 1;
+   */
+  project: string;
+
+  /**
+   * The kind of the object it runs, Container or VirtualMachine, and that
+   * object's name.
+   *
+   * @generated from field: string kind = 2;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string name = 3;
+   */
+  name: string;
+
+  /**
+   * @generated from field: hangar.compute.v1alpha1.MachinePhase phase = 4;
+   */
+  phase: MachinePhase;
+
+  /**
+   * Its memory, the most its guest may have, and the part of it reserved,
+   * all of it for a Dedicated machine, in bytes.
+   *
+   * @generated from field: int64 memory_bytes = 5;
+   */
+  memoryBytes: bigint;
+
+  /**
+   * @generated from field: int64 reserved_bytes = 6;
+   */
+  reservedBytes: bigint;
+
+  /**
+   * What its guest has of its memory now, in bytes: its memory less what
+   * its balloon holds, as its node last read it. Unset when its node
+   * could not tell.
+   *
+   * @generated from field: optional int64 current_bytes = 7;
+   */
+  currentBytes?: bigint | undefined;
+
+  /**
+   * When the host last killed its VM whole for its pool's memory; unset
+   * when it never did.
+   *
+   * @generated from field: google.protobuf.Timestamp last_oom_kill_time = 8;
+   */
+  lastOomKillTime?: Timestamp | undefined;
+
+  /**
+   * Since when its balloon has not followed what its node asks; unset
+   * while it does.
+   *
+   * @generated from field: google.protobuf.Timestamp balloon_unresponsive_since = 9;
+   */
+  balloonUnresponsiveSince?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message hangar.tenancy.v1alpha1.MemoryPoolMachine.
+ * Use `create(MemoryPoolMachineSchema)` to create a new message.
+ */
+export const MemoryPoolMachineSchema: GenMessage<MemoryPoolMachine> = /*@__PURE__*/
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 4);
+
+/**
+ * MemoryPoolTotal sums machines of a memory pool, in bytes.
+ *
+ * @generated from message hangar.tenancy.v1alpha1.MemoryPoolTotal
+ */
+export type MemoryPoolTotal = Message<"hangar.tenancy.v1alpha1.MemoryPoolTotal"> & {
+  /**
+   * @generated from field: int64 memory_bytes = 1;
+   */
+  memoryBytes: bigint;
+
+  /**
+   * @generated from field: int64 reserved_bytes = 2;
+   */
+  reservedBytes: bigint;
+
+  /**
+   * What their guests have now; a machine whose node could not tell
+   * counts at its reservation.
+   *
+   * @generated from field: int64 current_bytes = 3;
+   */
+  currentBytes: bigint;
+};
+
+/**
+ * Describes the message hangar.tenancy.v1alpha1.MemoryPoolTotal.
+ * Use `create(MemoryPoolTotalSchema)` to create a new message.
+ */
+export const MemoryPoolTotalSchema: GenMessage<MemoryPoolTotal> = /*@__PURE__*/
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 5);
+
+/**
  * TenantCapabilityService answers what a tenant's machines do together,
  * read from the nodes they run on when asked, never stored. It is not a
  * resource's service, so it is written by hand rather than generated.
@@ -88,6 +269,24 @@ export const TenantCapabilityService: GenService<{
     methodKind: "unary";
     input: typeof CPUPoolUsageRequestSchema;
     output: typeof CPUPoolUsageResponseSchema;
+  },
+  /**
+   * MemoryPoolUsage says who holds the tenant's memory pool now: each
+   * running machine in it, with what its guest has, from each connected
+   * node they are on. It needs the get of Containers or VirtualMachines
+   * in some project of the tenant, so a member of one project alone may
+   * ask; the machines of a project whose Containers and VirtualMachines
+   * the caller may not get are summed into other, unnamed. Such a caller
+   * learns the pool's size, the plan's memory, and those sums of the rest
+   * of the tenant, nothing more. A tenant with no memory pool answers
+   * nothing set. See docs/decisions/memory-pool.md.
+   *
+   * @generated from rpc hangar.tenancy.v1alpha1.TenantCapabilityService.MemoryPoolUsage
+   */
+  memoryPoolUsage: {
+    methodKind: "unary";
+    input: typeof MemoryPoolUsageRequestSchema;
+    output: typeof MemoryPoolUsageResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 0);

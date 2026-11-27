@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package hangar.tenancy.v1alpha1;
 
+import "google/protobuf/timestamp.proto";
+import "hangar/compute/v1alpha1/machine.proto";
+
 // TenantCapabilityService answers what a tenant's machines do together,
 // read from the nodes they run on when asked, never stored. It is not a
 // resource's service, so it is written by hand rather than generated.
@@ -12,6 +15,16 @@ service TenantCapabilityService {
   // the Tenant does. A tenant with no CPU pool answers nothing set. See
   // docs/decisions/cpu-pool.md.
   rpc CPUPoolUsage(CPUPoolUsageRequest) returns (CPUPoolUsageResponse);
+  // MemoryPoolUsage says who holds the tenant's memory pool now: each
+  // running machine in it, with what its guest has, from each connected
+  // node they are on. It needs the get of Containers or VirtualMachines
+  // in some project of the tenant, so a member of one project alone may
+  // ask; the machines of a project whose Containers and VirtualMachines
+  // the caller may not get are summed into other, unnamed. Such a caller
+  // learns the pool's size, the plan's memory, and those sums of the rest
+  // of the tenant, nothing more. A tenant with no memory pool answers
+  // nothing set. See docs/decisions/memory-pool.md.
+  rpc MemoryPoolUsage(MemoryPoolUsageRequest) returns (MemoryPoolUsageResponse);
 }
 
 message CPUPoolUsageRequest {
@@ -30,4 +43,60 @@ message CPUPoolUsageResponse {
   // How many nodes the pool's running machines are on, that could not be
   // read, as one not connected.
   int32 nodes_unread = 3;
+}
+
+message MemoryPoolUsageRequest {
+  string tenant = 1;
+}
+
+message MemoryPoolUsageResponse {
+  // The pool's size in bytes, the plan's memory; unset when the tenant
+  // has no memory pool.
+  optional int64 size_bytes = 1;
+  // When the oldest of the nodes read last looked at the pool; unset when
+  // none read has looked at it yet.
+  google.protobuf.Timestamp sample_time = 2;
+  // How many nodes the pool's running machines are on, that could not be
+  // read, as one not connected.
+  int32 nodes_unread = 3;
+  // The running machines in the pool the caller may read, Dedicated
+  // first, then by current size, largest first, then by project and
+  // name. FileShare servers are in no pool, so never here.
+  repeated MemoryPoolMachine machines = 4;
+  // The running machines in the pool the caller may not read, summed;
+  // unset when there are none.
+  MemoryPoolTotal other = 5;
+}
+
+// MemoryPoolMachine is a running machine in a memory pool.
+message MemoryPoolMachine {
+  string project = 1;
+  // The kind of the object it runs, Container or VirtualMachine, and that
+  // object's name.
+  string kind = 2;
+  string name = 3;
+  hangar.compute.v1alpha1.MachinePhase phase = 4;
+  // Its memory, the most its guest may have, and the part of it reserved,
+  // all of it for a Dedicated machine, in bytes.
+  int64 memory_bytes = 5;
+  int64 reserved_bytes = 6;
+  // What its guest has of its memory now, in bytes: its memory less what
+  // its balloon holds, as its node last read it. Unset when its node
+  // could not tell.
+  optional int64 current_bytes = 7;
+  // When the host last killed its VM whole for its pool's memory; unset
+  // when it never did.
+  google.protobuf.Timestamp last_oom_kill_time = 8;
+  // Since when its balloon has not followed what its node asks; unset
+  // while it does.
+  google.protobuf.Timestamp balloon_unresponsive_since = 9;
+}
+
+// MemoryPoolTotal sums machines of a memory pool, in bytes.
+message MemoryPoolTotal {
+  int64 memory_bytes = 1;
+  int64 reserved_bytes = 2;
+  // What their guests have now; a machine whose node could not tell
+  // counts at its reservation.
+  int64 current_bytes = 3;
 }

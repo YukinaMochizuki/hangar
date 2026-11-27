@@ -1,7 +1,8 @@
 # A tenant's machines may share its memory as a pool
 
-Status: accepted, 2026-11. Built: the apiserver's part, and the node's
-(`node-agent.md`, "Memory pools").
+Status: accepted, 2026-11. Built: the apiserver's part, the node's
+(`node-agent.md`, "Memory pools"), and the console's, the Overviews'
+pool card among it (`console-design.md`, "Memory pools").
 
 ## Context
 
@@ -104,6 +105,21 @@ GiB nobody measured.
   rather than its memory, so a pool of 200% does not double its tenant's
   share of the CPUs. A machine joins a pool's slice, or leaves it, as it
   starts; its reservation's effects follow while it runs.
+- **Who holds a pool now is read from its nodes, never stored.**
+  `TenantCapabilityService.MemoryPoolUsage` asks each connected node the
+  tenant's running pooled machines are on what its squeeze last read
+  (`node-agent.md`), as `CPUPoolUsage` does for a CPU pool, and answers the
+  pool's size and each machine: its memory, its reservation, what its guest
+  has now (its memory less its balloon, unset when its node cannot tell),
+  its last OOM kill and since when its balloon has not followed. It needs
+  the get of Containers or VirtualMachines in some project of the tenant,
+  not the Tenant's, which no project role grants: the project Overview
+  shows the pool to a member of that project alone. A machine whose object
+  the caller may not get is summed into one `other` total (memory,
+  reservation, now), with no name, kind or count. Such a caller learns the
+  pool's size, which is the plan's memory, and those totals of the rest of
+  the tenant; that was accepted for a project member, since the pool is
+  what its own machines share. `CPUPoolUsage` keeps the Tenant's get.
 
 ## Consequences
 

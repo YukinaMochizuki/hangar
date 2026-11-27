@@ -36,6 +36,9 @@ const (
 	// TenantCapabilityServiceCPUPoolUsageProcedure is the fully-qualified name of the
 	// TenantCapabilityService's CPUPoolUsage RPC.
 	TenantCapabilityServiceCPUPoolUsageProcedure = "/hangar.tenancy.v1alpha1.TenantCapabilityService/CPUPoolUsage"
+	// TenantCapabilityServiceMemoryPoolUsageProcedure is the fully-qualified name of the
+	// TenantCapabilityService's MemoryPoolUsage RPC.
+	TenantCapabilityServiceMemoryPoolUsageProcedure = "/hangar.tenancy.v1alpha1.TenantCapabilityService/MemoryPoolUsage"
 )
 
 // TenantCapabilityServiceClient is a client for the hangar.tenancy.v1alpha1.TenantCapabilityService
@@ -47,6 +50,16 @@ type TenantCapabilityServiceClient interface {
 	// the Tenant does. A tenant with no CPU pool answers nothing set. See
 	// docs/decisions/cpu-pool.md.
 	CPUPoolUsage(context.Context, *connect.Request[v1alpha1.CPUPoolUsageRequest]) (*connect.Response[v1alpha1.CPUPoolUsageResponse], error)
+	// MemoryPoolUsage says who holds the tenant's memory pool now: each
+	// running machine in it, with what its guest has, from each connected
+	// node they are on. It needs the get of Containers or VirtualMachines
+	// in some project of the tenant, so a member of one project alone may
+	// ask; the machines of a project whose Containers and VirtualMachines
+	// the caller may not get are summed into other, unnamed. Such a caller
+	// learns the pool's size, the plan's memory, and those sums of the rest
+	// of the tenant, nothing more. A tenant with no memory pool answers
+	// nothing set. See docs/decisions/memory-pool.md.
+	MemoryPoolUsage(context.Context, *connect.Request[v1alpha1.MemoryPoolUsageRequest]) (*connect.Response[v1alpha1.MemoryPoolUsageResponse], error)
 }
 
 // NewTenantCapabilityServiceClient constructs a client for the
@@ -67,17 +80,29 @@ func NewTenantCapabilityServiceClient(httpClient connect.HTTPClient, baseURL str
 			connect.WithSchema(tenantCapabilityServiceMethods.ByName("CPUPoolUsage")),
 			connect.WithClientOptions(opts...),
 		),
+		memoryPoolUsage: connect.NewClient[v1alpha1.MemoryPoolUsageRequest, v1alpha1.MemoryPoolUsageResponse](
+			httpClient,
+			baseURL+TenantCapabilityServiceMemoryPoolUsageProcedure,
+			connect.WithSchema(tenantCapabilityServiceMethods.ByName("MemoryPoolUsage")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // tenantCapabilityServiceClient implements TenantCapabilityServiceClient.
 type tenantCapabilityServiceClient struct {
-	cPUPoolUsage *connect.Client[v1alpha1.CPUPoolUsageRequest, v1alpha1.CPUPoolUsageResponse]
+	cPUPoolUsage    *connect.Client[v1alpha1.CPUPoolUsageRequest, v1alpha1.CPUPoolUsageResponse]
+	memoryPoolUsage *connect.Client[v1alpha1.MemoryPoolUsageRequest, v1alpha1.MemoryPoolUsageResponse]
 }
 
 // CPUPoolUsage calls hangar.tenancy.v1alpha1.TenantCapabilityService.CPUPoolUsage.
 func (c *tenantCapabilityServiceClient) CPUPoolUsage(ctx context.Context, req *connect.Request[v1alpha1.CPUPoolUsageRequest]) (*connect.Response[v1alpha1.CPUPoolUsageResponse], error) {
 	return c.cPUPoolUsage.CallUnary(ctx, req)
+}
+
+// MemoryPoolUsage calls hangar.tenancy.v1alpha1.TenantCapabilityService.MemoryPoolUsage.
+func (c *tenantCapabilityServiceClient) MemoryPoolUsage(ctx context.Context, req *connect.Request[v1alpha1.MemoryPoolUsageRequest]) (*connect.Response[v1alpha1.MemoryPoolUsageResponse], error) {
+	return c.memoryPoolUsage.CallUnary(ctx, req)
 }
 
 // TenantCapabilityServiceHandler is an implementation of the
@@ -89,6 +114,16 @@ type TenantCapabilityServiceHandler interface {
 	// the Tenant does. A tenant with no CPU pool answers nothing set. See
 	// docs/decisions/cpu-pool.md.
 	CPUPoolUsage(context.Context, *connect.Request[v1alpha1.CPUPoolUsageRequest]) (*connect.Response[v1alpha1.CPUPoolUsageResponse], error)
+	// MemoryPoolUsage says who holds the tenant's memory pool now: each
+	// running machine in it, with what its guest has, from each connected
+	// node they are on. It needs the get of Containers or VirtualMachines
+	// in some project of the tenant, so a member of one project alone may
+	// ask; the machines of a project whose Containers and VirtualMachines
+	// the caller may not get are summed into other, unnamed. Such a caller
+	// learns the pool's size, the plan's memory, and those sums of the rest
+	// of the tenant, nothing more. A tenant with no memory pool answers
+	// nothing set. See docs/decisions/memory-pool.md.
+	MemoryPoolUsage(context.Context, *connect.Request[v1alpha1.MemoryPoolUsageRequest]) (*connect.Response[v1alpha1.MemoryPoolUsageResponse], error)
 }
 
 // NewTenantCapabilityServiceHandler builds an HTTP handler from the service implementation. It
@@ -104,10 +139,18 @@ func NewTenantCapabilityServiceHandler(svc TenantCapabilityServiceHandler, opts 
 		connect.WithSchema(tenantCapabilityServiceMethods.ByName("CPUPoolUsage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	tenantCapabilityServiceMemoryPoolUsageHandler := connect.NewUnaryHandler(
+		TenantCapabilityServiceMemoryPoolUsageProcedure,
+		svc.MemoryPoolUsage,
+		connect.WithSchema(tenantCapabilityServiceMethods.ByName("MemoryPoolUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.tenancy.v1alpha1.TenantCapabilityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TenantCapabilityServiceCPUPoolUsageProcedure:
 			tenantCapabilityServiceCPUPoolUsageHandler.ServeHTTP(w, r)
+		case TenantCapabilityServiceMemoryPoolUsageProcedure:
+			tenantCapabilityServiceMemoryPoolUsageHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -119,4 +162,8 @@ type UnimplementedTenantCapabilityServiceHandler struct{}
 
 func (UnimplementedTenantCapabilityServiceHandler) CPUPoolUsage(context.Context, *connect.Request[v1alpha1.CPUPoolUsageRequest]) (*connect.Response[v1alpha1.CPUPoolUsageResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.tenancy.v1alpha1.TenantCapabilityService.CPUPoolUsage is not implemented"))
+}
+
+func (UnimplementedTenantCapabilityServiceHandler) MemoryPoolUsage(context.Context, *connect.Request[v1alpha1.MemoryPoolUsageRequest]) (*connect.Response[v1alpha1.MemoryPoolUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.tenancy.v1alpha1.TenantCapabilityService.MemoryPoolUsage is not implemented"))
 }

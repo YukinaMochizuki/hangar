@@ -7,8 +7,10 @@
 package tenancyv1alpha1
 
 import (
+	v1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -133,11 +135,325 @@ func (x *CPUPoolUsageResponse) GetNodesUnread() int32 {
 	return 0
 }
 
+type MemoryPoolUsageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tenant        string                 `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryPoolUsageRequest) Reset() {
+	*x = MemoryPoolUsageRequest{}
+	mi := &file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryPoolUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryPoolUsageRequest) ProtoMessage() {}
+
+func (x *MemoryPoolUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryPoolUsageRequest.ProtoReflect.Descriptor instead.
+func (*MemoryPoolUsageRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *MemoryPoolUsageRequest) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+type MemoryPoolUsageResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The pool's size in bytes, the plan's memory; unset when the tenant
+	// has no memory pool.
+	SizeBytes *int64 `protobuf:"varint,1,opt,name=size_bytes,json=sizeBytes,proto3,oneof" json:"size_bytes,omitempty"`
+	// When the oldest of the nodes read last looked at the pool; unset when
+	// none read has looked at it yet.
+	SampleTime *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=sample_time,json=sampleTime,proto3" json:"sample_time,omitempty"`
+	// How many nodes the pool's running machines are on, that could not be
+	// read, as one not connected.
+	NodesUnread int32 `protobuf:"varint,3,opt,name=nodes_unread,json=nodesUnread,proto3" json:"nodes_unread,omitempty"`
+	// The running machines in the pool the caller may read, Dedicated
+	// first, then by current size, largest first, then by project and
+	// name. FileShare servers are in no pool, so never here.
+	Machines []*MemoryPoolMachine `protobuf:"bytes,4,rep,name=machines,proto3" json:"machines,omitempty"`
+	// The running machines in the pool the caller may not read, summed;
+	// unset when there are none.
+	Other         *MemoryPoolTotal `protobuf:"bytes,5,opt,name=other,proto3" json:"other,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryPoolUsageResponse) Reset() {
+	*x = MemoryPoolUsageResponse{}
+	mi := &file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryPoolUsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryPoolUsageResponse) ProtoMessage() {}
+
+func (x *MemoryPoolUsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryPoolUsageResponse.ProtoReflect.Descriptor instead.
+func (*MemoryPoolUsageResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *MemoryPoolUsageResponse) GetSizeBytes() int64 {
+	if x != nil && x.SizeBytes != nil {
+		return *x.SizeBytes
+	}
+	return 0
+}
+
+func (x *MemoryPoolUsageResponse) GetSampleTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.SampleTime
+	}
+	return nil
+}
+
+func (x *MemoryPoolUsageResponse) GetNodesUnread() int32 {
+	if x != nil {
+		return x.NodesUnread
+	}
+	return 0
+}
+
+func (x *MemoryPoolUsageResponse) GetMachines() []*MemoryPoolMachine {
+	if x != nil {
+		return x.Machines
+	}
+	return nil
+}
+
+func (x *MemoryPoolUsageResponse) GetOther() *MemoryPoolTotal {
+	if x != nil {
+		return x.Other
+	}
+	return nil
+}
+
+// MemoryPoolMachine is a running machine in a memory pool.
+type MemoryPoolMachine struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Project string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	// The kind of the object it runs, Container or VirtualMachine, and that
+	// object's name.
+	Kind  string                `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Name  string                `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Phase v1alpha1.MachinePhase `protobuf:"varint,4,opt,name=phase,proto3,enum=hangar.compute.v1alpha1.MachinePhase" json:"phase,omitempty"`
+	// Its memory, the most its guest may have, and the part of it reserved,
+	// all of it for a Dedicated machine, in bytes.
+	MemoryBytes   int64 `protobuf:"varint,5,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	ReservedBytes int64 `protobuf:"varint,6,opt,name=reserved_bytes,json=reservedBytes,proto3" json:"reserved_bytes,omitempty"`
+	// What its guest has of its memory now, in bytes: its memory less what
+	// its balloon holds, as its node last read it. Unset when its node
+	// could not tell.
+	CurrentBytes *int64 `protobuf:"varint,7,opt,name=current_bytes,json=currentBytes,proto3,oneof" json:"current_bytes,omitempty"`
+	// When the host last killed its VM whole for its pool's memory; unset
+	// when it never did.
+	LastOomKillTime *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_oom_kill_time,json=lastOomKillTime,proto3" json:"last_oom_kill_time,omitempty"`
+	// Since when its balloon has not followed what its node asks; unset
+	// while it does.
+	BalloonUnresponsiveSince *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=balloon_unresponsive_since,json=balloonUnresponsiveSince,proto3" json:"balloon_unresponsive_since,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *MemoryPoolMachine) Reset() {
+	*x = MemoryPoolMachine{}
+	mi := &file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryPoolMachine) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryPoolMachine) ProtoMessage() {}
+
+func (x *MemoryPoolMachine) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryPoolMachine.ProtoReflect.Descriptor instead.
+func (*MemoryPoolMachine) Descriptor() ([]byte, []int) {
+	return file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *MemoryPoolMachine) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *MemoryPoolMachine) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *MemoryPoolMachine) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *MemoryPoolMachine) GetPhase() v1alpha1.MachinePhase {
+	if x != nil {
+		return x.Phase
+	}
+	return v1alpha1.MachinePhase(0)
+}
+
+func (x *MemoryPoolMachine) GetMemoryBytes() int64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *MemoryPoolMachine) GetReservedBytes() int64 {
+	if x != nil {
+		return x.ReservedBytes
+	}
+	return 0
+}
+
+func (x *MemoryPoolMachine) GetCurrentBytes() int64 {
+	if x != nil && x.CurrentBytes != nil {
+		return *x.CurrentBytes
+	}
+	return 0
+}
+
+func (x *MemoryPoolMachine) GetLastOomKillTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastOomKillTime
+	}
+	return nil
+}
+
+func (x *MemoryPoolMachine) GetBalloonUnresponsiveSince() *timestamppb.Timestamp {
+	if x != nil {
+		return x.BalloonUnresponsiveSince
+	}
+	return nil
+}
+
+// MemoryPoolTotal sums machines of a memory pool, in bytes.
+type MemoryPoolTotal struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MemoryBytes   int64                  `protobuf:"varint,1,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	ReservedBytes int64                  `protobuf:"varint,2,opt,name=reserved_bytes,json=reservedBytes,proto3" json:"reserved_bytes,omitempty"`
+	// What their guests have now; a machine whose node could not tell
+	// counts at its reservation.
+	CurrentBytes  int64 `protobuf:"varint,3,opt,name=current_bytes,json=currentBytes,proto3" json:"current_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryPoolTotal) Reset() {
+	*x = MemoryPoolTotal{}
+	mi := &file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryPoolTotal) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryPoolTotal) ProtoMessage() {}
+
+func (x *MemoryPoolTotal) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryPoolTotal.ProtoReflect.Descriptor instead.
+func (*MemoryPoolTotal) Descriptor() ([]byte, []int) {
+	return file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *MemoryPoolTotal) GetMemoryBytes() int64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *MemoryPoolTotal) GetReservedBytes() int64 {
+	if x != nil {
+		return x.ReservedBytes
+	}
+	return 0
+}
+
+func (x *MemoryPoolTotal) GetCurrentBytes() int64 {
+	if x != nil {
+		return x.CurrentBytes
+	}
+	return 0
+}
+
 var File_hangar_tenancy_v1alpha1_tenant_capability_proto protoreflect.FileDescriptor
 
 const file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDesc = "" +
 	"\n" +
-	"/hangar/tenancy/v1alpha1/tenant_capability.proto\x12\x17hangar.tenancy.v1alpha1\"-\n" +
+	"/hangar/tenancy/v1alpha1/tenant_capability.proto\x12\x17hangar.tenancy.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a%hangar/compute/v1alpha1/machine.proto\"-\n" +
 	"\x13CPUPoolUsageRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\"\x91\x01\n" +
 	"\x14CPUPoolUsageResponse\x12\x1b\n" +
@@ -146,9 +462,36 @@ const file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDesc = "" +
 	"\fnodes_unread\x18\x03 \x01(\x05R\vnodesUnreadB\t\n" +
 	"\a_slowedB\f\n" +
 	"\n" +
-	"_milli_cpu2\x86\x01\n" +
+	"_milli_cpu\"0\n" +
+	"\x16MemoryPoolUsageRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\"\xb4\x02\n" +
+	"\x17MemoryPoolUsageResponse\x12\"\n" +
+	"\n" +
+	"size_bytes\x18\x01 \x01(\x03H\x00R\tsizeBytes\x88\x01\x01\x12;\n" +
+	"\vsample_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"sampleTime\x12!\n" +
+	"\fnodes_unread\x18\x03 \x01(\x05R\vnodesUnread\x12F\n" +
+	"\bmachines\x18\x04 \x03(\v2*.hangar.tenancy.v1alpha1.MemoryPoolMachineR\bmachines\x12>\n" +
+	"\x05other\x18\x05 \x01(\v2(.hangar.tenancy.v1alpha1.MemoryPoolTotalR\x05otherB\r\n" +
+	"\v_size_bytes\"\xbb\x03\n" +
+	"\x11MemoryPoolMachine\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12;\n" +
+	"\x05phase\x18\x04 \x01(\x0e2%.hangar.compute.v1alpha1.MachinePhaseR\x05phase\x12!\n" +
+	"\fmemory_bytes\x18\x05 \x01(\x03R\vmemoryBytes\x12%\n" +
+	"\x0ereserved_bytes\x18\x06 \x01(\x03R\rreservedBytes\x12(\n" +
+	"\rcurrent_bytes\x18\a \x01(\x03H\x00R\fcurrentBytes\x88\x01\x01\x12G\n" +
+	"\x12last_oom_kill_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x0flastOomKillTime\x12X\n" +
+	"\x1aballoon_unresponsive_since\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x18balloonUnresponsiveSinceB\x10\n" +
+	"\x0e_current_bytes\"\x80\x01\n" +
+	"\x0fMemoryPoolTotal\x12!\n" +
+	"\fmemory_bytes\x18\x01 \x01(\x03R\vmemoryBytes\x12%\n" +
+	"\x0ereserved_bytes\x18\x02 \x01(\x03R\rreservedBytes\x12#\n" +
+	"\rcurrent_bytes\x18\x03 \x01(\x03R\fcurrentBytes2\xfc\x01\n" +
 	"\x17TenantCapabilityService\x12k\n" +
-	"\fCPUPoolUsage\x12,.hangar.tenancy.v1alpha1.CPUPoolUsageRequest\x1a-.hangar.tenancy.v1alpha1.CPUPoolUsageResponseB\x84\x02\n" +
+	"\fCPUPoolUsage\x12,.hangar.tenancy.v1alpha1.CPUPoolUsageRequest\x1a-.hangar.tenancy.v1alpha1.CPUPoolUsageResponse\x12t\n" +
+	"\x0fMemoryPoolUsage\x12/.hangar.tenancy.v1alpha1.MemoryPoolUsageRequest\x1a0.hangar.tenancy.v1alpha1.MemoryPoolUsageResponseB\x84\x02\n" +
 	"\x1bcom.hangar.tenancy.v1alpha1B\x15TenantCapabilityProtoP\x01ZPgithub.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1;tenancyv1alpha1\xa2\x02\x03HTX\xaa\x02\x17Hangar.Tenancy.V1alpha1\xca\x02\x17Hangar\\Tenancy\\V1alpha1\xe2\x02#Hangar\\Tenancy\\V1alpha1\\GPBMetadata\xea\x02\x19Hangar::Tenancy::V1alpha1b\x06proto3"
 
 var (
@@ -163,19 +506,33 @@ func file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDescGZIP() []byte {
 	return file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDescData
 }
 
-var file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_hangar_tenancy_v1alpha1_tenant_capability_proto_goTypes = []any{
-	(*CPUPoolUsageRequest)(nil),  // 0: hangar.tenancy.v1alpha1.CPUPoolUsageRequest
-	(*CPUPoolUsageResponse)(nil), // 1: hangar.tenancy.v1alpha1.CPUPoolUsageResponse
+	(*CPUPoolUsageRequest)(nil),     // 0: hangar.tenancy.v1alpha1.CPUPoolUsageRequest
+	(*CPUPoolUsageResponse)(nil),    // 1: hangar.tenancy.v1alpha1.CPUPoolUsageResponse
+	(*MemoryPoolUsageRequest)(nil),  // 2: hangar.tenancy.v1alpha1.MemoryPoolUsageRequest
+	(*MemoryPoolUsageResponse)(nil), // 3: hangar.tenancy.v1alpha1.MemoryPoolUsageResponse
+	(*MemoryPoolMachine)(nil),       // 4: hangar.tenancy.v1alpha1.MemoryPoolMachine
+	(*MemoryPoolTotal)(nil),         // 5: hangar.tenancy.v1alpha1.MemoryPoolTotal
+	(*timestamppb.Timestamp)(nil),   // 6: google.protobuf.Timestamp
+	(v1alpha1.MachinePhase)(0),      // 7: hangar.compute.v1alpha1.MachinePhase
 }
 var file_hangar_tenancy_v1alpha1_tenant_capability_proto_depIdxs = []int32{
-	0, // 0: hangar.tenancy.v1alpha1.TenantCapabilityService.CPUPoolUsage:input_type -> hangar.tenancy.v1alpha1.CPUPoolUsageRequest
-	1, // 1: hangar.tenancy.v1alpha1.TenantCapabilityService.CPUPoolUsage:output_type -> hangar.tenancy.v1alpha1.CPUPoolUsageResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	6, // 0: hangar.tenancy.v1alpha1.MemoryPoolUsageResponse.sample_time:type_name -> google.protobuf.Timestamp
+	4, // 1: hangar.tenancy.v1alpha1.MemoryPoolUsageResponse.machines:type_name -> hangar.tenancy.v1alpha1.MemoryPoolMachine
+	5, // 2: hangar.tenancy.v1alpha1.MemoryPoolUsageResponse.other:type_name -> hangar.tenancy.v1alpha1.MemoryPoolTotal
+	7, // 3: hangar.tenancy.v1alpha1.MemoryPoolMachine.phase:type_name -> hangar.compute.v1alpha1.MachinePhase
+	6, // 4: hangar.tenancy.v1alpha1.MemoryPoolMachine.last_oom_kill_time:type_name -> google.protobuf.Timestamp
+	6, // 5: hangar.tenancy.v1alpha1.MemoryPoolMachine.balloon_unresponsive_since:type_name -> google.protobuf.Timestamp
+	0, // 6: hangar.tenancy.v1alpha1.TenantCapabilityService.CPUPoolUsage:input_type -> hangar.tenancy.v1alpha1.CPUPoolUsageRequest
+	2, // 7: hangar.tenancy.v1alpha1.TenantCapabilityService.MemoryPoolUsage:input_type -> hangar.tenancy.v1alpha1.MemoryPoolUsageRequest
+	1, // 8: hangar.tenancy.v1alpha1.TenantCapabilityService.CPUPoolUsage:output_type -> hangar.tenancy.v1alpha1.CPUPoolUsageResponse
+	3, // 9: hangar.tenancy.v1alpha1.TenantCapabilityService.MemoryPoolUsage:output_type -> hangar.tenancy.v1alpha1.MemoryPoolUsageResponse
+	8, // [8:10] is the sub-list for method output_type
+	6, // [6:8] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_hangar_tenancy_v1alpha1_tenant_capability_proto_init() }
@@ -184,13 +541,15 @@ func file_hangar_tenancy_v1alpha1_tenant_capability_proto_init() {
 		return
 	}
 	file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[1].OneofWrappers = []any{}
+	file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[3].OneofWrappers = []any{}
+	file_hangar_tenancy_v1alpha1_tenant_capability_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDesc), len(file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
