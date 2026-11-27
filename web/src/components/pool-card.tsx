@@ -1,4 +1,5 @@
-// The Overviews' memory pool card: who uses the tenant's pool now, as
+// The Overviews' pool card: who uses the tenant's memory pool now, and its
+// CPU pool's row (components/cpu-pool-row.tsx), as
 // docs/decisions/console-design.md ("Memory pools") says.
 
 import { Link } from "@tanstack/react-router";
@@ -330,7 +331,6 @@ export function PoolStrip({
   // The pointer of the last press: a mouse's click leads on, a touch's pins the card.
   const pointer = useRef("mouse");
   const root = useRef<HTMLDivElement>(null);
-  useEffect(() => onOpen?.(open), [open, onOpen]);
 
   // A pinned card closes on a press anywhere but the strip and the card,
   // which goes on to whatever it pressed.
@@ -345,9 +345,16 @@ export function PoolStrip({
     return () => document.removeEventListener("pointerdown", close, true);
   }, [pinned]);
 
+  // The open segment, gone when a later answer no longer has it.
   const openSegment = segments.find((s) => s.key === open);
   // What lights: the segment open here; else the machine open in the CPU strip, where it has a segment here.
-  const litKey = open ?? (linked && segments.some((s) => s.key === linked) ? linked : null);
+  const litKey = openSegment ? openSegment.key : linked && segments.some((s) => s.key === linked) ? linked : null;
+  // The CPU strip is told the machine open here: a machine's alone, as
+  // "more" and "other" hold different machines in each strip; none once it
+  // is gone, or this strip is.
+  const openMachine = openSegment?.e ? openSegment.key : null;
+  useEffect(() => onOpen?.(openMachine), [openMachine, onOpen]);
+  useEffect(() => () => onOpen?.(null), [onOpen]);
   useLayoutEffect(() => {
     const r = root.current;
     const el = open ? r?.querySelector<HTMLElement>(`[data-segment="${CSS.escape(open)}"]`) : null;
@@ -471,7 +478,7 @@ export function PoolCard({ tenant, project, enabled = true, cpu }: { tenant: str
   const [memoryOpen, setMemoryOpen] = useState<string | null>(null);
   const [cpuOpen, setCpuOpen] = useState<string | null>(null);
   const memory = read && read.state !== "failed" && read.state !== "none" ? read : undefined;
-  const cpuShown = cpu && cpuRead && cpuRead.state !== "failed" ? cpuRead : undefined;
+  const cpuShown = cpu && cpuRead && cpuRead.state !== "failed" && cpuRead.state !== "none" ? cpuRead : undefined;
   if (!memory && !cpuShown) return null;
   const cpuPart =
     cpuShown?.state === "read" ? (

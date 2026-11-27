@@ -52,6 +52,7 @@ const machines = [machine("web", "worker", 2, 1.2), machine("web", "web", 2, 1.6
 /** Calm: slowed 22% and 10% in two minutes long ago, none in the last; 1% of the hour. */
 const calm = (more: object = {}) =>
   create(CPUPoolUsageResponseSchema, {
+    pooled: true,
     slowed: 0.01,
     milliCpu: 5000n,
     sampleTime: timestampFromDate(new Date()),
@@ -78,12 +79,15 @@ const throttled = (more: object = {}) =>
   });
 
 const GiB = 1024n ** 3n;
-/** The memory pool the card also draws, with web and db. */
+/** The memory pool the card also draws, with web and db, and jobs's batch, which a project's Overview folds. */
 const memory = () =>
   create(MemoryPoolUsageResponseSchema, {
     sizeBytes: 8n * GiB,
     sampleTime: timestampFromDate(new Date()),
-    machines: ["web", "db"].map((name) => ({ project: "web", kind: "Container", name, phase: MachinePhase.RUNNING, memoryBytes: GiB, reservedBytes: GiB, currentBytes: GiB, inUseBytes: GiB / 2n })),
+    machines: [
+      ...["web", "db"].map((name) => ({ project: "web", kind: "Container", name, phase: MachinePhase.RUNNING, memoryBytes: GiB, reservedBytes: GiB, currentBytes: GiB, inUseBytes: GiB / 2n })),
+      { project: "jobs", kind: "Container", name: "batch", phase: MachinePhase.RUNNING, memoryBytes: GiB, reservedBytes: GiB, currentBytes: GiB, inUseBytes: GiB / 2n },
+    ],
   });
 
 function api(cpu: () => Promise<CPUPoolUsageResponse> | CPUPoolUsageResponse) {
@@ -91,6 +95,8 @@ function api(cpu: () => Promise<CPUPoolUsageResponse> | CPUPoolUsageResponse) {
     r.service(TenantCapabilityService, { cPUPoolUsage: async () => cpu(), memoryPoolUsage: async () => memory() });
   });
 }
+
+const memoryOf = (key: string) => document.querySelector(`[data-segment="${key}"]`)!;
 
 const plan = { planCPU: 5 };
 const pieces = () => [...document.querySelectorAll("[data-cpu-segment]")] as HTMLElement[];
@@ -152,7 +158,7 @@ describe("the pool card's CPU row", () => {
   it("opens a machine's card on hover, its CPU now and vCPUs, and lights the same machine in the memory strip, and the other way", async () => {
     render(<PoolCard tenant="acme" cpu={plan} />, { wrapper: withApi(api(() => throttled())) });
     await waitFor(() => expect(pieces()).toHaveLength(4));
-    await waitFor(() => expect(document.querySelectorAll("[data-segment]")).toHaveLength(2));
+    await waitFor(() => expect(document.querySelectorAll("[data-segment]")).toHaveLength(3));
     fireEvent.pointerEnter(piece("web/Container/web"), { pointerType: "mouse" });
     const tip = screen.getByRole("tooltip");
     expect(tip.textContent).toContain("web");
@@ -285,5 +291,104 @@ describe("the pool card's CPU row", () => {
     await act(async () => {});
     expect(none.calls).toEqual([]);
     expect(container.innerHTML).toBe("");
+  });
+
+  it("shows nothing when the API says the tenant has no CPU pool, as for a viewer of a tenant paying as it goes", async () => {
+    const notPooled = () => create(CPUPoolUsageResponseSchema, {});
+    const a = api(notPooled);
+    render(<PoolCard tenant="acme" cpu={plan} />, { wrapper: withApi(a) });
+    await waitFor(() => expect(a.calls).toContain("CPUPoolUsage"));
+    await waitFor(() => expect(screen.queryByTestId("cpu-row-placeholder")).toBeNull());
+    expect(screen.queryByLabelText("CPU pool")).toBeNull();
+    expect(screen.getByLabelText("Memory pool").textContent).not.toContain("CPU");
+    cleanup();
+
+    const only = api(notPooled);
+    const { container } = render(<PoolCard tenant="acme" enabled={false} cpu={plan} />, { wrapper: withApi(only) });
+    await waitFor(() => expect(only.calls).toContain("CPUPoolUsage"));
+    await waitFor(() => expect(container.innerHTML).toBe(""));
+  });
+
+  it("labels a CPU-only card once", async () => {
+    render(<PoolCard tenant="acme" enabled={false} cpu={plan} />, { wrapper: withApi(api(() => throttled())) });
+    await waitFor(() => expect(pieces()).toHaveLength(4));
+    expect(screen.getAllByLabelText("CPU pool")).toHaveLength(1);
+  });
+
+  it("no longer dims the memory strip once the CPU row closes with a machine's card pinned", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let answer = () => throttled();
+    render(<PoolCard tenant="acme" cpu={plan} />, { wrapper: withApi(api(() => answer())) });
+    await waitFor(() => expect(pieces()).toHaveLength(4));
+    await waitFor(() => expect(memoryOf("web/Container/db")).toBeTruthy());
+    fireEvent.pointerDown(piece("web/Container/web"), { pointerType: "touch" });
+    fireEvent.click(piece("web/Container/web"), { detail: 1 });
+    await waitFor(() => expect(memoryOf("web/Container/db").className).toContain("opacity-35"));
+    // The pool calms: no slowed minute since, and 6.5 minutes on the row closes.
+    answer = () => calm({ minutes: [], sampleTime: timestampFromDate(new Date()) });
+    for (let i = 0; i < 39; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(poolRefetchMs);
+      });
+    }
+    await waitFor(() => expect(screen.queryByTestId("cpu-track")).toBeNull());
+    expect(memoryOf("web/Container/db").className).not.toContain("opacity-35");
+    expect(memoryOf("web/Container/web").className).not.toContain("opacity-35");
+  });
+
+  it("no longer dims the memory strip once the machine open in the CPU strip leaves a later answer", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let answer = () => throttled();
+    render(<PoolCard tenant="acme" cpu={plan} />, { wrapper: withApi(api(() => answer())) });
+    await waitFor(() => expect(pieces()).toHaveLength(4));
+    await waitFor(() => expect(memoryOf("web/Container/db")).toBeTruthy());
+    fireEvent.pointerEnter(piece("web/Container/web"), { pointerType: "mouse" });
+    await waitFor(() => expect(memoryOf("web/Container/db").className).toContain("opacity-35"));
+    answer = () => throttled({ machines: machines.filter((m) => m.name !== "web") });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(poolRefetchMs + 100);
+    });
+    await waitFor(() => expect(pieces()).toHaveLength(3));
+    expect(memoryOf("web/Container/db").className).not.toContain("opacity-35");
+    // Nor does the CPU strip dim all it has left.
+    expect(pieces().some((p) => p.className.includes("opacity-35"))).toBe(false);
+  });
+
+  it("no longer dims the CPU strip once the memory strip goes with a machine open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let memoryFails = false;
+    const a = fakeApi((r) => {
+      r.service(TenantCapabilityService, {
+        cPUPoolUsage: async () => throttled({ sampleTime: timestampFromDate(new Date()) }),
+        memoryPoolUsage: async () => (memoryFails ? Promise.reject(new ConnectError("no", Code.Unavailable)) : memory()),
+      });
+    });
+    render(<PoolCard tenant="acme" cpu={plan} />, { wrapper: withApi(a) });
+    await waitFor(() => expect(pieces()).toHaveLength(4));
+    await waitFor(() => expect(memoryOf("web/Container/db")).toBeTruthy());
+    fireEvent.pointerEnter(memoryOf("web/Container/db"), { pointerType: "mouse" });
+    await waitFor(() => expect(piece("web/Container/web").className).toContain("opacity-35"));
+    memoryFails = true;
+    for (let i = 0; i < 14; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(poolRefetchMs);
+      });
+    }
+    await waitFor(() => expect(document.querySelector("[data-segment]")).toBeNull());
+    expect(piece("web/Container/web").className).not.toContain("opacity-35");
+  });
+
+  it("does not light one strip's other projects, or its +N piece, from the other's", async () => {
+    render(<PoolCard tenant="acme" project="web" cpu={plan} />, { wrapper: withApi(api(() => throttled({ other: { cpuNowMilli: 500n } }))) });
+    await waitFor(() => expect(pieces()).toHaveLength(4));
+    await waitFor(() => expect(memoryOf("other")).toBeTruthy());
+    fireEvent.pointerEnter(piece("other"), { pointerType: "mouse" });
+    expect(screen.getByRole("tooltip").textContent).toContain("Other projects");
+    await act(async () => {});
+    expect(memoryOf("web/Container/web").className).not.toContain("opacity-35");
+    fireEvent.pointerLeave(piece("other"), { pointerType: "mouse" });
+    fireEvent.pointerEnter(memoryOf("other"), { pointerType: "mouse" });
+    await act(async () => {});
+    expect(piece("web/Container/web").className).not.toContain("opacity-35");
   });
 });

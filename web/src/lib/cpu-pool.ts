@@ -1,5 +1,7 @@
 // A tenant's CPU pool as the console shows it (docs/decisions/cpu-pool.md):
-// whether its machines share its plan's CPUs, and the vCPU tile's figures.
+// whether its machines share its plan's CPUs, the vCPU tile's figures, and
+// what the pool card reads of who uses the pool now and how often it slowed
+// them.
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { skipToken, useQuery } from "@connectrpc/connect-query";
@@ -51,8 +53,9 @@ const slowedRefetchMs = 60_000;
 /**
  * The vCPU tile's figures for a tenant's or a project's status, undefined
  * without a CPU pool, where the tile is as for any limit. How often the pool
- * slowed its machines in the last hour is asked of its nodes, where the
- * caller may get the tenant; unknown, the tile says nothing of it.
+ * slowed its machines in the last hour is asked of its nodes, which a caller
+ * who may get Containers or VirtualMachines in some project of the tenant
+ * may do; unknown, the tile says nothing of it.
  */
 export function useCpuPoolTile(tenant: string, limits: Limits | undefined, usage: Usage | undefined) {
   const billing = useBillingAccount(tenant, !!tenant && (limits?.cpuLimitPercent ?? 100) > 100);
@@ -137,13 +140,15 @@ export function cpuOccupancy(r: CPUPoolUsageResponse, now = Date.now()): CpuOccu
  * The pool card's read of the tenant's CPU pool, asked every poolRefetchMs
  * while enabled, as usePoolRead reads the memory pool: pending until the
  * first answer; failed when that fails, or once every ask has failed for
- * poolDropMs; otherwise read. throttled says the pool slowed its machines
+ * poolDropMs; none when the API says the tenant has no CPU pool, as when it
+ * pays as it goes and the caller may not read its BillingAccount to know;
+ * otherwise read. throttled says the pool slowed its machines
  * within throttledForMs: it stays so until that long has passed since the
  * last slowed minute any answer showed, so an answer missing that minute,
  * as from a node unread, does not close the strip, nor does every poll
  * open and close it.
  */
-export type CpuPoolRead = { state: "pending" } | { state: "failed" } | { state: "read"; occupancy: CpuOccupancy; throttled: boolean };
+export type CpuPoolRead = { state: "pending" } | { state: "failed" } | { state: "none" } | { state: "read"; occupancy: CpuOccupancy; throttled: boolean };
 
 export function useCpuPoolRead(tenant: string, enabled: boolean): CpuPoolRead | undefined {
   const q = useQuery(TenantCapabilityService.method.cPUPoolUsage, enabled && tenant ? { tenant } : skipToken, {
@@ -166,6 +171,7 @@ export function useCpuPoolRead(tenant: string, enabled: boolean): CpuPoolRead | 
   if (!enabled || !tenant) return undefined;
   if (q.isPending) return { state: "pending" };
   if (!occupancy || (q.isError && now - q.dataUpdatedAt > poolDropMs)) return { state: "failed" };
+  if (!q.data?.pooled) return { state: "none" };
   const throttled = lastSlowedAt > 0 && now - lastSlowedAt < throttledForMs;
   return { state: "read", occupancy: q.isError ? { ...occupancy, current: false } : occupancy, throttled };
 }

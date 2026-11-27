@@ -724,10 +724,15 @@ language; the plan's percent is never shown.
   machine's card reads "1.6 CPUs now · 2 vCPU", and the machine open in
   either strip lights in the other. On a project's Overview the other
   projects' machines are one muted piece; a machine with no sample lately
-  has no piece. A stale answer (as memory's) dims the row and adds "not
-  current" after "CPU". Until its first answer the row is held as a blank
-  calm row; it goes if that fails. A tenant in a CPU pool alone has the card
-  with the CPU row only. The vCPU tile keeps its "slowed" note.
+  has no piece. Only a machine is lit across the strips: the "other
+  projects" and "+N" pieces hold different machines in each. A stale
+  answer (as memory's) dims the row and adds "not current" after "CPU".
+  Until its first answer the row is held as a blank calm row; it goes if
+  that fails, or when the answer says the tenant is not pooled (its
+  `pooled`), as for a viewer of a tenant paying as it goes who may not
+  read its BillingAccount. A tenant in a CPU pool and no memory pool has
+  the card with the CPU row only (the owner's decision, 2026-11-27). The
+  vCPU tile keeps its "slowed" note.
 - **A Shared machine's memory reads "1–4 GiB" in lists**, its reservation
   to its limit, "–4 GiB" in the lighter grey, in the container and VM lists
   and the project Overview's table, where a "Shared" badge stood before

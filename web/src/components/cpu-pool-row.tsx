@@ -198,7 +198,6 @@ function CpuStrip({
   const [place, setPlace] = useState({ left: 0, top: 0 });
   const pointer = useRef("mouse");
   const root = useRef<HTMLDivElement>(null);
-  useEffect(() => onOpen?.(open), [open, onOpen]);
 
   useEffect(() => {
     if (!pinned) return;
@@ -224,7 +223,13 @@ function CpuStrip({
   const idle = Math.max(0, planCPU - used);
   const full = idle < fullBelowCPU;
   // What lights: the piece open here; else the machine open in the memory strip, where it has a piece here.
-  const lit = open ?? (linked && segments.some((s) => s.key === linked) ? linked : null);
+  const lit = openSegment ? openSegment.key : linked && segments.some((s) => s.key === linked) ? linked : null;
+  // The memory strip is told the machine open here: a machine's alone, as
+  // "more" and "other" hold different machines in each strip; none once it
+  // is gone, or this strip is, as when the row closes.
+  const openMachine = openSegment?.e ? openSegment.key : null;
+  useEffect(() => onOpen?.(openMachine), [openMachine, onOpen]);
+  useEffect(() => () => onOpen?.(null), [onOpen]);
 
   return (
     // The head is in the box the card is placed from, so on a narrow screen
@@ -333,7 +338,8 @@ export function CpuPoolRow({
     </div>
   );
   return (
-    <section aria-label="CPU pool" data-throttled={throttled || undefined} className={cn(divided && (throttled ? "mt-4" : "mt-3 border-t pt-2.5"))}>
+    // Alone on its card, the card is labelled "CPU pool" already.
+    <section aria-label={divided ? "CPU pool" : undefined} data-throttled={throttled || undefined} className={cn(divided && (throttled ? "mt-4" : "mt-3 border-t pt-2.5"))}>
       {throttled ? <CpuStrip o={o} head={head} planCPU={planCPU} project={project} linked={linked} onOpen={onOpen} /> : head}
     </section>
   );
