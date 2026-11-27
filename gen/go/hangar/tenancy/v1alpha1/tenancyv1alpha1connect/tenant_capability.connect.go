@@ -58,7 +58,9 @@ type TenantCapabilityServiceClient interface {
 	// the caller may not get are summed into other, unnamed. Such a caller
 	// learns the pool's size, the plan's memory, and those sums of the rest
 	// of the tenant, nothing more. A tenant with no memory pool answers
-	// nothing set. See docs/decisions/memory-pool.md.
+	// nothing set; a tenant that does not exist is NOT_FOUND to a caller
+	// over every tenant, as for CPUPoolUsage. See
+	// docs/decisions/memory-pool.md.
 	MemoryPoolUsage(context.Context, *connect.Request[v1alpha1.MemoryPoolUsageRequest]) (*connect.Response[v1alpha1.MemoryPoolUsageResponse], error)
 }
 
@@ -122,7 +124,9 @@ type TenantCapabilityServiceHandler interface {
 	// the caller may not get are summed into other, unnamed. Such a caller
 	// learns the pool's size, the plan's memory, and those sums of the rest
 	// of the tenant, nothing more. A tenant with no memory pool answers
-	// nothing set. See docs/decisions/memory-pool.md.
+	// nothing set; a tenant that does not exist is NOT_FOUND to a caller
+	// over every tenant, as for CPUPoolUsage. See
+	// docs/decisions/memory-pool.md.
 	MemoryPoolUsage(context.Context, *connect.Request[v1alpha1.MemoryPoolUsageRequest]) (*connect.Response[v1alpha1.MemoryPoolUsageResponse], error)
 }
 

@@ -184,11 +184,13 @@ type MemoryPoolUsageResponse struct {
 	// The pool's size in bytes, the plan's memory; unset when the tenant
 	// has no memory pool.
 	SizeBytes *int64 `protobuf:"varint,1,opt,name=size_bytes,json=sizeBytes,proto3,oneof" json:"size_bytes,omitempty"`
-	// When the oldest of the nodes read last looked at the pool; unset when
-	// none read has looked at it yet.
+	// Of the nodes the machines in `machines` are on, when the one that read
+	// the pool longest ago last read it; unset when none has read it lately.
+	// The nodes only other's machines are on are not counted.
 	SampleTime *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=sample_time,json=sampleTime,proto3" json:"sample_time,omitempty"`
-	// How many nodes the pool's running machines are on, that could not be
-	// read, as one not connected.
+	// How many of the nodes the machines in `machines` are on could not be
+	// read, as one not connected, or have not read the pool lately, which
+	// a node keeps for three of its calm polls (docs/decisions/node-agent.md).
 	NodesUnread int32 `protobuf:"varint,3,opt,name=nodes_unread,json=nodesUnread,proto3" json:"nodes_unread,omitempty"`
 	// The running machines in the pool the caller may read, Dedicated
 	// first, then by what they use, largest first (what they have when

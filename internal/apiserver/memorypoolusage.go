@@ -30,10 +30,11 @@ var poolKinds = map[string]registry.Resource{
 	registry.VirtualMachine.Kind: registry.VirtualMachine,
 }
 
-// MemoryPoolUsage answers who holds the tenant's memory pool now, as the
+// MemoryPoolUsage answers who uses the tenant's memory pool now, as the
 // nodes its running machines are on last read it, to a caller who may get
 // Containers or VirtualMachines in some project of the tenant; the
-// machines it may not get are summed into other, unnamed
+// machines it may not get are summed into other, unnamed, and what is said
+// of nodes is of those its named machines are on
 // (docs/decisions/memory-pool.md).
 func (h tenantCapabilities) MemoryPoolUsage(ctx context.Context, req *connect.Request[tenancyv1alpha1.MemoryPoolUsageRequest]) (*connect.Response[tenancyv1alpha1.MemoryPoolUsageResponse], error) {
 	s := h.s
@@ -48,6 +49,11 @@ func (h tenantCapabilities) MemoryPoolUsage(ctx context.Context, req *connect.Re
 	}
 	if !s.readsPoolMachines(p, key.Name) {
 		return nil, denied("%s may not get containers or virtual machines in any project of tenant %q", p, key.Name)
+	}
+	// Only a platform-wide caller gets this far for a tenant that does not
+	// exist, and is told so, as CPUPoolUsage tells it.
+	if _, err := s.store.Get(ctx, b.storeKey(key)); err != nil {
+		return nil, apiError(err)
 	}
 	res := &tenancyv1alpha1.MemoryPoolUsageResponse{}
 	pools, err := s.tenantPools(ctx, key.Name)
@@ -70,7 +76,9 @@ func (h tenantCapabilities) MemoryPoolUsage(ctx context.Context, req *connect.Re
 		return nil, apiError(err)
 	}
 	read := map[string]*nodev1.MemoryPoolMember{}
-	var oldest time.Time
+	// sampled is when each node read last read the pool; a node not read,
+	// or with no read lately, is not in it.
+	sampled := map[string]time.Time{}
 	for _, node := range nodesOf(machines) {
 		used, err := s.askMemoryPool(ctx, p, key.Name, node)
 		if ctx.Err() != nil {
@@ -83,19 +91,16 @@ func (h tenantCapabilities) MemoryPoolUsage(ctx context.Context, req *connect.Re
 		}
 		if err != nil {
 			s.log.Debug("reading a memory pool's usage from its node", "tenant", key.Name, "node", node, "error", err)
-			res.NodesUnread++
 			continue
 		}
-		if t := used.GetSampleTime(); t != nil && (oldest.IsZero() || t.AsTime().Before(oldest)) {
-			oldest = t.AsTime()
+		if t := used.GetSampleTime(); t != nil {
+			sampled[node] = t.AsTime()
 		}
 		for _, m := range used.GetMembers() {
 			read[m.GetMachineUid()] = m
 		}
 	}
-	if !oldest.IsZero() {
-		res.SampleTime = timestamppb.New(oldest)
-	}
+	var named []poolMachine
 	for _, m := range machines {
 		pm := m.usage(read[m.uid])
 		if !m.readable(s, p) {
@@ -108,7 +113,23 @@ func (h tenantCapabilities) MemoryPoolUsage(ctx context.Context, req *connect.Re
 			res.Other.InUseBytes += inUseOr(pm)
 			continue
 		}
+		named = append(named, m)
 		res.Machines = append(res.Machines, pm)
+	}
+	// Of the nodes the named machines are on alone: the others' are no more
+	// the caller's to know than their machines.
+	var oldest time.Time
+	for _, node := range nodesOf(named) {
+		at, ok := sampled[node]
+		switch {
+		case !ok:
+			res.NodesUnread++
+		case oldest.IsZero() || at.Before(oldest):
+			oldest = at
+		}
+	}
+	if !oldest.IsZero() {
+		res.SampleTime = timestamppb.New(oldest)
 	}
 	slices.SortStableFunc(res.Machines, byPoolOrder)
 	return connect.NewResponse(res), nil
@@ -210,20 +231,13 @@ func (s *Server) memoryPoolMachines(ctx context.Context, tenant string) ([]poolM
 				m.GetStatus().GetPhase() != computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING {
 				continue
 			}
-			memory, err := quantity.Bytes(m.GetSpec().GetResources().GetMemory())
-			if err == nil && memory > math.MaxInt64 {
-				err = errors.New("past an int64")
-			}
+			memory, reserved, err := memoryOf(m)
 			if err != nil {
-				return nil, fmt.Errorf("machine %s/%s's memory %q: %w", m.GetMetadata().GetProject(), m.GetMetadata().GetName(), m.GetSpec().GetResources().GetMemory(), err)
-			}
-			reserved := memory
-			if g := m.GetSpec().GetResources().GetMemoryReserved(); g != "" {
-				r, err := quantity.Bytes(g)
-				if err != nil {
-					return nil, fmt.Errorf("machine %s/%s's memory_reserved %q: %w", m.GetMetadata().GetProject(), m.GetMetadata().GetName(), g, err)
-				}
-				reserved = min(r, memory)
+				// One machine the caller may not even read fails nobody's
+				// answer: it is left out, as its admission would not have let
+				// it be written.
+				s.log.Warn("leaving a machine out of its memory pool's usage", "tenant", tenant, "project", m.GetMetadata().GetProject(), "machine", m.GetMetadata().GetName(), "error", err)
+				continue
 			}
 			owner := ownerOfMachine(m)
 			out = append(out, poolMachine{
@@ -234,6 +248,27 @@ func (s *Server) memoryPoolMachines(ctx context.Context, tenant string) ([]poolM
 		}
 	}
 	return out, nil
+}
+
+// memoryOf is a Machine's memory and its reservation, all of it when it
+// names none, in bytes.
+func memoryOf(m *computev1alpha1.Machine) (memory, reserved uint64, err error) {
+	memory, err = quantity.Bytes(m.GetSpec().GetResources().GetMemory())
+	if err == nil && memory > math.MaxInt64 {
+		err = errors.New("past an int64")
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("memory %q: %w", m.GetSpec().GetResources().GetMemory(), err)
+	}
+	reserved = memory
+	if g := m.GetSpec().GetResources().GetMemoryReserved(); g != "" {
+		r, err := quantity.Bytes(g)
+		if err != nil {
+			return 0, 0, fmt.Errorf("memory_reserved %q: %w", g, err)
+		}
+		reserved = min(r, memory)
+	}
+	return memory, reserved, nil
 }
 
 // nodesOf names, sorted, the nodes the machines are on.

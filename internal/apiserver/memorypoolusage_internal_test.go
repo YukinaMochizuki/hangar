@@ -3,6 +3,7 @@ package apiserver
 import (
 	"context"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -25,7 +26,8 @@ import (
 const gib = int64(1) << 30
 
 // memoryPoolNode is a node whose squeeze last read pool acme at sampled,
-// its members as given.
+// its members as given; with sampled zero, one with no read lately, which
+// answers nothing.
 type memoryPoolNode struct {
 	nodev1connect.UnimplementedNodeServiceHandler
 	sampled time.Time
@@ -33,7 +35,7 @@ type memoryPoolNode struct {
 }
 
 func (n memoryPoolNode) MemoryPoolUsage(_ context.Context, req *connect.Request[nodev1.MemoryPoolUsageRequest]) (*connect.Response[nodev1.MemoryPoolUsageResponse], error) {
-	if req.Msg.GetPool() != "acme" {
+	if req.Msg.GetPool() != "acme" || n.sampled.IsZero() {
 		return connect.NewResponse(&nodev1.MemoryPoolUsageResponse{}), nil
 	}
 	return connect.NewResponse(&nodev1.MemoryPoolUsageResponse{SampleTime: timestamppb.New(n.sampled), Members: n.members}), nil
@@ -219,6 +221,11 @@ func TestMemoryPoolUsageFoldsWhatTheCallerMayNotRead(t *testing.T) {
 	if got := poolNames(res); len(got) != 2 || got[0] != "web/api" || got[1] != "web/vm1" {
 		t.Errorf("machines %v, want web's alone", got)
 	}
+	// Of n1 alone, which web's machines are on: n2, read earlier, has only
+	// pg, which frank may not read.
+	if !res.GetSampleTime().AsTime().Equal(poolSampled.Add(time.Second)) || res.GetNodesUnread() != 0 {
+		t.Errorf("sampled %v, %d unread; want n1's %v, none", res.GetSampleTime().AsTime(), res.GetNodesUnread(), poolSampled.Add(time.Second))
+	}
 	o := res.GetOther()
 	if o.GetMemoryBytes() != 2*gib || o.GetReservedBytes() != gib/2 || o.GetCurrentBytes() != gib/2 || o.GetInUseBytes() != gib/2 || res.GetSizeBytes() != 8*gib {
 		t.Errorf("other %v, size %d; want pg's 2Gi at 512Mi, 512Mi now and in use, of 8Gi", o, res.GetSizeBytes())
@@ -242,6 +249,50 @@ func TestMemoryPoolUsageFoldsWhatTheCallerMayNotRead(t *testing.T) {
 	}
 	_, err = w.memoryPoolUsage(t, "frank@example.com", "absent")
 	wantCodeOf(t, err, connect.CodePermissionDenied, "reading the pool of a tenant that does not exist")
+	// One over every tenant is told it does not exist, as by CPUPoolUsage.
+	asRoot(t, w.s, auth.WithPrincipal(context.Background(), auth.SystemPrincipal))
+	_, err = w.memoryPoolUsage(t, "root@example.com", "absent")
+	wantCodeOf(t, err, connect.CodeNotFound, "root reading the pool of a tenant that does not exist")
+}
+
+// TestMemoryPoolUsageLeavesOutAMalformedMachine: a machine whose memory
+// does not parse is left out, and fails nobody's answer.
+func TestMemoryPoolUsageLeavesOutAMalformedMachine(t *testing.T) {
+	t.Parallel()
+	w := newMemoryPoolWorld(t)
+	w.connectBoth(t)
+	owner := ctr("bad")
+	owner.Metadata.Project = "db"
+	w.put(t, "bad", poolMachineOf("db", w.owner(t, registry.Container, owner), "n2", "2Gi", "", &computev1alpha1.MemoryPool{Name: "acme", Size: "8Gi"}), computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING)
+	// Admission refuses such memory, so it is written to the store as data
+	// from before a rule, or a bug, would be.
+	b := w.s.backend(registry.Machine)
+	key := b.storeKey(resource.Key{Project: "db", Name: "bad-m"})
+	stored, err := w.s.store.Get(t.Context(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err := b.decode(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj.(*computev1alpha1.Machine).Spec.Resources.Memory = "lots"
+	data, err := encode(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.s.store.Update(t.Context(), key, data, stored.Revision); err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range []string{"alice@example.com", "frank@example.com"} {
+		res, err := w.memoryPoolUsage(t, user, "acme")
+		if err != nil {
+			t.Fatalf("%s with a malformed machine: %v", user, err)
+		}
+		if slices.Contains(poolNames(res), "db/bad") {
+			t.Errorf("%s sees the malformed machine: %v", user, poolNames(res))
+		}
+	}
 }
 
 // TestMemoryPoolUsageCountsNodesUnread: a node not connected is counted,
@@ -257,6 +308,23 @@ func TestMemoryPoolUsageCountsNodesUnread(t *testing.T) {
 	}
 	if res.GetNodesUnread() != 1 || len(res.GetMachines()) != 3 || res.GetMachines()[2].CurrentBytes != nil {
 		t.Errorf("with n2 not connected: %v, want one node unread and pg with no size", res)
+	}
+	// n2 has only pg, which frank may not read: not his to count.
+	res, err = w.memoryPoolUsage(t, "frank@example.com", "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.GetNodesUnread() != 0 || !res.GetSampleTime().AsTime().Equal(poolSampled) {
+		t.Errorf("frank, with n2 not connected: %d unread, sampled %v; want none, n1's %v", res.GetNodesUnread(), res.GetSampleTime().AsTime(), poolSampled)
+	}
+	// A node with no read lately is unread too.
+	w.connectNodeAs(t, "n2", memoryPoolNode{})
+	res, err = w.memoryPoolUsage(t, "alice@example.com", "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.GetNodesUnread() != 1 || !res.GetSampleTime().AsTime().Equal(poolSampled) {
+		t.Errorf("with n2 read but stale: %d unread, sampled %v; want one, n1's", res.GetNodesUnread(), res.GetSampleTime().AsTime())
 	}
 
 	setDefaultPlan(t, w.s, &tenancyv1alpha1.Limits{Memory: proto.String("8Gi")})

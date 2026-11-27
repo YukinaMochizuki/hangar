@@ -125,8 +125,13 @@ GiB nobody measured.
   total (memory, reservation, now, in use), with no name, kind or count.
   Such a caller learns the pool's size, which is the plan's memory, and
   those totals of the rest of the tenant; that was accepted for a project
-  member, since the pool is what its own machines share. `CPUPoolUsage`
-  keeps the Tenant's get.
+  member, since the pool is what its own machines share. What it is told
+  of nodes, when they last read the pool and how many could not be read
+  (a node with no read lately counts so), is of the nodes its named
+  machines are on alone. A machine whose memory does not parse is left
+  out and logged rather than failing everyone's answer, and a tenant that
+  does not exist is `NOT_FOUND` to a caller over every tenant, as for
+  `CPUPoolUsage`, which keeps the Tenant's get.
 
 ## Consequences
 

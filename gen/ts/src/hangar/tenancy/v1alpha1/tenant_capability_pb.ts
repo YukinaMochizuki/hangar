@@ -101,16 +101,18 @@ export type MemoryPoolUsageResponse = Message<"hangar.tenancy.v1alpha1.MemoryPoo
   sizeBytes?: bigint | undefined;
 
   /**
-   * When the oldest of the nodes read last looked at the pool; unset when
-   * none read has looked at it yet.
+   * Of the nodes the machines in `machines` are on, when the one that read
+   * the pool longest ago last read it; unset when none has read it lately.
+   * The nodes only other's machines are on are not counted.
    *
    * @generated from field: google.protobuf.Timestamp sample_time = 2;
    */
   sampleTime?: Timestamp | undefined;
 
   /**
-   * How many nodes the pool's running machines are on, that could not be
-   * read, as one not connected.
+   * How many of the nodes the machines in `machines` are on could not be
+   * read, as one not connected, or have not read the pool lately, which
+   * a node keeps for three of its calm polls (docs/decisions/node-agent.md).
    *
    * @generated from field: int32 nodes_unread = 3;
    */
@@ -297,7 +299,9 @@ export const TenantCapabilityService: GenService<{
    * the caller may not get are summed into other, unnamed. Such a caller
    * learns the pool's size, the plan's memory, and those sums of the rest
    * of the tenant, nothing more. A tenant with no memory pool answers
-   * nothing set. See docs/decisions/memory-pool.md.
+   * nothing set; a tenant that does not exist is NOT_FOUND to a caller
+   * over every tenant, as for CPUPoolUsage. See
+   * docs/decisions/memory-pool.md.
    *
    * @generated from rpc hangar.tenancy.v1alpha1.TenantCapabilityService.MemoryPoolUsage
    */
