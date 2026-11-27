@@ -96,7 +96,11 @@ type CPUPoolUsageResponse struct {
 	Machines []*CPUPoolMachine `protobuf:"bytes,6,rep,name=machines,proto3" json:"machines,omitempty"`
 	// The running machines in the pool the caller may not read, summed;
 	// unset when there are none.
-	Other         *CPUPoolTotal `protobuf:"bytes,7,opt,name=other,proto3" json:"other,omitempty"`
+	Other *CPUPoolTotal `protobuf:"bytes,7,opt,name=other,proto3" json:"other,omitempty"`
+	// Whether the tenant's machines share its CPUs as a pool: its plan's
+	// percent above 100 with a cpu limit, and its BillingAccount not
+	// PAY_AS_YOU_GO. False, nothing else is set.
+	Pooled        bool `protobuf:"varint,8,opt,name=pooled,proto3" json:"pooled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -178,6 +182,13 @@ func (x *CPUPoolUsageResponse) GetOther() *CPUPoolTotal {
 		return x.Other
 	}
 	return nil
+}
+
+func (x *CPUPoolUsageResponse) GetPooled() bool {
+	if x != nil {
+		return x.Pooled
+	}
+	return false
 }
 
 // CPUPoolMinute is one minute of a CPU pool.
@@ -717,7 +728,7 @@ const file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDesc = "" +
 	"\n" +
 	"/hangar/tenancy/v1alpha1/tenant_capability.proto\x12\x17hangar.tenancy.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a%hangar/compute/v1alpha1/machine.proto\"-\n" +
 	"\x13CPUPoolUsageRequest\x12\x16\n" +
-	"\x06tenant\x18\x01 \x01(\tR\x06tenant\"\x92\x03\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\"\xaa\x03\n" +
 	"\x14CPUPoolUsageResponse\x12\x1b\n" +
 	"\x06slowed\x18\x01 \x01(\x01H\x00R\x06slowed\x88\x01\x01\x12 \n" +
 	"\tmilli_cpu\x18\x02 \x01(\x03H\x01R\bmilliCpu\x88\x01\x01\x12!\n" +
@@ -726,7 +737,8 @@ const file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDesc = "" +
 	"\vsample_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"sampleTime\x12C\n" +
 	"\bmachines\x18\x06 \x03(\v2'.hangar.tenancy.v1alpha1.CPUPoolMachineR\bmachines\x12;\n" +
-	"\x05other\x18\a \x01(\v2%.hangar.tenancy.v1alpha1.CPUPoolTotalR\x05otherB\t\n" +
+	"\x05other\x18\a \x01(\v2%.hangar.tenancy.v1alpha1.CPUPoolTotalR\x05other\x12\x16\n" +
+	"\x06pooled\x18\b \x01(\bR\x06pooledB\t\n" +
 	"\a_slowedB\f\n" +
 	"\n" +
 	"_milli_cpu\"W\n" +

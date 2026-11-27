@@ -260,8 +260,8 @@ func TestCPUPoolUsageIsAskedAsTheMemoryPools(t *testing.T) {
 			t.Errorf("%s: %v", user, err)
 			continue
 		}
-		if res.GetSlowed() != 0.5 {
-			t.Errorf("%s: slowed %v, want 0.5", user, res.GetSlowed())
+		if res.GetSlowed() != 0.5 || !res.GetPooled() {
+			t.Errorf("%s: slowed %v, pooled %v; want 0.5, pooled", user, res.GetSlowed(), res.GetPooled())
 		}
 	}
 	for _, user := range []string{"bob@example.com", "erin@example.com"} {
@@ -272,16 +272,30 @@ func TestCPUPoolUsageIsAskedAsTheMemoryPools(t *testing.T) {
 	wantCodeOf(t, err, connect.CodePermissionDenied, "alice reading another tenant's pool")
 	_, err = w.cpuPoolUsage(t, "frank@example.com", "absent")
 	wantCodeOf(t, err, connect.CodePermissionDenied, "reading the pool of a tenant that does not exist")
-	asRoot(t, w.s, auth.WithPrincipal(context.Background(), auth.SystemPrincipal))
+	root := asRoot(t, w.s, auth.WithPrincipal(context.Background(), auth.SystemPrincipal))
 	_, err = w.cpuPoolUsage(t, "root@example.com", "absent")
 	wantCodeOf(t, err, connect.CodeNotFound, "root reading the pool of a tenant that does not exist")
+
+	// Paying as it goes, the plan's percent gives no pool, which one who
+	// may not read the BillingAccount is told plainly.
+	mustApply(t, w.s, root, registry.PriceList, priceList("std", "TWD"))
+	mustApply(t, w.s, root, registry.BillingAccount, payg("acme", "std", 1, minuteNow(w.s)))
+	for _, user := range []string{"alice@example.com", "frank@example.com"} {
+		res, err := w.cpuPoolUsage(t, user, "acme")
+		if err != nil {
+			t.Fatalf("%s, paying as it goes: %v", user, err)
+		}
+		if res.GetPooled() || res.Slowed != nil || len(res.GetMachines()) != 0 || res.GetOther() != nil {
+			t.Errorf("%s, paying as it goes: %v, want not pooled, nothing", user, res)
+		}
+	}
 
 	setDefaultPlan(t, w.s, &tenancyv1alpha1.Limits{Cpu: proto.String("4")})
 	res, err := w.cpuPoolUsage(t, "alice@example.com", "acme")
 	if err != nil {
 		t.Fatalf("a tenant with no pool: %v", err)
 	}
-	if res.Slowed != nil || res.MilliCpu != nil || len(res.GetMachines()) != 0 || len(res.GetMinutes()) != 0 || res.GetOther() != nil || res.GetNodesUnread() != 0 {
+	if res.GetPooled() || res.Slowed != nil || res.MilliCpu != nil || len(res.GetMachines()) != 0 || len(res.GetMinutes()) != 0 || res.GetOther() != nil || res.GetNodesUnread() != 0 {
 		t.Errorf("a tenant with no pool: %v, want nothing", res)
 	}
 }

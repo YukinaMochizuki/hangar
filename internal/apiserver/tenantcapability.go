@@ -62,6 +62,7 @@ func (h tenantCapabilities) CPUPoolUsage(ctx context.Context, req *connect.Reque
 	if pools.cpu == nil {
 		return connect.NewResponse(res), nil
 	}
+	res.Pooled = true
 	machines, err := s.cpuPoolMachines(ctx, key.Name)
 	if err != nil {
 		return nil, apiError(err)

@@ -98,7 +98,10 @@ a CPU held back only slows a guest, it never kills a process.
   many could not be read is of the nodes its named machines are on; the
   pool's share and its minutes are of every node, as they say nothing of
   any one machine. A tenant that does not exist is `NOT_FOUND` to a
-  caller over every tenant, `PERMISSION_DENIED` to any other.
+  caller over every tenant, `PERMISSION_DENIED` to any other. The answer
+  says whether the tenant is pooled, as the server judges it, so a caller
+  who may not read the tenant's BillingAccount, and cannot tell a plan's
+  percent from a pool, is told.
 
 ## Consequences
 

@@ -68,6 +68,10 @@ message CPUPoolUsageResponse {
   // The running machines in the pool the caller may not read, summed;
   // unset when there are none.
   CPUPoolTotal other = 7;
+  // Whether the tenant's machines share its CPUs as a pool: its plan's
+  // percent above 100 with a cpu limit, and its BillingAccount not
+  // PAY_AS_YOU_GO. False, nothing else is set.
+  bool pooled = 8;
 }
 
 // CPUPoolMinute is one minute of a CPU pool.
