@@ -1164,6 +1164,17 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 			return invalid("spec.memory_pool.size %q is not a memory size above zero", pool.GetSize())
 		}
 	}
+	if pool := spec.GetCpuPool(); pool != nil {
+		if err := ValidName(pool.GetName()); err != nil {
+			return invalid("spec.cpu_pool.name: %v", err)
+		}
+		if m, err := quantity.MilliCPU(pool.GetCpu()); err != nil || m == 0 {
+			return invalid("spec.cpu_pool.cpu %q is not a cpu quantity above zero", pool.GetCpu())
+		}
+		if mp := spec.GetMemoryPool(); mp != nil && mp.GetName() != pool.GetName() {
+			return invalid("spec.cpu_pool.name %q is not spec.memory_pool.name %q: a machine's pools are its tenant's", pool.GetName(), mp.GetName())
+		}
+	}
 	seen := map[string]bool{}
 	for _, nic := range spec.GetInterfaces() {
 		if err := ValidName(nic.GetName()); err != nil {

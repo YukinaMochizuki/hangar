@@ -110,6 +110,25 @@ func CPU(s string) (int32, error) {
 	return int32(n.Int64()), nil
 }
 
+// MilliCPU parses a cpu quantity, such as "2" or "500m", in millicores:
+// not negative, and no finer than a millicore.
+func MilliCPU(s string) (int64, error) {
+	v, err := Parse(s)
+	if err != nil {
+		return 0, err
+	}
+	v.Mul(v, big.NewRat(1000, 1))
+	switch {
+	case v.Sign() < 0:
+		return 0, fmt.Errorf("%q is negative", s)
+	case !v.IsInt():
+		return 0, fmt.Errorf("%q is finer than a millicore", s)
+	case !v.Num().IsInt64():
+		return 0, fmt.Errorf("%q is too large", s)
+	}
+	return v.Num().Int64(), nil
+}
+
 // Bytes parses a size in bytes: whole, not negative, and within uint64.
 func Bytes(s string) (uint64, error) {
 	v, err := Parse(s)

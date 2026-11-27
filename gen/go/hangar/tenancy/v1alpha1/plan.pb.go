@@ -282,7 +282,10 @@ func (x *PlanStatus) GetConditions() []*v1.Condition {
 // place among machines.
 type Limits struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// vCPUs, a quantity in Kubernetes syntax, such as "8" or "2500m".
+	// vCPUs, a quantity in Kubernetes syntax, such as "8" or "2500m": what
+	// the vCPUs of machines asked to run may add up to, and, with
+	// cpu_limit_percent above 100, the CPUs they may use together. See
+	// docs/decisions/cpu-pool.md.
 	Cpu *string `protobuf:"bytes,1,opt,name=cpu,proto3,oneof" json:"cpu,omitempty"`
 	// Memory, a quantity such as "16Gi": what machines asked to run have
 	// reserved, together (resources.memory_reserved, which is their
@@ -331,8 +334,17 @@ type Limits struct {
 	// both sums the same way, with its tenant's percent. See
 	// docs/decisions/memory-pool.md.
 	MemoryLimitPercent *int32 `protobuf:"varint,16,opt,name=memory_limit_percent,json=memoryLimitPercent,proto3,oneof" json:"memory_limit_percent,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// How far the vCPUs of the tenant's machines asked to run may add up, as
+	// a percent of cpu. Above 100, the tenant's machines share cpu as one
+	// pool: on each node they use no more than cpu CPUs together, whether or
+	// not the node's other CPUs are idle, unless its BillingAccount is
+	// PAY_AS_YOU_GO, which has no pool and stays at cpu. Only a Plan sets it,
+	// from 100 to 400, and only with cpu; unset, it is 100. A project's cpu
+	// limit holds the vCPUs the same way, with its tenant's percent. See
+	// docs/decisions/cpu-pool.md.
+	CpuLimitPercent *int32 `protobuf:"varint,17,opt,name=cpu_limit_percent,json=cpuLimitPercent,proto3,oneof" json:"cpu_limit_percent,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Limits) Reset() {
@@ -473,6 +485,13 @@ func (x *Limits) GetNetworkEndpoints() int32 {
 func (x *Limits) GetMemoryLimitPercent() int32 {
 	if x != nil && x.MemoryLimitPercent != nil {
 		return *x.MemoryLimitPercent
+	}
+	return 0
+}
+
+func (x *Limits) GetCpuLimitPercent() int32 {
+	if x != nil && x.CpuLimitPercent != nil {
+		return *x.CpuLimitPercent
 	}
 	return 0
 }
@@ -1298,7 +1317,7 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
 	"conditions\x18\x02 \x03(\v2\x19.hangar.meta.v1.ConditionR\n" +
-	"conditions\"\xdd\x06\n" +
+	"conditions\"\xa4\a\n" +
 	"\x06Limits\x12\x15\n" +
 	"\x03cpu\x18\x01 \x01(\tH\x00R\x03cpu\x88\x01\x01\x12\x1b\n" +
 	"\x06memory\x18\x02 \x01(\tH\x01R\x06memory\x88\x01\x01\x12\x17\n" +
@@ -1318,7 +1337,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\rcustom_images\x18\r \x01(\x05H\fR\fcustomImages\x88\x01\x01\x12(\n" +
 	"\rmachine_calls\x18\x0e \x01(\x05H\rR\fmachineCalls\x88\x01\x01\x120\n" +
 	"\x11network_endpoints\x18\x0f \x01(\x05H\x0eR\x10networkEndpoints\x88\x01\x01\x125\n" +
-	"\x14memory_limit_percent\x18\x10 \x01(\x05H\x0fR\x12memoryLimitPercent\x88\x01\x01B\x06\n" +
+	"\x14memory_limit_percent\x18\x10 \x01(\x05H\x0fR\x12memoryLimitPercent\x88\x01\x01\x12/\n" +
+	"\x11cpu_limit_percent\x18\x11 \x01(\x05H\x10R\x0fcpuLimitPercent\x88\x01\x01B\x06\n" +
 	"\x04_cpuB\t\n" +
 	"\a_memoryB\a\n" +
 	"\x05_diskB\v\n" +
@@ -1336,7 +1356,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\x0e_custom_imagesB\x10\n" +
 	"\x0e_machine_callsB\x14\n" +
 	"\x12_network_endpointsB\x17\n" +
-	"\x15_memory_limit_percent\"\xe8\x03\n" +
+	"\x15_memory_limit_percentB\x14\n" +
+	"\x12_cpu_limit_percent\"\xe8\x03\n" +
 	"\x05Usage\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\tR\x06memory\x12\x12\n" +

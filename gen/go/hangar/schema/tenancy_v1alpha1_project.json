@@ -149,8 +149,13 @@
           "type": "integer"
         },
         "cpu": {
-          "description": "vCPUs, a quantity in Kubernetes syntax, such as \"8\" or \"2500m\".",
+          "description": "vCPUs, a quantity in Kubernetes syntax, such as \"8\" or \"2500m\": what the vCPUs of machines asked to run may add up to, and, with cpu_limit_percent above 100, the CPUs they may use together. See docs/decisions/cpu-pool.md.",
           "type": "string"
+        },
+        "cpuLimitPercent": {
+          "description": "How far the vCPUs of the tenant's machines asked to run may add up, as a percent of cpu. Above 100, the tenant's machines share cpu as one pool: on each node they use no more than cpu CPUs together, whether or not the node's other CPUs are idle, unless its BillingAccount is PAY_AS_YOU_GO, which has no pool and stays at cpu. Only a Plan sets it, from 100 to 400, and only with cpu; unset, it is 100. A project's cpu limit holds the vCPUs the same way, with its tenant's percent. See docs/decisions/cpu-pool.md.",
+          "format": "int32",
+          "type": "integer"
         },
         "customImages": {
           "description": "CustomImages; one that failed counts toward no limit.",

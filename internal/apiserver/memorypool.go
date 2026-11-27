@@ -5,10 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"google.golang.org/protobuf/proto"
-
 	billingv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/billing/v1alpha1"
-	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
@@ -55,29 +52,6 @@ func (s *Server) poolTermsOf(ctx context.Context, tenant string) (terms poolTerm
 	a, _ := account.(*billingv1alpha1.BillingAccount)
 	payg := a.GetSpec().GetType() == billingv1alpha1.BillingType_BILLING_TYPE_PAY_AS_YOU_GO
 	return poolTerms{plan: plan, limits: limits, payg: payg}, true, nil
-}
-
-// tenantMemoryPool is the memory pool tenant's machines carry, nil when
-// they share none.
-func (s *Server) tenantMemoryPool(ctx context.Context, tenant string) (*computev1alpha1.MemoryPool, error) {
-	terms, ok, err := s.poolTermsOf(ctx, tenant)
-	if err != nil || !ok || !terms.pooled() {
-		return nil, err
-	}
-	return &computev1alpha1.MemoryPool{
-		Name: tenant,
-		Size: quantity.FormatMemory(uint64(terms.limits.val[dimMemory])),
-	}, nil
-}
-
-// memoryPoolOf is the memory pool the machines of project carry, nil when
-// they share none, as in a project that does not exist.
-func (s *Server) memoryPoolOf(ctx context.Context, project string) (*computev1alpha1.MemoryPool, error) {
-	obj, err := s.get(ctx, registry.Project, resource.Key{Name: project})
-	if err != nil || obj == nil {
-		return nil, err
-	}
-	return s.tenantMemoryPool(ctx, obj.(*tenancyv1alpha1.Project).GetSpec().GetTenant())
 }
 
 // reservation is a machine's reserved memory and its memory.
@@ -141,8 +115,8 @@ func (s *Server) checkReserved(ctx context.Context, project, written string, mem
 }
 
 // poolWatches wake the controller of kind r, which owns machines, for what
-// decides its machines' memory pool: the tenant's Plan, its spec.plan and
-// its BillingAccount.
+// decides its machines' memory and CPU pools: the tenant's Plan, its
+// spec.plan and its BillingAccount.
 func poolWatches(s *Server, r registry.Resource) []controller.Watch {
 	mapper := s.ownersOfStalePools(r)
 	return []controller.Watch{
@@ -153,9 +127,10 @@ func poolWatches(s *Server, r registry.Resource) []controller.Watch {
 }
 
 // ownersOfStalePools maps a change of a Plan, a Tenant or a BillingAccount
-// to the objects of kind r whose machine's memory_pool it leaves out of
-// date, so their controller brings it up to date. Only those are queued, so
-// the tenant's status, written whenever its usage changes, wakes nothing.
+// to the objects of kind r whose machine's memory_pool or cpu_pool it
+// leaves out of date, so their controller brings them up to date. Only
+// those are queued, so the tenant's status, written whenever its usage
+// changes, wakes nothing.
 func (s *Server) ownersOfStalePools(r registry.Resource) func(context.Context, store.Object) []controller.Key {
 	return func(ctx context.Context, o store.Object) []controller.Key {
 		tenants := []string{o.Name}
@@ -169,7 +144,7 @@ func (s *Server) ownersOfStalePools(r registry.Resource) func(context.Context, s
 		for _, tenant := range tenants {
 			found, err := s.stalePoolOwners(ctx, r, tenant)
 			if err != nil {
-				s.log.Error("finding machines with a stale memory pool failed", "tenant", tenant, "error", err)
+				s.log.Error("finding machines with a stale pool failed", "tenant", tenant, "error", err)
 				continue
 			}
 			keys = append(keys, found...)
@@ -179,11 +154,15 @@ func (s *Server) ownersOfStalePools(r registry.Resource) func(context.Context, s
 }
 
 // stalePoolOwners are tenant's objects of kind r whose machine does not
-// carry the memory pool the tenant's machines carry now.
+// carry the pools the tenant's machines carry now: none for a FileShare's
+// server, which is in no pool (ensureMachineOf).
 func (s *Server) stalePoolOwners(ctx context.Context, r registry.Resource, tenant string) ([]controller.Key, error) {
-	want, err := s.tenantMemoryPool(ctx, tenant)
-	if err != nil {
-		return nil, err
+	var want machinePools
+	if r.Kind != registry.FileShare.Kind {
+		var err error
+		if want, err = s.tenantPools(ctx, tenant); err != nil {
+			return nil, err
+		}
 	}
 	projects, err := s.listWith(ctx, registry.Project, "", nil)
 	if err != nil {
@@ -204,7 +183,7 @@ func (s *Server) stalePoolOwners(ctx context.Context, r registry.Resource, tenan
 			if !ok {
 				return nil, errors.New("decode machine " + mo.Name)
 			}
-			if m.GetMetadata().GetDeleteTime() != nil || proto.Equal(m.GetSpec().GetMemoryPool(), want) {
+			if m.GetMetadata().GetDeleteTime() != nil || want.carries(m.GetSpec()) {
 				continue
 			}
 			for _, ref := range m.GetMetadata().GetOwnerReferences() {

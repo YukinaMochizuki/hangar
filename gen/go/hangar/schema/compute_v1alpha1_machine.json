@@ -1,5 +1,20 @@
 {
   "$defs": {
+    "hangar.compute.v1alpha1.CPUPool": {
+      "additionalProperties": false,
+      "description": "CPUPool is CPUs a tenant's machines share.",
+      "properties": {
+        "cpu": {
+          "description": "The tenant's Plan's cpu, as Limits writes it, such as \"4\" or \"2500m\": the most CPU the pool's machines may use together on each node.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The tenant's name: one pool per tenant, never shared across tenants, and the same as its memory pool's when it has one.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "hangar.compute.v1alpha1.ContainerBoot": {
       "additionalProperties": false,
       "description": "ContainerBoot boots an OCI image as the root disk, with hangar-init as PID 1 running the image's process.",
@@ -274,6 +289,10 @@
         "container": {
           "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerBoot",
           "description": "Set at most one of container, firmware, fileShareServer."
+        },
+        "cpuPool": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.CPUPool",
+          "description": "The CPUs the machine shares with its tenant's other machines; unset for a machine in no CPU pool, which may use its vCPUs whatever the others do. Its owner's controller sets it from the tenant's Plan and BillingAccount, and keeps it up to date while the machine runs: changing it restarts nothing. See docs/decisions/cpu-pool.md."
         },
         "disks": {
           "description": "Disks attached after the ones the boot makes, in this order. A disk is attached to one machine at a time.",
