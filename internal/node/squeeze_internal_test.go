@@ -30,7 +30,9 @@ type poolVM struct {
 	balloonMiB, useMiB int64
 	stuck, unreadable  bool
 	staleStats         bool
-	lastOOMKill        time.Time
+	// usageFails fails reading its unit's usage, which fails its pool's poll.
+	usageFails  bool
+	lastOOMKill time.Time
 }
 
 // poolHost is a hypervisor running vms, started an hour before its
@@ -65,7 +67,7 @@ func (h *poolHost) VMs(context.Context) ([]driver.VM, error) {
 
 func (h *poolHost) Usage(_ context.Context, uid string) (driver.VMUsage, error) {
 	v, ok := h.vms[uid]
-	if !ok {
+	if !ok || v.usageFails {
 		return driver.VMUsage{}, errors.New("no VM")
 	}
 	return driver.VMUsage{Memory: uint64(min(v.useMiB+50, v.launched.MemoryMiB-v.balloonMiB)) * mib}, nil

@@ -90,6 +90,38 @@ func TestMemoryPoolUsageAnswersTheLastSqueeze(t *testing.T) {
 	}
 }
 
+// TestMemoryPoolUsageAnswersNoReadGoneStale: a pool whose polls fail keeps
+// its last read, which is answered for staleReadPolls calm polls and then
+// not at all, as for a pool never read.
+func TestMemoryPoolUsageAnswersNoReadGoneStale(t *testing.T) {
+	t.Parallel()
+	a, h := newPoolAgent(t)
+	clock := a.cfg.Clock.(*clockwork.FakeClock)
+	a.memoryShares = map[string]memoryShare{"a": share("a", "acme", 4096, 4096, 1024), "s": share("s", "acme", 4096, 4096, 1024)}
+	a.squeeze(t.Context(), false)
+	read := clock.Now()
+	h.vms["s"].usageFails = true
+	clock.Advance(staleReadPolls * DefaultSqueezePoll)
+	a.squeeze(t.Context(), false)
+	res, err := memoryPoolUsage(t, a, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.GetSampleTime().AsTime().Equal(read) || len(res.GetMembers()) != 2 {
+		t.Errorf("polls failing, at the bound: %v, want the read of %v", res, read)
+	}
+	clock.Advance(time.Second)
+	a.squeeze(t.Context(), false)
+	if res, err := memoryPoolUsage(t, a, "acme"); err != nil || res.GetSampleTime() != nil || len(res.GetMembers()) != 0 {
+		t.Errorf("polls failing, past the bound: %v, %v; want nothing", res, err)
+	}
+	h.vms["s"].usageFails = false
+	a.squeeze(t.Context(), false)
+	if res, err := memoryPoolUsage(t, a, "acme"); err != nil || !res.GetSampleTime().AsTime().Equal(clock.Now()) {
+		t.Errorf("polled again: %v, %v; want the new read", res, err)
+	}
+}
+
 // TestMemoryPoolUsageSaysSinceWhenABalloonIsUnresponsive: a member whose
 // balloon stopped following says since when, no earlier than
 // squeeze.StuckFor after it was first asked.

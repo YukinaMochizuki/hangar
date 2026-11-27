@@ -1,6 +1,7 @@
 package node
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"maps"
@@ -97,12 +98,17 @@ func lastOOMKills(vms []driver.VM) map[string]time.Time {
 	return out
 }
 
+// staleReadPolls is how many calm polls old a pool's last read may be and
+// still be answered: a poll that fails keeps no read, so the last one ages.
+const staleReadPolls = 3
+
 // memoryPoolAnswer is what the node says of the pool: its last read, each
-// member's balloon as the squeezer follows it now.
+// member's balloon as the squeezer follows it now; nothing for a read older
+// than staleReadPolls calm polls, as for none.
 func (a *Agent) memoryPoolAnswer(pool string) *nodev1.MemoryPoolUsageResponse {
 	res := &nodev1.MemoryPoolUsageResponse{}
 	read, ok := a.poolReads.read(pool)
-	if !ok {
+	if !ok || a.cfg.Clock.Now().Sub(read.at) > staleReadPolls*cmp.Or(a.cfg.SqueezePoll, DefaultSqueezePoll) {
 		return res
 	}
 	res.SampleTime = timestamppb.New(read.at)
