@@ -76,6 +76,10 @@ type world struct {
 	// usagePoll, if set before the agent starts, is how often it samples
 	// the machines' usage; zero is node.DefaultUsagePoll.
 	usagePoll time.Duration
+	// creditCheckpoint, if set before the agent starts, is how often it
+	// writes burstable machines' CPU credits to their status; zero is
+	// node.DefaultCreditCheckpoint.
+	creditCheckpoint time.Duration
 	// sweepInterval, if set before the agent starts, is how often it
 	// sweeps; 100ms if not.
 	sweepInterval time.Duration
@@ -202,6 +206,7 @@ func (w *world) startAgent() {
 		RootPoll:          20 * time.Millisecond,
 		TailnetPoll:       20 * time.Millisecond,
 		UsagePoll:         w.usagePoll,
+		CreditCheckpoint:  w.creditCheckpoint,
 		SqueezePoll:       w.squeezePoll,
 		PullTimeout:       w.pullTimeout,
 		CaptureTimeout:    w.captureTimeout,

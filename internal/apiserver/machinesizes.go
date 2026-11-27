@@ -35,6 +35,9 @@ func validateMachineSize(_ context.Context, _ *Server, _ auth.Principal, _, obj 
 	if spec.GetOrder() < 0 {
 		return invalid("spec.order %d is negative", spec.GetOrder())
 	}
+	if b := spec.GetCpuBaseline(); b != 0 && b != 20 && b != 40 {
+		return invalid("spec.cpu_baseline %d is not 20 or 40; a standard size names none", b)
+	}
 	var sz sizes
 	var err error
 	if sz.cpu, err = quantity.CPU(spec.GetCpu()); err != nil {

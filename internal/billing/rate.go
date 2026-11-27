@@ -25,6 +25,8 @@ type Item struct {
 // Items are the things billed, in the order a Statement lists them.
 var Items = []Item{
 	{"cpu", "vCPU-hour", 1000},
+	{"cpu_burstable_20", "vCPU-hour", 1000},
+	{"cpu_burstable_40", "vCPU-hour", 1000},
 	{"memory", "GiB-hour", 1024},
 	{"disk", "GiB-hour", 1},
 	{"addresses", "address-hour", 1},
@@ -38,11 +40,18 @@ var Items = []Item{
 // PriceSet is a set of prices by item name; an item not in it is free.
 type PriceSet map[string]Micros
 
+// BurstableItems are the items a running burstable machine's vCPUs are
+// billed as in place of cpu, by its baseline in percent
+// (docs/decisions/cpu-credits.md).
+var BurstableItems = map[int32]string{20: "cpu_burstable_20", 40: "cpu_burstable_40"}
+
 // ParsePrices reads p, refusing a price that is not a decimal of at most six
-// digits after the point.
+// digits after the point. A burstable item left empty is priced at cpu's
+// price times its baseline, so a missing price never makes vCPUs free.
 func ParsePrices(p *billingv1alpha1.Prices) (PriceSet, error) {
 	fields := map[string]string{
-		"cpu": p.GetCpu(), "memory": p.GetMemory(), "disk": p.GetDisk(), "addresses": p.GetAddresses(),
+		"cpu": p.GetCpu(), "cpu_burstable_20": p.GetCpuBurstable_20(), "cpu_burstable_40": p.GetCpuBurstable_40(),
+		"memory": p.GetMemory(), "disk": p.GetDisk(), "addresses": p.GetAddresses(),
 		"public_endpoints": p.GetPublicEndpoints(), "port_forwards": p.GetPortForwards(),
 		"file_shares": p.GetFileShares(), "network_endpoints": p.GetNetworkEndpoints(), "domains": p.GetDomains(),
 	}
@@ -57,6 +66,13 @@ func ParsePrices(p *billingv1alpha1.Prices) (PriceSet, error) {
 			return nil, fmt.Errorf("%s: %w", it.Name, err)
 		}
 		out[it.Name] = m
+	}
+	if cpu, ok := out["cpu"]; ok {
+		for baseline, item := range BurstableItems {
+			if _, ok := out[item]; !ok {
+				out[item] = cpu.Share(int64(baseline), 100)
+			}
+		}
 	}
 	return out, nil
 }

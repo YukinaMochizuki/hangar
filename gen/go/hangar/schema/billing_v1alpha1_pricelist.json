@@ -59,7 +59,7 @@
     },
     "hangar.billing.v1alpha1.Prices": {
       "additionalProperties": false,
-      "description": "Prices are what holding one unit of each thing for an hour costs, as a decimal in the currency's units with at most six digits after the point, such as \"0.6\". A minute costs a sixtieth of the hour. A price left empty is free. cpu and memory count only while a machine runs; everything else counts while it exists, as the quota counts it (Limits).",
+      "description": "Prices are what holding one unit of each thing for an hour costs, as a decimal in the currency's units with at most six digits after the point, such as \"0.6\". A minute costs a sixtieth of the hour. A price left empty is free, but for a burstable machine's vCPUs. cpu and memory count only while a machine runs; everything else counts while it exists, as the quota counts it (Limits).",
       "properties": {
         "addresses": {
           "description": "Per public IPv6 Address.",
@@ -67,6 +67,14 @@
         },
         "cpu": {
           "description": "Per vCPU.",
+          "type": "string"
+        },
+        "cpuBurstable20": {
+          "description": "Per vCPU of a running burstable machine whose resources.cpu_baseline is 20, in place of cpu. Empty is cpu's price times 0.2, never free.",
+          "type": "string"
+        },
+        "cpuBurstable40": {
+          "description": "Per vCPU of a running burstable machine whose resources.cpu_baseline is 40, in place of cpu. Empty is cpu's price times 0.4, never free.",
           "type": "string"
         },
         "disk": {

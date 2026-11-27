@@ -44,6 +44,8 @@ export function toUsage(r: UsageResponse, kind: MachineKind): Usage {
     ...(r.balloonBytes !== undefined && r.memoryLimitBytes > 0n ? { sizeNowBytes: Number(r.memoryLimitBytes - r.balloonBytes) } : {}),
     // Its CPU pool's CPUs and how often in the last hour they held it back, when it is in one (docs/decisions/cpu-pool.md).
     ...(r.cpuPoolMilliCpu !== undefined ? { cpuPool: { cpus: Number(r.cpuPoolMilliCpu) / 1000, slowed: r.cpuPoolSlowed } } : {}),
+    // Its CPU credits, when it is burstable (docs/decisions/cpu-credits.md).
+    ...(r.cpuBaseline !== undefined ? { credits: { baseline: r.cpuBaseline, balance: r.cpuCredits, held: !!r.cpuHeld } } : {}),
   };
 }
 

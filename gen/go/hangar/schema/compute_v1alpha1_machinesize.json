@@ -8,6 +8,11 @@
           "description": "Whole vCPUs: \"2\" or \"2000m\", never a fraction.",
           "type": "string"
         },
+        "cpuBaseline": {
+          "description": "A burstable size's CPU baseline in percent, 20 or 40, which a machine made from it is given as resources.cpu_baseline; unset is a standard size of all its vCPUs. The console offers burstable sizes as a series of their own. See docs/decisions/cpu-credits.md.",
+          "format": "int32",
+          "type": "integer"
+        },
         "disk": {
           "description": "Root disk size, at least 1Gi, in whole Gi.",
           "type": "string"

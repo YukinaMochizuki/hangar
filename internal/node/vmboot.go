@@ -63,6 +63,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 	if spec, err = withMemoryShare(spec, m); err != nil {
 		return nil, err
 	}
+	spec.CPULimit = a.credits.startLimit(m.GetMetadata().GetUid(), a.cfg.UsagePoll)
 	if vm != nil && !spec.Runs(*vm) {
 		if err := a.stopVM(ctx, uid); err != nil {
 			return nil, err

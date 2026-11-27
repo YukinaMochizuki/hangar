@@ -184,6 +184,16 @@ message Resources {
   // PAY_AS_YOU_GO. It is what counts against the memory quota. A Machine
   // carries it only when below memory. See docs/decisions/memory-pool.md.
   string memory_reserved = 7;
+  // The machine's CPU baseline: the share of each vCPU, in percent, it is
+  // held to once its CPU credits are spent: 20, 40 or 100; unset is 100,
+  // a machine never held. Below 100 the machine is burstable: it earns
+  // CPU credits while it runs below its baseline and spends them to run
+  // above it, up to all its vCPUs, and with none left it is held to its
+  // baseline. Below 100 only for a tenant whose BillingAccount is
+  // PAY_AS_YOU_GO. It changes nothing the quota counts, and changing it
+  // restarts nothing. A Machine carries it only when below 100. See
+  // docs/decisions/cpu-credits.md.
+  int32 cpu_baseline = 8;
 }
 
 // DiskGrow is how a container's root disk grows by itself.

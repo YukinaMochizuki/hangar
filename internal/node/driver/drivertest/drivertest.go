@@ -97,6 +97,9 @@ type Host struct {
 	// on a host with Firmware.
 	HasTPMState func(t *testing.T, machineUID string) bool
 	DropLog     func(t *testing.T, machineUID string)
+	// CPULimit reads the millicores the machine's VM's own unit is held to,
+	// zero for none; the CPU limits part checks them only with it.
+	CPULimit func(t *testing.T, machineUID string) int64
 	// IPv6Prefix is the prefix the network driver was given, invalid for
 	// none; the suite's IPv6 part runs only with one.
 	IPv6Prefix netip.Prefix
@@ -189,6 +192,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("usage", usage, vms)
 	part("memory pools", memoryPools, vms)
 	part("CPU pools", cpuPools, vms)
+	part("CPU limits", cpuLimits, vms)
 	part("logs", logs, vms)
 	part("exec", exec, func(h Host) bool { return vms(h) && h.Exec != nil })
 	part("firmware", firmware, func(h Host) bool { return vms(h) && h.Firmware })

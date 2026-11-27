@@ -311,6 +311,9 @@ func (s nodeService) MachineUsage(ctx context.Context, req *connect.Request[node
 	if vm.Pool != "" {
 		res.CpuPoolSlowed, res.CpuPoolMilliCpu = s.a.cpuPoolAnswer(vm.Pool)
 	}
+	if c, ok := s.a.credits.view(uid, s.a.cfg.UsagePoll); ok {
+		res.CpuBaseline, res.CpuCredits, res.CpuCreditCap, res.CpuHeld = &c.baseline, &c.balance, &c.limit, &c.held
+	}
 	return connect.NewResponse(res), nil
 }
 

@@ -18,6 +18,7 @@ import { FileShareSchema, FileShareService, type FileShare } from "@hangar/api/h
 import { ImageSchema, ImageService, type Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { BillingAccountService, BillingType } from "@hangar/api/hangar/billing/v1alpha1/billing_account_pb";
+import { PriceListService } from "@hangar/api/hangar/billing/v1alpha1/price_list_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -38,8 +39,8 @@ const container = (name: string) => create(ContainerSchema, { metadata: { name, 
 const vm = (name: string) => create(VirtualMachineSchema, { metadata: { name, project: "demo" }, spec: {} });
 
 /** A made-up size; a platform's real sizes are its administrator's. */
-const size = (name: string, displayName: string, cpu: string, memory: string, disk: string, order: number) =>
-  create(MachineSizeSchema, { metadata: { name }, spec: { displayName, cpu, memory, disk, order } });
+const size = (name: string, displayName: string, cpu: string, memory: string, disk: string, order: number, cpuBaseline = 0) =>
+  create(MachineSizeSchema, { metadata: { name }, spec: { displayName, cpu, memory, disk, order, cpuBaseline } });
 
 /** Listed out of order, as the API lists them by name. */
 const madeUpSizes = [
@@ -70,6 +71,8 @@ type Fake = {
   };
   /** The tenant's billing account's type; it has none unless set. */
   billing?: BillingType;
+  /** The prices of the account's price list, in TWD, in effect since 2026-01-01; none unless set. */
+  prices?: { cpu?: string; cpuBurstable20?: string; cpuBurstable40?: string; memory?: string };
   /** The platform's images; debian-13, of no stated smallest disk, unless set. */
   images?: Image[];
   /** The project's disks, file shares and port forwards; none unless set. */
@@ -124,8 +127,13 @@ function api(f: Fake) {
     r.service(BillingAccountService, {
       getBillingAccount: () => {
         if (f.billing === undefined) throw new ConnectError("no billing account", Code.NotFound);
-        return { billingAccount: { metadata: { name: "acme" }, spec: { type: f.billing } } };
+        return { billingAccount: { metadata: { name: "acme" }, spec: { type: f.billing, currency: "TWD", priceList: f.prices ? "standard" : "" } } };
       },
+    });
+    r.service(PriceListService, {
+      getPriceList: () => ({
+        priceList: { metadata: { name: "standard" }, spec: { currency: "TWD", entries: [{ effectiveTime: { seconds: 1767225600n }, prices: f.prices ?? {} }] } },
+      }),
     });
     r.service(NetworkService, { listNetworks: () => ({ items: [{ metadata: { name: "default" }, spec: { ipv4Cidr: "10.0.0.0/24" } }] }) });
     r.service(SecurityGroupService, { listSecurityGroups: () => ({ items: [] }) });
@@ -884,8 +892,10 @@ describe("CreateMachine's memory in a pool", () => {
     await createAllowed(a, "api");
     expect(memoryChoice()).toBeNull();
     expect(sentResources(a).memoryReserved).toBe("");
-    // Nobody asked about billing: the plan already says there is no pool.
-    expect(a.calls).not.toContain("GetBillingAccount");
+    // The billing account is still asked, for whether the CPU baseline is
+    // offered (docs/decisions/cpu-credits.md); a tenant with none gets no choice.
+    expect(screen.queryByRole("radiogroup", { name: "CPU" })).toBeNull();
+    expect(sentResources(a).cpuBaseline ?? 0).toBe(0);
   });
 
   it("offers no choice to a tenant paying as it goes, whatever its plan", async () => {
@@ -966,5 +976,81 @@ describe("CreateMachine's memory in a pool", () => {
     fill("api");
     expect(await screen.findByText("Over the project's shared memory limit")).toBeTruthy();
     expect(submitButton().disabled).toBe(true);
+  });
+});
+
+describe("CreateMachine's burstable sizes", () => {
+  // Burstable sizes are a series of their own, offered to a PAY_AS_YOU_GO
+  // tenant alone (docs/decisions/cpu-credits.md).
+  const sizes = [...madeUpSizes, size("b1", "B1", "1", "1Gi", "10Gi", 40, 20), size("b2", "B2", "2", "4Gi", "20Gi", 41, 40)];
+  const link = () => screen.queryByRole("button", { name: "A burstable machine costs less →" });
+  const card = (label: string) => screen.queryByRole("radio", { name: `Size ${label}` });
+  const prices = { cpu: "0.6", cpuBurstable20: "0.15", memory: "0.2" };
+
+  it("shows a PAYG tenant the standard sizes, a link to the burstable ones, and sends a burstable size's baseline", async () => {
+    const a = api({ containers: async () => ({ items: [] }), sizes, billing: BillingType.PAY_AS_YOU_GO });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(link()).not.toBeNull());
+    expect(card("M")).not.toBeNull();
+    expect(card("Custom")).not.toBeNull();
+    expect(card("B1")).toBeNull();
+    fireEvent.click(link()!);
+    expect(card("M")).toBeNull();
+    expect(card("Custom")).toBeNull();
+    expect(card("B1")!.getAttribute("aria-checked")).toBe("true");
+    expect(card("B2")).not.toBeNull();
+    expect(screen.getByText("Burstable, 20% baseline")).toBeTruthy();
+    await createAllowed(a, "batch");
+    expect(sentResources(a)).toMatchObject({ cpu: "1", memory: "1Gi", cpuBaseline: 20 });
+  });
+
+  it("goes back to the standard sizes, which send no baseline", async () => {
+    const a = api({ containers: async () => ({ items: [] }), sizes, billing: BillingType.PAY_AS_YOU_GO });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(link()).not.toBeNull());
+    fireEvent.click(link()!);
+    fireEvent.click(screen.getByRole("button", { name: "Back to standard sizes" }));
+    expect(card("B1")).toBeNull();
+    fireEvent.click(card("M")!);
+    await createAllowed(a, "api");
+    expect(sentResources(a).cpuBaseline ?? 0).toBe(0);
+  });
+
+  it("offers a FIXED tenant no burstable size and no link", async () => {
+    const a = api({ containers: async () => ({ items: [] }), sizes, billing: BillingType.FIXED, prices });
+    render(<CreateMachine kind="container" size="b1" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(a.calls).toContain("GetBillingAccount"));
+    await screen.findByRole("radio", { name: "Size M" });
+    expect(link()).toBeNull();
+    expect(card("B1")).toBeNull();
+    // Nor any price: a FIXED tenant pays its plan.
+    expect(screen.queryByText(/^TWD /)).toBeNull();
+    await createAllowed(a, "api");
+    expect(sentResources(a).cpuBaseline ?? 0).toBe(0);
+  });
+
+  it("prices every card for a PAYG tenant, vCPUs and memory an hour, a missing burstable price at cpu's times its baseline", async () => {
+    const a = api({ containers: async () => ({ items: [] }), sizes, billing: BillingType.PAY_AS_YOU_GO, prices });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    // M: 2 × 0.6 + 4 × 0.2.
+    await waitFor(() => expect(within(card("M")!).getByText("TWD 2.00")).toBeTruthy());
+    // XS: 1 × 0.6 + 0.5 × 0.2.
+    expect(within(card("XS")!).getByText("TWD 0.70")).toBeTruthy();
+    // Custom, once its shape is set, from M's: 2 vCPUs, 4 GiB.
+    expect(within(card("Custom")!).queryByText(/^TWD /)).toBeNull();
+    fireEvent.click(card("Custom")!);
+    expect(within(card("Custom")!).getByText("TWD 2.00")).toBeTruthy();
+    fireEvent.click(link()!);
+    // B1, its own 20% price: 1 × 0.15 + 1 × 0.2.
+    expect(within(card("B1")!).getByText("TWD 0.35")).toBeTruthy();
+    // B2, no 40% price, so 0.6 × 0.4 = 0.24 a vCPU: 2 × 0.24 + 4 × 0.2.
+    expect(within(card("B2")!).getByText("TWD 1.28")).toBeTruthy();
+  });
+
+  it("opens on the burstable sizes when ?size= names one", async () => {
+    const a = api({ containers: async () => ({ items: [] }), sizes, billing: BillingType.PAY_AS_YOU_GO });
+    render(<CreateMachine kind="container" size="b2" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(card("B2")?.getAttribute("aria-checked")).toBe("true"));
+    expect(card("M")).toBeNull();
   });
 });

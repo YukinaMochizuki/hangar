@@ -117,6 +117,35 @@ describe("a machine's Usage", () => {
   });
 });
 
+describe("a burstable machine's Usage", () => {
+  // web, 2 vCPUs at a 20% baseline (docs/decisions/cpu-credits.md).
+  const burstable = () => ({ items: [{ metadata: { name: "web", project: "demo" }, spec: { image: "nginx", resources: { cpu: "2", memory: "2Gi", cpuBaseline: 20 } } }] });
+  const creditsLine = () => within(usageCard()).getByText(/^Burstable 20% · /);
+
+  it("says its credits under the CPU plot, and about how long they last at full speed", async () => {
+    const api = paletteApi({ listContainers: burstable, usage: () => ({ ...answer(MachineMemoryKind.GUEST_USED), cpuBaseline: 20, cpuCredits: 412.6, cpuCreditCap: 576, cpuHeld: false }) });
+    render(<MachineDetail kind="Container" name="web" />, { wrapper: withApi(api) });
+    await screen.findByText("37%");
+    // 412 credits spent at 2 × (1 − 0.2) a minute: 257 minutes.
+    expect(creditsLine().textContent).toBe("Burstable 20% · 412 credits · about 4 h at full speed");
+    expect(creditsLine().className).not.toContain("text-pending");
+  });
+
+  it("says in amber that it is held to its baseline once its credits are spent", async () => {
+    const api = paletteApi({ listContainers: burstable, usage: () => ({ ...answer(MachineMemoryKind.GUEST_USED), cpuBaseline: 20, cpuCredits: 0.4, cpuCreditCap: 576, cpuHeld: true }) });
+    render(<MachineDetail kind="Container" name="web" />, { wrapper: withApi(api) });
+    await screen.findByText("37%");
+    expect(creditsLine().textContent).toBe("Burstable 20% · out of credits, held to 20%");
+    expect(creditsLine().className).toContain("text-pending");
+  });
+
+  it("says nothing of credits for a machine its node does not call burstable", async () => {
+    render(<MachineDetail kind="Container" name="web" />, { wrapper: withApi(paletteApi({ usage: () => answer(MachineMemoryKind.GUEST_USED) })) });
+    await screen.findByText("37%");
+    expect(within(usageCard()).queryByText(/Burstable/)).toBeNull();
+  });
+});
+
 describe("toUsage", () => {
   const now = new Date();
   const min = (m: number) => timestampFromDate(new Date(now.getTime() - m * 60_000));

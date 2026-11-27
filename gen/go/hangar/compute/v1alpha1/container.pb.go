@@ -792,8 +792,18 @@ type Resources struct {
 	// PAY_AS_YOU_GO. It is what counts against the memory quota. A Machine
 	// carries it only when below memory. See docs/decisions/memory-pool.md.
 	MemoryReserved string `protobuf:"bytes,7,opt,name=memory_reserved,json=memoryReserved,proto3" json:"memory_reserved,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The machine's CPU baseline: the share of each vCPU, in percent, it is
+	// held to once its CPU credits are spent: 20, 40 or 100; unset is 100,
+	// a machine never held. Below 100 the machine is burstable: it earns
+	// CPU credits while it runs below its baseline and spends them to run
+	// above it, up to all its vCPUs, and with none left it is held to its
+	// baseline. Below 100 only for a tenant whose BillingAccount is
+	// PAY_AS_YOU_GO. It changes nothing the quota counts, and changing it
+	// restarts nothing. A Machine carries it only when below 100. See
+	// docs/decisions/cpu-credits.md.
+	CpuBaseline   int32 `protobuf:"varint,8,opt,name=cpu_baseline,json=cpuBaseline,proto3" json:"cpu_baseline,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Resources) Reset() {
@@ -859,6 +869,13 @@ func (x *Resources) GetMemoryReserved() string {
 		return x.MemoryReserved
 	}
 	return ""
+}
+
+func (x *Resources) GetCpuBaseline() int32 {
+	if x != nil {
+		return x.CpuBaseline
+	}
+	return 0
 }
 
 // DiskGrow is how a container's root disk grows by itself.
@@ -1729,13 +1746,14 @@ const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\x05R\x04port\x12=\n" +
 	"\bprotocol\x18\x03 \x01(\x0e2!.hangar.compute.v1alpha1.ProtocolR\bprotocol\x12\x16\n" +
-	"\x06public\x18\x04 \x01(\bR\x06public\"\xd1\x01\n" +
+	"\x06public\x18\x04 \x01(\bR\x06public\"\xf4\x01\n" +
 	"\tResources\x12\x10\n" +
 	"\x03cpu\x18\x03 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x04 \x01(\tR\x06memory\x12\x12\n" +
 	"\x04disk\x18\x05 \x01(\tR\x04disk\x12>\n" +
 	"\tdisk_grow\x18\x06 \x01(\v2!.hangar.compute.v1alpha1.DiskGrowR\bdiskGrow\x12'\n" +
-	"\x0fmemory_reserved\x18\a \x01(\tR\x0ememoryReservedJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x05vcpusR\n" +
+	"\x0fmemory_reserved\x18\a \x01(\tR\x0ememoryReserved\x12!\n" +
+	"\fcpu_baseline\x18\b \x01(\x05R\vcpuBaselineJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x05vcpusR\n" +
 	"memory_mib\"N\n" +
 	"\bDiskGrow\x12\x10\n" +
 	"\x03max\x18\x01 \x01(\tR\x03max\x12\x1c\n" +

@@ -109,6 +109,8 @@ export function formatQuantity(q: string | undefined): string {
 export const itemLabels: Record<string, string> = {
   monthly_fee: "Monthly fee",
   cpu: "vCPU",
+  cpu_burstable_40: "vCPU, burstable 40%",
+  cpu_burstable_20: "vCPU, burstable 20%",
   memory: "Memory",
   disk: "Disk",
   addresses: "IPv6 addresses",
@@ -122,6 +124,8 @@ export const itemLabels: Record<string, string> = {
 /** What a price is per, as the price list's card says it. */
 export const itemUnits: Record<string, string> = {
   cpu: "vCPU-hour",
+  cpu_burstable_40: "vCPU-hour",
+  cpu_burstable_20: "vCPU-hour",
   memory: "GiB-hour",
   disk: "GiB-hour",
   addresses: "address-hour",
@@ -136,11 +140,42 @@ export const itemUnits: Record<string, string> = {
 export function pricesOf(p: Prices | undefined): { item: string; price: string }[] {
   if (!p) return [];
   const all: [string, string][] = [
-    ["cpu", p.cpu], ["memory", p.memory], ["disk", p.disk], ["addresses", p.addresses],
+    ["cpu", p.cpu], ["cpu_burstable_40", p.cpuBurstable40], ["cpu_burstable_20", p.cpuBurstable20], ["memory", p.memory], ["disk", p.disk], ["addresses", p.addresses],
     ["public_endpoints", p.publicEndpoints], ["port_forwards", p.portForwards], ["file_shares", p.fileShares],
     ["network_endpoints", p.networkEndpoints], ["domains", p.domains],
   ];
   return all.filter(([, price]) => price !== "").map(([item, price]) => ({ item, price }));
+}
+
+/** The baselines in percent a burstable machine may have, as `resources.cpu_baseline` takes them (docs/decisions/cpu-credits.md). */
+export const burstableBaselines = [40, 20] as const;
+export type Baseline = 100 | (typeof burstableBaselines)[number];
+
+/**
+ * What one vCPU of a running machine at a baseline costs an hour: the
+ * entry's own burstable price, else cpu's price times the baseline, as the
+ * meter rates it (internal/billing/rate.go ParsePrices). Undefined when cpu
+ * has no price either.
+ */
+export function vcpuPrice(p: Prices | undefined, baseline: Baseline): string | undefined {
+  if (!p) return undefined;
+  const own = baseline === 20 ? p.cpuBurstable20 : baseline === 40 ? p.cpuBurstable40 : p.cpu;
+  if (own) return own;
+  if (!p.cpu) return undefined;
+  // Six digits after the point at most, as a price has.
+  return String(Math.round(Number(p.cpu) * baseline * 10_000) / 1_000_000);
+}
+
+/**
+ * What a running machine of a size costs an hour for its vCPUs and memory,
+ * the two things billed only while it runs; its disk is billed apart.
+ * Undefined when its vCPUs have no price.
+ */
+export function sizePrice(p: Prices | undefined, z: { cpu: number; memoryGi: number; baseline: number }): string | undefined {
+  const cpu = vcpuPrice(p, z.baseline === 20 || z.baseline === 40 ? z.baseline : 100);
+  if (cpu === undefined) return undefined;
+  const total = z.cpu * Number(cpu) + z.memoryGi * Number(p?.memory || 0);
+  return String(Math.round(total * 1_000_000) / 1_000_000);
 }
 
 /** The entry of a price list in effect at a time, and the next after it. */

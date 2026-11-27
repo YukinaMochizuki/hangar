@@ -4,6 +4,8 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Condition, EventType, ObjectMeta } from "../../meta/v1/meta_pb";
 import { file_hangar_meta_v1_meta } from "../../meta/v1/meta_pb";
 import { file_hangar_meta_v1_options } from "../../meta/v1/options_pb";
@@ -15,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/tenancy/v1alpha1/tenant.proto.
  */
 export const file_hangar_tenancy_v1alpha1_tenant: GenFile = /*@__PURE__*/
-  fileDesc("CiRoYW5nYXIvdGVuYW5jeS92MWFscGhhMS90ZW5hbnQucHJvdG8SF2hhbmdhci50ZW5hbmN5LnYxYWxwaGExItwBCgZUZW5hbnQSEwoLYXBpX3ZlcnNpb24YASABKAkSDAoEa2luZBgCIAEoCRIsCghtZXRhZGF0YRgDIAEoCzIaLmhhbmdhci5tZXRhLnYxLk9iamVjdE1ldGESMQoEc3BlYxgEIAEoCzIjLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlRlbmFudFNwZWMSNQoGc3RhdHVzGAUgASgLMiUuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuVGVuYW50U3RhdHVzOheKtRgTCgZUZW5hbnQSB3RlbmFudHMgAiIwCgpUZW5hbnRTcGVjEhQKDGRpc3BsYXlfbmFtZRgBIAEoCRIMCgRwbGFuGAIgASgJIsgBCgxUZW5hbnRTdGF0dXMSGwoTb2JzZXJ2ZWRfZ2VuZXJhdGlvbhgBIAEoAxItCgpjb25kaXRpb25zGAIgAygLMhkuaGFuZ2FyLm1ldGEudjEuQ29uZGl0aW9uEgwKBHBsYW4YAyABKAkSLwoGbGltaXRzGAQgASgLMh8uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTGltaXRzEi0KBXVzYWdlGAUgASgLMh4uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuVXNhZ2UiIAoQR2V0VGVuYW50UmVxdWVzdBIMCgRuYW1lGAEgASgJIkQKEUdldFRlbmFudFJlc3BvbnNlEi8KBnRlbmFudBgBIAEoCzIfLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlRlbmFudCJTChJMaXN0VGVuYW50c1JlcXVlc3QSFgoObGFiZWxfc2VsZWN0b3IYASABKAkSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkicAoTTGlzdFRlbmFudHNSZXNwb25zZRIuCgVpdGVtcxgBIAMoCzIfLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlRlbmFudBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEAoIcmV2aXNpb24YAyABKAMiRQoTV2F0Y2hUZW5hbnRzUmVxdWVzdBIWCg5sYWJlbF9zZWxlY3RvchgBIAEoCRIWCg5zaW5jZV9yZXZpc2lvbhgCIAEoAyKCAQoUV2F0Y2hUZW5hbnRzUmVzcG9uc2USJwoEdHlwZRgBIAEoDjIZLmhhbmdhci5tZXRhLnYxLkV2ZW50VHlwZRIvCgZ0ZW5hbnQYAiABKAsyHy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5UZW5hbnQSEAoIcmV2aXNpb24YAyABKAMiWgoSQXBwbHlUZW5hbnRSZXF1ZXN0Ei8KBnRlbmFudBgBIAEoCzIfLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlRlbmFudBITCgtjcmVhdGVfb25seRgCIAEoCCJpChNBcHBseVRlbmFudFJlc3BvbnNlEi8KBnRlbmFudBgBIAEoCzIfLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlRlbmFudBIQCgh3YXJuaW5ncxgCIAMoCRIPCgdjcmVhdGVkGAMgASgIImkKE0RlbGV0ZVRlbmFudFJlcXVlc3QSDAoEbmFtZRgBIAEoCRImChlleHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uGAIgASgDSACIAQFCHAoaX2V4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24iRwoURGVsZXRlVGVuYW50UmVzcG9uc2USLwoGdGVuYW50GAEgASgLMh8uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuVGVuYW50IqYBChlVcGRhdGVUZW5hbnRTdGF0dXNSZXF1ZXN0EgwKBG5hbWUYASABKAkSNQoGc3RhdHVzGAIgASgLMiUuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuVGVuYW50U3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJNChpVcGRhdGVUZW5hbnRTdGF0dXNSZXNwb25zZRIvCgZ0ZW5hbnQYASABKAsyHy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5UZW5hbnQyogUKDVRlbmFudFNlcnZpY2USYgoJR2V0VGVuYW50EikuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuR2V0VGVuYW50UmVxdWVzdBoqLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkdldFRlbmFudFJlc3BvbnNlEmgKC0xpc3RUZW5hbnRzEisuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTGlzdFRlbmFudHNSZXF1ZXN0GiwuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTGlzdFRlbmFudHNSZXNwb25zZRJtCgxXYXRjaFRlbmFudHMSLC5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5XYXRjaFRlbmFudHNSZXF1ZXN0Gi0uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuV2F0Y2hUZW5hbnRzUmVzcG9uc2UwARJoCgtBcHBseVRlbmFudBIrLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkFwcGx5VGVuYW50UmVxdWVzdBosLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkFwcGx5VGVuYW50UmVzcG9uc2USawoMRGVsZXRlVGVuYW50EiwuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuRGVsZXRlVGVuYW50UmVxdWVzdBotLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkRlbGV0ZVRlbmFudFJlc3BvbnNlEn0KElVwZGF0ZVRlbmFudFN0YXR1cxIyLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlVwZGF0ZVRlbmFudFN0YXR1c1JlcXVlc3QaMy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5VcGRhdGVUZW5hbnRTdGF0dXNSZXNwb25zZUL6AQobY29tLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExQgtUZW5hbnRQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci90ZW5hbmN5L3YxYWxwaGExO3RlbmFuY3l2MWFscGhhMaICA0hUWKoCF0hhbmdhci5UZW5hbmN5LlYxYWxwaGExygIXSGFuZ2FyXFRlbmFuY3lcVjFhbHBoYTHiAiNIYW5nYXJcVGVuYW5jeVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6VGVuYW5jeTo6VjFhbHBoYTFiBnByb3RvMw", [file_hangar_meta_v1_meta, file_hangar_meta_v1_options, file_hangar_tenancy_v1alpha1_plan]);
+  fileDesc("CiRoYW5nYXIvdGVuYW5jeS92MWFscGhhMS90ZW5hbnQucHJvdG8SF2hhbmdhci50ZW5hbmN5LnYxYWxwaGExItwBCgZUZW5hbnQSEwoLYXBpX3ZlcnNpb24YASABKAkSDAoEa2luZBgCIAEoCRIsCghtZXRhZGF0YRgDIAEoCzIaLmhhbmdhci5tZXRhLnYxLk9iamVjdE1ldGESMQoEc3BlYxgEIAEoCzIjLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlRlbmFudFNwZWMSNQoGc3RhdHVzGAUgASgLMiUuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuVGVuYW50U3RhdHVzOheKtRgTCgZUZW5hbnQSB3RlbmFudHMgAiIwCgpUZW5hbnRTcGVjEhQKDGRpc3BsYXlfbmFtZRgBIAEoCRIMCgRwbGFuGAIgASgJIowCCgxUZW5hbnRTdGF0dXMSGwoTb2JzZXJ2ZWRfZ2VuZXJhdGlvbhgBIAEoAxItCgpjb25kaXRpb25zGAIgAygLMhkuaGFuZ2FyLm1ldGEudjEuQ29uZGl0aW9uEgwKBHBsYW4YAyABKAkSLwoGbGltaXRzGAQgASgLMh8uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTGltaXRzEi0KBXVzYWdlGAUgASgLMh4uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuVXNhZ2USQgoRY3B1X2xhdW5jaF9ncmFudHMYBiADKAsyJy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5DUFVMYXVuY2hHcmFudCJNCg5DUFVMYXVuY2hHcmFudBIRCglvd25lcl91aWQYASABKAkSKAoEdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiIAoQR2V0VGVuYW50UmVxdWVzdBIMCgRuYW1lGAEgASgJIkQKEUdldFRlbmFudFJlc3BvbnNlEi8KBnRlbmFudBgBIAEoCzIfLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlRlbmFudCJTChJMaXN0VGVuYW50c1JlcXVlc3QSFgoObGFiZWxfc2VsZWN0b3IYASABKAkSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkicAoTTGlzdFRlbmFudHNSZXNwb25zZRIuCgVpdGVtcxgBIAMoCzIfLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlRlbmFudBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEAoIcmV2aXNpb24YAyABKAMiRQoTV2F0Y2hUZW5hbnRzUmVxdWVzdBIWCg5sYWJlbF9zZWxlY3RvchgBIAEoCRIWCg5zaW5jZV9yZXZpc2lvbhgCIAEoAyKCAQoUV2F0Y2hUZW5hbnRzUmVzcG9uc2USJwoEdHlwZRgBIAEoDjIZLmhhbmdhci5tZXRhLnYxLkV2ZW50VHlwZRIvCgZ0ZW5hbnQYAiABKAsyHy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5UZW5hbnQSEAoIcmV2aXNpb24YAyABKAMiWgoSQXBwbHlUZW5hbnRSZXF1ZXN0Ei8KBnRlbmFudBgBIAEoCzIfLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlRlbmFudBITCgtjcmVhdGVfb25seRgCIAEoCCJpChNBcHBseVRlbmFudFJlc3BvbnNlEi8KBnRlbmFudBgBIAEoCzIfLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlRlbmFudBIQCgh3YXJuaW5ncxgCIAMoCRIPCgdjcmVhdGVkGAMgASgIImkKE0RlbGV0ZVRlbmFudFJlcXVlc3QSDAoEbmFtZRgBIAEoCRImChlleHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uGAIgASgDSACIAQFCHAoaX2V4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24iRwoURGVsZXRlVGVuYW50UmVzcG9uc2USLwoGdGVuYW50GAEgASgLMh8uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuVGVuYW50IqYBChlVcGRhdGVUZW5hbnRTdGF0dXNSZXF1ZXN0EgwKBG5hbWUYASABKAkSNQoGc3RhdHVzGAIgASgLMiUuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuVGVuYW50U3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJNChpVcGRhdGVUZW5hbnRTdGF0dXNSZXNwb25zZRIvCgZ0ZW5hbnQYASABKAsyHy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5UZW5hbnQyogUKDVRlbmFudFNlcnZpY2USYgoJR2V0VGVuYW50EikuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuR2V0VGVuYW50UmVxdWVzdBoqLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkdldFRlbmFudFJlc3BvbnNlEmgKC0xpc3RUZW5hbnRzEisuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTGlzdFRlbmFudHNSZXF1ZXN0GiwuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTGlzdFRlbmFudHNSZXNwb25zZRJtCgxXYXRjaFRlbmFudHMSLC5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5XYXRjaFRlbmFudHNSZXF1ZXN0Gi0uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuV2F0Y2hUZW5hbnRzUmVzcG9uc2UwARJoCgtBcHBseVRlbmFudBIrLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkFwcGx5VGVuYW50UmVxdWVzdBosLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkFwcGx5VGVuYW50UmVzcG9uc2USawoMRGVsZXRlVGVuYW50EiwuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuRGVsZXRlVGVuYW50UmVxdWVzdBotLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkRlbGV0ZVRlbmFudFJlc3BvbnNlEn0KElVwZGF0ZVRlbmFudFN0YXR1cxIyLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLlVwZGF0ZVRlbmFudFN0YXR1c1JlcXVlc3QaMy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5VcGRhdGVUZW5hbnRTdGF0dXNSZXNwb25zZUL6AQobY29tLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExQgtUZW5hbnRQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci90ZW5hbmN5L3YxYWxwaGExO3RlbmFuY3l2MWFscGhhMaICA0hUWKoCF0hhbmdhci5UZW5hbmN5LlYxYWxwaGExygIXSGFuZ2FyXFRlbmFuY3lcVjFhbHBoYTHiAiNIYW5nYXJcVGVuYW5jeVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6VGVuYW5jeTo6VjFhbHBoYTFiBnByb3RvMw", [file_google_protobuf_timestamp, file_hangar_meta_v1_meta, file_hangar_meta_v1_options, file_hangar_tenancy_v1alpha1_plan]);
 
 /**
  * Tenant is who: the people and identities that own projects. Membership is
@@ -122,6 +124,16 @@ export type TenantStatus = Message<"hangar.tenancy.v1alpha1.TenantStatus"> & {
    * @generated from field: hangar.tenancy.v1alpha1.Usage usage = 5;
    */
   usage?: Usage | undefined;
+
+  /**
+   * The launch credits given to the tenant's burstable machines in the
+   * last 24 hours, oldest first: at most 10, past which a new burstable
+   * machine gets none. Deleting a machine gives none back. Written by the
+   * system. See docs/decisions/cpu-credits.md.
+   *
+   * @generated from field: repeated hangar.tenancy.v1alpha1.CPULaunchGrant cpu_launch_grants = 6;
+   */
+  cpuLaunchGrants: CPULaunchGrant[];
 };
 
 /**
@@ -130,6 +142,32 @@ export type TenantStatus = Message<"hangar.tenancy.v1alpha1.TenantStatus"> & {
  */
 export const TenantStatusSchema: GenMessage<TenantStatus> = /*@__PURE__*/
   messageDesc(file_hangar_tenancy_v1alpha1_tenant, 2);
+
+/**
+ * CPULaunchGrant is a burstable machine's launch credits, given.
+ *
+ * @generated from message hangar.tenancy.v1alpha1.CPULaunchGrant
+ */
+export type CPULaunchGrant = Message<"hangar.tenancy.v1alpha1.CPULaunchGrant"> & {
+  /**
+   * The uid of the Container or VirtualMachine the machine runs for.
+   *
+   * @generated from field: string owner_uid = 1;
+   */
+  ownerUid: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp time = 2;
+   */
+  time?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message hangar.tenancy.v1alpha1.CPULaunchGrant.
+ * Use `create(CPULaunchGrantSchema)` to create a new message.
+ */
+export const CPULaunchGrantSchema: GenMessage<CPULaunchGrant> = /*@__PURE__*/
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 3);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.GetTenantRequest
@@ -146,7 +184,7 @@ export type GetTenantRequest = Message<"hangar.tenancy.v1alpha1.GetTenantRequest
  * Use `create(GetTenantRequestSchema)` to create a new message.
  */
 export const GetTenantRequestSchema: GenMessage<GetTenantRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 3);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 4);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.GetTenantResponse
@@ -163,7 +201,7 @@ export type GetTenantResponse = Message<"hangar.tenancy.v1alpha1.GetTenantRespon
  * Use `create(GetTenantResponseSchema)` to create a new message.
  */
 export const GetTenantResponseSchema: GenMessage<GetTenantResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 4);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 5);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.ListTenantsRequest
@@ -190,7 +228,7 @@ export type ListTenantsRequest = Message<"hangar.tenancy.v1alpha1.ListTenantsReq
  * Use `create(ListTenantsRequestSchema)` to create a new message.
  */
 export const ListTenantsRequestSchema: GenMessage<ListTenantsRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 5);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 6);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.ListTenantsResponse
@@ -217,7 +255,7 @@ export type ListTenantsResponse = Message<"hangar.tenancy.v1alpha1.ListTenantsRe
  * Use `create(ListTenantsResponseSchema)` to create a new message.
  */
 export const ListTenantsResponseSchema: GenMessage<ListTenantsResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 6);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 7);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.WatchTenantsRequest
@@ -239,7 +277,7 @@ export type WatchTenantsRequest = Message<"hangar.tenancy.v1alpha1.WatchTenantsR
  * Use `create(WatchTenantsRequestSchema)` to create a new message.
  */
 export const WatchTenantsRequestSchema: GenMessage<WatchTenantsRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 7);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 8);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.WatchTenantsResponse
@@ -266,7 +304,7 @@ export type WatchTenantsResponse = Message<"hangar.tenancy.v1alpha1.WatchTenants
  * Use `create(WatchTenantsResponseSchema)` to create a new message.
  */
 export const WatchTenantsResponseSchema: GenMessage<WatchTenantsResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 8);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 9);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.ApplyTenantRequest
@@ -290,7 +328,7 @@ export type ApplyTenantRequest = Message<"hangar.tenancy.v1alpha1.ApplyTenantReq
  * Use `create(ApplyTenantRequestSchema)` to create a new message.
  */
 export const ApplyTenantRequestSchema: GenMessage<ApplyTenantRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 9);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 10);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.ApplyTenantResponse
@@ -317,7 +355,7 @@ export type ApplyTenantResponse = Message<"hangar.tenancy.v1alpha1.ApplyTenantRe
  * Use `create(ApplyTenantResponseSchema)` to create a new message.
  */
 export const ApplyTenantResponseSchema: GenMessage<ApplyTenantResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 10);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 11);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.DeleteTenantRequest
@@ -339,7 +377,7 @@ export type DeleteTenantRequest = Message<"hangar.tenancy.v1alpha1.DeleteTenantR
  * Use `create(DeleteTenantRequestSchema)` to create a new message.
  */
 export const DeleteTenantRequestSchema: GenMessage<DeleteTenantRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 11);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 12);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.DeleteTenantResponse
@@ -356,7 +394,7 @@ export type DeleteTenantResponse = Message<"hangar.tenancy.v1alpha1.DeleteTenant
  * Use `create(DeleteTenantResponseSchema)` to create a new message.
  */
 export const DeleteTenantResponseSchema: GenMessage<DeleteTenantResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 12);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 13);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.UpdateTenantStatusRequest
@@ -383,7 +421,7 @@ export type UpdateTenantStatusRequest = Message<"hangar.tenancy.v1alpha1.UpdateT
  * Use `create(UpdateTenantStatusRequestSchema)` to create a new message.
  */
 export const UpdateTenantStatusRequestSchema: GenMessage<UpdateTenantStatusRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 13);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 14);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.UpdateTenantStatusResponse
@@ -400,7 +438,7 @@ export type UpdateTenantStatusResponse = Message<"hangar.tenancy.v1alpha1.Update
  * Use `create(UpdateTenantStatusResponseSchema)` to create a new message.
  */
 export const UpdateTenantStatusResponseSchema: GenMessage<UpdateTenantStatusResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 14);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant, 15);
 
 /**
  * TenantService manages tenants.

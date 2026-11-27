@@ -200,7 +200,10 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 	cur, _ := vmShape(vm)
 	var was *machineShape
 	var wasReserved *reservation
+	var wasBaseline *int32
 	if o, ok := old.(*computev1alpha1.VirtualMachine); ok {
+		b := o.GetSpec().GetResources().GetCpuBaseline()
+		wasBaseline = &b
 		if shape, ok := vmShape(o); ok {
 			was = &shape
 		}
@@ -211,6 +214,9 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 		}
 	}
 	if err := s.checkReserved(ctx, vm.GetMetadata().GetProject(), spec.GetResources().GetMemoryReserved(), sz.memory, minVMMemory, wasReserved); err != nil {
+		return err
+	}
+	if err := s.checkBaseline(ctx, vm.GetMetadata().GetProject(), spec.GetResources().GetCpuBaseline(), wasBaseline); err != nil {
 		return err
 	}
 	return s.checkMachineShape(p, was, cur,
@@ -551,6 +557,7 @@ func vmMachineSpec(vm *computev1alpha1.VirtualMachine, caKey string) (*computev1
 		Resources: &computev1alpha1.Resources{
 			Cpu: quantity.FormatCPU(sz.cpu), Memory: quantity.FormatMemory(sz.memory),
 			MemoryReserved: canonicalReserved(reserved, sz.memory),
+			CpuBaseline:    canonicalBaseline(spec.GetResources().GetCpuBaseline()),
 		},
 		RunState: runState,
 		Boot: &computev1alpha1.MachineSpec_Firmware{Firmware: &computev1alpha1.FirmwareBoot{

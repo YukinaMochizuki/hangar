@@ -52,8 +52,8 @@ const db = () =>
     status: { rootDisk: "db-root" },
   });
 
-const size = (name: string, cpu: string, memory: string, disk: string, order: number) =>
-  create(MachineSizeSchema, { metadata: { name }, spec: { displayName: name.toUpperCase(), cpu, memory, disk, order } });
+const size = (name: string, cpu: string, memory: string, disk: string, order: number, cpuBaseline = 0) =>
+  create(MachineSizeSchema, { metadata: { name }, spec: { displayName: name.toUpperCase(), cpu, memory, disk, order, cpuBaseline } });
 
 type Fake = {
   container?: () => Container;
@@ -107,7 +107,15 @@ function api(f: Fake = {}) {
       }),
     });
     r.service(MachineSizeService, {
-      listMachineSizes: () => ({ items: [size("xs", "1", "512Mi", "5Gi", 0), size("s", "1", "2Gi", "10Gi", 10), size("m", "2", "4Gi", "20Gi", 20)] }),
+      listMachineSizes: () => ({
+        items: [
+          size("xs", "1", "512Mi", "5Gi", 0),
+          size("s", "1", "2Gi", "10Gi", 10),
+          size("m", "2", "4Gi", "20Gi", 20),
+          size("b1", "1", "1Gi", "10Gi", 30, 20),
+          size("b2", "2", "2Gi", "20Gi", 31, 20),
+        ],
+      }),
     });
     r.service(AccountService, { testPermissions: async () => ({ permissions: await (f.perms?.() ?? applyPerms) }) });
     r.service(ProjectService, {
@@ -582,5 +590,44 @@ describe("the edit page's memory in a pool", () => {
     fireEvent.click(applyButton());
     await waitFor(() => expect(applies(a)).toHaveLength(1));
     expect((applies(a)[0]!.obj as Container).spec?.resources).toMatchObject({ cpu: "1", memory: "2Gi", memoryReserved: "1Gi" });
+  });
+});
+
+describe("the edit page of a burstable machine", () => {
+  const burstable = () =>
+    create(ContainerSchema, {
+      metadata: { name: "web", project: "demo", uid: "u-web", resourceVersion: 21n },
+      spec: { image: "nginx:1", resources: { cpu: "2", memory: "2Gi", cpuBaseline: 20 }, runState: ContainerRunState.STOPPED },
+    });
+
+  it("opens on the burstable sizes, its own marked Current, and No change", async () => {
+    await openEdit("Container", { container: burstable });
+    expect(screen.getByRole("radiogroup", { name: "Burstable size" })).toBeTruthy();
+    expect(sizeCard("B2").getAttribute("aria-checked")).toBe("true");
+    expect(within(sizeCard("B2")).getByText("Current")).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "Size M" })).toBeNull();
+    expect(applyButton().textContent).toBe("No change");
+  });
+
+  it("keeps its baseline on a resize in its series, and drops it for a standard size, restarting nothing for that", async () => {
+    const a = await openEdit("Container", { container: burstable });
+    fireEvent.click(sizeCard("B1"));
+    expect(screen.queryByText("Burstable 20% → Standard")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Back to standard sizes" }));
+    fireEvent.click(sizeCard("M"));
+    expect(screen.getByText("Burstable 20% → Standard")).toBeTruthy();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    const res = (applies(a)[0]!.obj as Container).spec?.resources;
+    expect(res).toMatchObject({ cpu: "2", memory: "4Gi" });
+    expect(res?.cpuBaseline ?? 0).toBe(0);
+  });
+
+  it("writes a burstable size's baseline with its shape", async () => {
+    const a = await openEdit("Container", { container: burstable });
+    fireEvent.click(sizeCard("B1"));
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    expect((applies(a)[0]!.obj as Container).spec?.resources).toMatchObject({ cpu: "1", memory: "1Gi", cpuBaseline: 20 });
   });
 });

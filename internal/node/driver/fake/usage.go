@@ -31,12 +31,40 @@ func (d hypervisor) Usage(_ context.Context, machineUID string) (driver.VMUsage,
 	return driver.VMUsage{CPU: v.cpuNow(), Memory: held}, nil
 }
 
-// cpuNow is the CPU time the VM's unit has used in its current boot.
+// cpuNow is the CPU time the VM's unit has used in its current boot: what
+// it spins, as far as its own CPU limit lets it.
 func (v *vm) cpuNow() time.Duration {
 	if v.spin == 0 {
 		return v.cpu
 	}
-	return v.cpu + time.Duration(v.spin*float64(max(v.spec.VCPUs, 1))*float64(time.Since(v.spinFrom)))
+	cores := v.spin * float64(max(v.spec.VCPUs, 1))
+	if v.cpuLimit > 0 {
+		cores = min(cores, float64(v.cpuLimit)/1000)
+	}
+	return v.cpu + time.Duration(cores*float64(time.Since(v.spinFrom)))
+}
+
+func (d hypervisor) SetCPULimit(_ context.Context, machineUID string, milliCPU int64) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	v, ok := d.h.vms[machineUID]
+	if !ok || v.State != driver.VMRunning {
+		return fmt.Errorf("machine %s: %w", machineUID, errUnknownVM)
+	}
+	v.cpu, v.spinFrom = v.cpuNow(), time.Now()
+	v.cpuLimit = max(milliCPU, 0)
+	return nil
+}
+
+// CPULimit is the millicores the machine's VM's own unit is held to now,
+// zero for none or for no VM.
+func (h *Host) CPULimit(machineUID string) int64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if v, ok := h.vms[machineUID]; ok {
+		return v.cpuLimit
+	}
+	return 0
 }
 
 // SpinCPU has the machine's running VM's unit keep its vCPUs busy, share

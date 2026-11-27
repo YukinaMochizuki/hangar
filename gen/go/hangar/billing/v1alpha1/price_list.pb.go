@@ -228,8 +228,9 @@ func (x *PriceEntry) GetPrices() *Prices {
 // Prices are what holding one unit of each thing for an hour costs, as a
 // decimal in the currency's units with at most six digits after the point,
 // such as "0.6". A minute costs a sixtieth of the hour. A price left empty is
-// free. cpu and memory count only while a machine runs; everything else
-// counts while it exists, as the quota counts it (Limits).
+// free, but for a burstable machine's vCPUs. cpu and memory count only while
+// a machine runs; everything else counts while it exists, as the quota
+// counts it (Limits).
 type Prices struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Per vCPU.
@@ -249,9 +250,15 @@ type Prices struct {
 	// Per NetworkEndpoint.
 	NetworkEndpoints string `protobuf:"bytes,8,opt,name=network_endpoints,json=networkEndpoints,proto3" json:"network_endpoints,omitempty"`
 	// Per CustomDomain.
-	Domains       string `protobuf:"bytes,9,opt,name=domains,proto3" json:"domains,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Domains string `protobuf:"bytes,9,opt,name=domains,proto3" json:"domains,omitempty"`
+	// Per vCPU of a running burstable machine whose resources.cpu_baseline
+	// is 20, in place of cpu. Empty is cpu's price times 0.2, never free.
+	CpuBurstable_20 string `protobuf:"bytes,10,opt,name=cpu_burstable_20,json=cpuBurstable20,proto3" json:"cpu_burstable_20,omitempty"`
+	// Per vCPU of a running burstable machine whose resources.cpu_baseline
+	// is 40, in place of cpu. Empty is cpu's price times 0.4, never free.
+	CpuBurstable_40 string `protobuf:"bytes,11,opt,name=cpu_burstable_40,json=cpuBurstable40,proto3" json:"cpu_burstable_40,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Prices) Reset() {
@@ -343,6 +350,20 @@ func (x *Prices) GetNetworkEndpoints() string {
 func (x *Prices) GetDomains() string {
 	if x != nil {
 		return x.Domains
+	}
+	return ""
+}
+
+func (x *Prices) GetCpuBurstable_20() string {
+	if x != nil {
+		return x.CpuBurstable_20
+	}
+	return ""
+}
+
+func (x *Prices) GetCpuBurstable_40() string {
+	if x != nil {
+		return x.CpuBurstable_40
 	}
 	return ""
 }
@@ -1054,7 +1075,7 @@ const file_hangar_billing_v1alpha1_price_list_proto_rawDesc = "" +
 	"\n" +
 	"PriceEntry\x12A\n" +
 	"\x0eeffective_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\reffectiveTime\x127\n" +
-	"\x06prices\x18\x02 \x01(\v2\x1f.hangar.billing.v1alpha1.PricesR\x06prices\"\x9c\x02\n" +
+	"\x06prices\x18\x02 \x01(\v2\x1f.hangar.billing.v1alpha1.PricesR\x06prices\"\xf0\x02\n" +
 	"\x06Prices\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\tR\x06memory\x12\x12\n" +
@@ -1065,7 +1086,10 @@ const file_hangar_billing_v1alpha1_price_list_proto_rawDesc = "" +
 	"\vfile_shares\x18\a \x01(\tR\n" +
 	"fileShares\x12+\n" +
 	"\x11network_endpoints\x18\b \x01(\tR\x10networkEndpoints\x12\x18\n" +
-	"\adomains\x18\t \x01(\tR\adomains\"}\n" +
+	"\adomains\x18\t \x01(\tR\adomains\x12(\n" +
+	"\x10cpu_burstable_20\x18\n" +
+	" \x01(\tR\x0ecpuBurstable20\x12(\n" +
+	"\x10cpu_burstable_40\x18\v \x01(\tR\x0ecpuBurstable40\"}\n" +
 	"\x0fPriceListStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +

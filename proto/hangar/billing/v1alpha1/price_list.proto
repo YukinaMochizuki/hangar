@@ -48,8 +48,9 @@ message PriceEntry {
 // Prices are what holding one unit of each thing for an hour costs, as a
 // decimal in the currency's units with at most six digits after the point,
 // such as "0.6". A minute costs a sixtieth of the hour. A price left empty is
-// free. cpu and memory count only while a machine runs; everything else
-// counts while it exists, as the quota counts it (Limits).
+// free, but for a burstable machine's vCPUs. cpu and memory count only while
+// a machine runs; everything else counts while it exists, as the quota
+// counts it (Limits).
 message Prices {
   // Per vCPU.
   string cpu = 1;
@@ -69,6 +70,12 @@ message Prices {
   string network_endpoints = 8;
   // Per CustomDomain.
   string domains = 9;
+  // Per vCPU of a running burstable machine whose resources.cpu_baseline
+  // is 20, in place of cpu. Empty is cpu's price times 0.2, never free.
+  string cpu_burstable_20 = 10;
+  // Per vCPU of a running burstable machine whose resources.cpu_baseline
+  // is 40, in place of cpu. Empty is cpu's price times 0.4, never free.
+  string cpu_burstable_40 = 11;
 }
 
 // PriceListStatus is the observed state of a price list.

@@ -156,6 +156,9 @@ type Server struct {
 	// interface addresses, a network endpoint's, a network's transit link)
 	// and the release of a network. Whoever holds both takes ipam first.
 	ipam sync.Mutex
+	// launchGrants serializes the decisions of which burstable machines get
+	// launch credits (decideLaunch), so two never take a tenant's last.
+	launchGrants sync.Mutex
 	// attach serializes every apply and delete of machines, containers,
 	// virtual machines, disks, file shares and networks, from the admission
 	// checks to the write, so a disk is attached to one machine at a time

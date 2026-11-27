@@ -45,6 +45,7 @@ import { UsageCard, UsageNote, UsagePlaceholder } from "@/components/machine-usa
 import { isNotRunning, useMachineUsage } from "@/lib/usage";
 import { MemoryBanners, MemoryRow, SharedBadge } from "@/components/machine-memory";
 import { balloonStuck, machineMemory } from "@/lib/memory-pool";
+import { BurstableBadge } from "@/components/cpu-baseline";
 
 /**
  * The machine's CPU and memory over the last hour, asked of its node while
@@ -57,7 +58,7 @@ function Usage({ m }: { m: MachineView }) {
   if (!running || isNotRunning(error)) return <UsageNote>{m.name} is not running.</UsageNote>;
   // A failed ask hides the last answer, which would read as the value now.
   if (error) return <UsagePlaceholder memoryKind={memoryKind}>Usage did not load.</UsagePlaceholder>;
-  if (data) return <UsageCard usage={data} shared={machineMemory(m).shared && !balloonStuck(m)} />;
+  if (data) return <UsageCard usage={data} shared={machineMemory(m).shared && !balloonStuck(m)} vcpus={m.cpu} />;
   return <UsagePlaceholder memoryKind={memoryKind}>{loading ? "Loading…" : ""}</UsagePlaceholder>;
 }
 
@@ -112,6 +113,7 @@ function Header({ m, terminal, set }: { m: MachineView; terminal: boolean; set: 
             {size && <SizeBadge size={size.label} />}
             <span className="tabular">{sizeText(m)}</span>
             <SharedBadge m={m} />
+            <BurstableBadge m={m} />
           </span>
           {nic?.ipv4 && <span className="font-mono text-[12px]">{bare(nic.ipv4)}</span>}
         </>

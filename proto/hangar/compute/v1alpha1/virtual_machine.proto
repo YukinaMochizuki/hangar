@@ -119,6 +119,10 @@ message VirtualMachineResources {
   // The memory reserved for the VM, as a container's
   // resources.memory_reserved is; empty is memory.
   string memory_reserved = 3;
+  // The VM's CPU baseline, the share of each vCPU, in percent, it is held
+  // to once its CPU credits are spent, as a container's
+  // resources.cpu_baseline is; unset is 100.
+  int32 cpu_baseline = 4;
 }
 
 // VirtualMachineRootDisk is the disk a VM boots from.

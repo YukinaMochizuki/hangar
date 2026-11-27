@@ -950,6 +950,13 @@ type Hypervisor interface {
 	// CPUPoolStats reads, for each pool VMs run in on the host, how often
 	// its CPU limit has held them back since it was made.
 	CPUPoolStats(ctx context.Context) (map[string]CPUPoolStat, error)
+	// SetCPULimit holds a running VM's own unit to milliCPU of the CPUs,
+	// whether or not the host's other CPUs are idle, or lifts its limit for
+	// zero, at once and without restarting it; inside a CPU pool the
+	// tighter of the two holds. The limit lasts until the VM's unit is
+	// started again, which takes VMSpec.CPULimit. A machine with no running
+	// VM fails.
+	SetCPULimit(ctx context.Context, machineUID string, milliCPU int64) error
 }
 
 // CPUPool is CPUs VMs share on the host: together they use at most
@@ -1157,6 +1164,11 @@ type VMSpec struct {
 	// (Hypervisor.SetCPUPools), though it stays in the pool's slice it
 	// started in.
 	CPUPool *CPUPool `json:",omitempty"`
+	// CPULimit is the CPUs, in millicores, the VM's own unit is held to from
+	// its start, zero for none: a burstable machine's baseline once its
+	// credits are spent (docs/decisions/cpu-credits.md). It is no part of
+	// the hash: it changes while the VM runs (Hypervisor.SetCPULimit).
+	CPULimit int64 `json:",omitempty"`
 }
 
 // Pool is the name of the pool the VM runs in, its memory pool's or its
@@ -1354,7 +1366,7 @@ func (s VMSpec) Runs(vm VM) bool {
 }
 
 func (s VMSpec) hash() string {
-	s.MemoryPool, s.ReservedMiB, s.CPUPool = nil, 0, nil
+	s.MemoryPool, s.ReservedMiB, s.CPUPool, s.CPULimit = nil, 0, nil, 0
 	b, err := json.Marshal(s.noExport())
 	if err != nil {
 		panic(fmt.Sprintf("encoding a VM spec: %v", err)) // every field encodes

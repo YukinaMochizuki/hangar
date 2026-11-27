@@ -28,8 +28,13 @@ events are compacted (`sqlite-store.md`).
   PAY_AS_YOU_GO one among them, is billed its machines' memory, which the
   quota then counts too. A CPU pool changes nothing billed: a machine is
   billed its vCPUs in it or not, and a PAY_AS_YOU_GO tenant has none
-  (`cpu-pool.md`). Disks, addresses, public endpoints,
-  port forwards, file shares, network endpoints and custom domains are
+  (`cpu-pool.md`). A burstable machine's vCPUs are billed while it runs,
+  busy or idle, as the item of its baseline, `cpu_burstable_20` or
+  `cpu_burstable_40`, at that item's price, or at `cpu`'s times its
+  baseline where the price list leaves it empty, never free; what it uses
+  past its baseline costs nothing more (`cpu-credits.md`). Disks,
+  addresses, public endpoints, port forwards, file shares, network
+  endpoints and custom domains are
   billed while they exist. Each object counts as the quota counts it
   (`quotaCounters` in `internal/apiserver/quota.go`), but for cpu and
   memory, which count only while the object's Machine is running

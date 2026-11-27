@@ -60,6 +60,24 @@ message MachineSpec {
   // BillingAccount, and keeps it up to date while the machine runs:
   // changing it restarts nothing. See docs/decisions/cpu-pool.md.
   CPUPool cpu_pool = 25;
+  // Whether the machine's node gives it launch credits as it starts a
+  // balance afresh. Its owner's controller decides as the machine first
+  // becomes burstable (resources.cpu_baseline below 100), and again as it
+  // is started with its balance more than 7 days old; it is kept between.
+  // Unset before the machine was first burstable. See
+  // docs/decisions/cpu-credits.md.
+  CPULaunchDecision cpu_launch = 26;
+}
+
+// CPULaunchDecision is whether a burstable machine gets launch credits.
+message CPULaunchDecision {
+  // True while its tenant had been given fewer than 10 in the last 24
+  // hours (TenantStatus.cpu_launch_grants); false starts the machine with
+  // no credits.
+  bool granted = 1;
+  // When it was decided. A balance gone past 7 days gives way to launch
+  // credits only for a grant decided after it was last accounted.
+  google.protobuf.Timestamp decided = 2;
 }
 
 // MemoryPool is memory a tenant's machines share.
@@ -251,6 +269,22 @@ message MachineStatus {
   // be that large; empty when it asks for none. Its owner's controller
   // grants it within quota.
   string disk_needed = 9;
+  // The CPU credits of a burstable machine (resources.cpu_baseline below
+  // 100), as its node last wrote them: first soon after the node starts
+  // accounting it, then every few minutes while it runs, once it stops,
+  // and as the node's agent stops. Unset until that first write; kept, as
+  // last written, once the machine is no longer burstable. Its node reads
+  // them back once it restarts. See docs/decisions/cpu-credits.md.
+  MachineCPUCredits cpu_credits = 10;
+}
+
+// MachineCPUCredits is a burstable machine's credit balance at a time.
+message MachineCPUCredits {
+  // In CPU-minutes: one vCPU fully busy for a minute is one.
+  double balance = 1;
+  // When the node had accounted the machine's CPU up to; it accounts
+  // nothing before it again.
+  google.protobuf.Timestamp as_of = 2;
 }
 
 // MachineDiskWanted is the size the node asks a Disk be grown to.

@@ -561,6 +561,52 @@ pool has, and on the node they use no more than those together.
   pool's slice, the CPU of its latest usage sample times its vCPUs, from
   what the usage sampler keeps, asking no VM anything.
 
+## CPU credits
+
+A burstable machine runs on CPU credits, held to its baseline once they
+are spent (`docs/decisions/cpu-credits.md`).
+
+- **The agent keeps a ledger per burstable machine, in memory**
+  (`internal/node/cpucredits.go`). It is made as the machine is first
+  reconciled, from the checkpoint in its status, or when there is none or
+  it is more than 7 days old, with launch credits if its spec says the
+  apiserver granted them (`cpu_launch`), for a balance past 7 days only
+  by a decision after it was last accounted, and none otherwise; a
+  ledger kept in memory starts afresh the same way once 7 days pass
+  between its reads. It is kept until the
+  machine is deleted or leaves the node, its stops included. A machine
+  made burstable again keeps its ledger.
+- **It is accounted in a pass of its own**, every usage poll
+  (`creditLoop`): it lists the VMs and reads only the followed units'
+  CPU time (`Hypervisor.Usage`), never a guest or the API, so the usage
+  sampler's guest asks and the checkpoints' writes never make its reads
+  late. Each read of the same boot as the one before and at most two
+  polls after it charges the CPU time between them and credits the
+  baseline over the time between them. Any other read only starts the
+  next span; one of the same boot dropped, late or with its counter gone
+  back, is counted in `hangar_node_cpu_credit_spans_dropped_total` by
+  `reason` (`late`, `counter`) and logged at debug.
+- **The VM's own unit carries the limit**, `cpu.max` through
+  `CPUQuotaPerSecUSec` and `CPUQuotaPeriodUSec` (20 ms), as a CPU pool's
+  slice does: vCPUs × baseline while the machine is held, none otherwise
+  (`Hypervisor.SetCPULimit`). After each read the agent sets it, and the
+  driver writes it only where the unit's `cpu.max` differs, setting
+  `memory.oom.group` again with it. systemd keeps it as transient
+  drop-ins under `/run`: the unit's own restarts keep it, and a new unit
+  or a reboot does not, so a VM the agent starts is started with it
+  (`VMSpec.CPULimit`), which is no part of the VM's hash. Inside a CPU
+  pool's slice, the tighter of the two limits holds. A reconcile that
+  finds a machine running and not burstable lifts its unit's limit,
+  which the driver leaves alone where there is none: a baseline raised
+  to 100 while the agent was down leaves no ledger to lift it.
+- **The checkpoint is written by a loop of its own** (`creditWriteLoop`),
+  off the host lock, each usage poll, where it is due: launch credits not
+  written yet at once, a running machine's balance every
+  `CreditCheckpoint` (5 minutes), a stopped one's once. As the agent
+  stops, it writes every balance accounted past its last checkpoint,
+  within 10 s. Each write is of the Machine as just read, conditional on
+  its resource version; one that fails is tried at the next poll.
+
 ## Memory pools
 
 A tenant's machines may share its memory as a pool

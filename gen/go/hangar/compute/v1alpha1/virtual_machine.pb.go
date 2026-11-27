@@ -581,8 +581,12 @@ type VirtualMachineResources struct {
 	// The memory reserved for the VM, as a container's
 	// resources.memory_reserved is; empty is memory.
 	MemoryReserved string `protobuf:"bytes,3,opt,name=memory_reserved,json=memoryReserved,proto3" json:"memory_reserved,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The VM's CPU baseline, the share of each vCPU, in percent, it is held
+	// to once its CPU credits are spent, as a container's
+	// resources.cpu_baseline is; unset is 100.
+	CpuBaseline   int32 `protobuf:"varint,4,opt,name=cpu_baseline,json=cpuBaseline,proto3" json:"cpu_baseline,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *VirtualMachineResources) Reset() {
@@ -634,6 +638,13 @@ func (x *VirtualMachineResources) GetMemoryReserved() string {
 		return x.MemoryReserved
 	}
 	return ""
+}
+
+func (x *VirtualMachineResources) GetCpuBaseline() int32 {
+	if x != nil {
+		return x.CpuBaseline
+	}
+	return 0
 }
 
 // VirtualMachineRootDisk is the disk a VM boots from.
@@ -1763,11 +1774,12 @@ const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\rserial_number\x18\x01 \x01(\tR\fserialNumber\"J\n" +
 	"\x17VirtualMachineFileShare\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
-	"\tread_only\x18\x02 \x01(\bR\breadOnly\"l\n" +
+	"\tread_only\x18\x02 \x01(\bR\breadOnly\"\x8f\x01\n" +
 	"\x17VirtualMachineResources\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\tR\x06memory\x12'\n" +
-	"\x0fmemory_reserved\x18\x03 \x01(\tR\x0ememoryReserved\"\x93\x01\n" +
+	"\x0fmemory_reserved\x18\x03 \x01(\tR\x0ememoryReserved\x12!\n" +
+	"\fcpu_baseline\x18\x04 \x01(\x05R\vcpuBaseline\"\x93\x01\n" +
 	"\x16VirtualMachineRootDisk\x12Q\n" +
 	"\n" +
 	"from_image\x18\x01 \x01(\v20.hangar.compute.v1alpha1.VirtualMachineImageDiskH\x00R\tfromImage\x12\x1c\n" +

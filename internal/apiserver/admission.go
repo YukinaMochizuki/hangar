@@ -928,7 +928,10 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 	cur, _ := containerShape(c)
 	var was *machineShape
 	var wasReserved *reservation
+	var wasBaseline *int32
 	if o, ok := old.(*computev1alpha1.Container); ok {
+		b := o.GetSpec().GetResources().GetCpuBaseline()
+		wasBaseline = &b
 		if shape, ok := containerShape(o); ok {
 			was = &shape
 			if g, err := reservedMemory(o.GetSpec().GetResources().GetMemoryReserved(), shape.memory); err == nil {
@@ -937,6 +940,9 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 		}
 	}
 	if err := s.checkReserved(ctx, meta.GetProject(), spec.GetResources().GetMemoryReserved(), cur.memory, minMemory, wasReserved); err != nil {
+		return err
+	}
+	if err := s.checkBaseline(ctx, meta.GetProject(), spec.GetResources().GetCpuBaseline(), wasBaseline); err != nil {
 		return err
 	}
 	return s.checkMachineShape(p, was, cur, "spec.resources.disk "+cmp.Or(spec.GetResources().GetDisk(), defaultDisk))
@@ -1155,6 +1161,12 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 		return invalid("spec.resources.memory_reserved: %v", err)
 	} else if g > h.memory {
 		return invalid("spec.resources.memory_reserved %s is above spec.resources.memory %s", res.GetMemoryReserved(), res.GetMemory())
+	}
+	switch b := res.GetCpuBaseline(); {
+	case b != 0 && b != 20 && b != 40:
+		return invalid("spec.resources.cpu_baseline %d is not 20 or 40; a machine of all its vCPUs names none", b)
+	case b != 0 && spec.GetFileShareServer() != nil:
+		return invalid("spec.resources.cpu_baseline: a file share's server uses all its vCPUs")
 	}
 	if pool := spec.GetMemoryPool(); pool != nil {
 		if err := ValidName(pool.GetName()); err != nil {

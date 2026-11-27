@@ -328,16 +328,49 @@ func (h *Hypervisor) setSliceCPU(ctx context.Context, name string, milliCPU int6
 	if ok && quota == want && (want == 0 || period == cpuQuotaPeriod) {
 		return nil
 	}
+	if err := h.sd.slice(ctx, poolSlice(name), poolSliceDescription(name), cpuLimitProps(milliCPU)); err != nil {
+		return fmt.Errorf("the CPU limit of the pool's slice %s: %w", poolSlice(name), err)
+	}
+	return nil
+}
+
+// cpuLimitProps are the properties that hold a unit or a slice to milliCPU
+// of the CPUs each cpuQuotaPeriod, or lift its limit for zero.
+func cpuLimitProps(milliCPU int64) []sd.Property {
 	// systemd takes the limit as CPU time per second, infinity for none.
 	perSec := uint64(math.MaxUint64)
 	if milliCPU > 0 {
 		perSec = uint64(milliCPU) * 1000
 	}
-	props := []sd.Property{property("CPUQuotaPerSecUSec", perSec), property("CPUQuotaPeriodUSec", usec(cpuQuotaPeriod))}
-	if err := h.sd.slice(ctx, poolSlice(name), poolSliceDescription(name), props); err != nil {
-		return fmt.Errorf("the CPU limit of the pool's slice %s: %w", poolSlice(name), err)
+	return []sd.Property{property("CPUQuotaPerSecUSec", perSec), property("CPUQuotaPeriodUSec", usec(cpuQuotaPeriod))}
+}
+
+// SetCPULimit sets the VM's unit's CPU limit where its cgroup's differs,
+// and its memory.oom.group again, as SetMemoryShare does. systemd keeps
+// the limit in a drop-in under /run: the unit's own restarts keep it, a
+// new unit or a reboot does not, so Start applies VMSpec.CPULimit
+// (docs/decisions/cpu-credits.md).
+func (h *Hypervisor) SetCPULimit(ctx context.Context, uid string, milliCPU int64) error {
+	if err := checkUID(uid); err != nil {
+		return err
 	}
-	return nil
+	ln, err := readLaunch(h.dir(uid))
+	if err != nil {
+		return fmt.Errorf("machine %s has no running VM: %w", uid, err)
+	}
+	cg := h.unitCgroup(ln.Spec, uid)
+	want := cpuQuota(milliCPU)
+	quota, period, ok := cpuMax(filepath.Join(cg, "cpu.max"))
+	if !ok {
+		return fmt.Errorf("machine %s has no running VM: its unit's cpu.max cannot be read", uid)
+	}
+	if quota == want && (want == 0 || period == cpuQuotaPeriod) {
+		return nil
+	}
+	if err := h.sd.setProps(ctx, unitName(uid), cpuLimitProps(milliCPU)); err != nil {
+		return fmt.Errorf("the CPU limit of %s: %w", unitName(uid), err)
+	}
+	return setOOMGroup(cg)
 }
 
 func (h *Hypervisor) SetCPUPools(ctx context.Context, want map[string]int64, read map[string]bool) error {

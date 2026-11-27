@@ -1,5 +1,7 @@
+import { create } from "@bufbuild/protobuf";
+import { PricesSchema } from "@hangar/api/hangar/billing/v1alpha1/price_list_pb";
 import { describe, expect, it } from "vitest";
-import { formatMoney, formatPeriod, groupLines, outstanding, projected } from "@/lib/billing";
+import { formatMoney, formatPeriod, groupLines, itemLabels, outstanding, pricesOf, projected, sizePrice, vcpuPrice } from "@/lib/billing";
 import { statement } from "@/test/billing";
 
 describe("billing", () => {
@@ -37,5 +39,21 @@ describe("billing", () => {
     const end = new Date("2026-12-01T00:00:00Z");
     expect(projected("100", start, end, new Date("2026-11-01T12:00:00Z"))).toBeUndefined();
     expect(projected("100", start, end, new Date("2026-11-11T00:00:00Z"))).toBeCloseTo(300);
+  });
+
+  it("names the burstable items, and lists their prices beside cpu's", () => {
+    expect(itemLabels.cpu_burstable_20).toBe("vCPU, burstable 20%");
+    expect(itemLabels.cpu_burstable_40).toBe("vCPU, burstable 40%");
+    const p = create(PricesSchema, { cpu: "0.6", cpuBurstable20: "0.15", memory: "0.2" });
+    expect(pricesOf(p).map((x) => x.item)).toEqual(["cpu", "cpu_burstable_20", "memory"]);
+  });
+
+  it("prices a vCPU at a baseline at its own price, else at cpu's times the baseline, as the meter does", () => {
+    const p = create(PricesSchema, { cpu: "0.6", cpuBurstable20: "0.15", memory: "0.2" });
+    expect(vcpuPrice(p, 100)).toBe("0.6");
+    expect(vcpuPrice(p, 20)).toBe("0.15");
+    expect(vcpuPrice(p, 40)).toBe("0.24");
+    expect(vcpuPrice(create(PricesSchema, {}), 40)).toBeUndefined();
+    expect(sizePrice(p, { cpu: 2, memoryGi: 4, baseline: 40 })).toBe("1.28");
   });
 });

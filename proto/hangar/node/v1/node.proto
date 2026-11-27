@@ -134,6 +134,16 @@ message MachineUsageResponse {
   // The CPUs, in millicores, the node holds that pool to now; unset when
   // the VM runs in no pool, or the node holds it to none.
   optional int64 cpu_pool_milli_cpu = 6;
+  // The machine's CPU baseline, in percent, when it is burstable; unset
+  // otherwise, as are the three after it.
+  optional int32 cpu_baseline = 7;
+  // Its CPU credits now, in CPU-minutes; unset before the node has a
+  // balance for it.
+  optional double cpu_credits = 8;
+  // The most CPU credits it can hold, in CPU-minutes.
+  optional double cpu_credit_cap = 9;
+  // Whether the node holds it to its baseline now.
+  optional bool cpu_held = 10;
 }
 
 message CPUPoolUsageRequest {

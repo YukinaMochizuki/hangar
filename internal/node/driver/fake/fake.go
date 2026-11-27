@@ -284,6 +284,10 @@ type vm struct {
 	cpu      time.Duration
 	spin     float64
 	spinFrom time.Time
+	// cpuLimit is the millicores its own unit is held to, zero for none:
+	// its start's, or SetCPULimit's since. A restart of its own keeps it,
+	// as a real unit's does.
+	cpuLimit int64
 	// balloon is what its balloon holds, and pool and reserved what
 	// SetMemoryShare, or its start, last gave it (pool.go).
 	balloon  uint64
@@ -1678,6 +1682,7 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		spec:  spec,
 		boots: boots,
 		pool:  spec.MemoryPool, reserved: spec.ReservedMiB,
+		cpuLimit: spec.CPULimit,
 	}
 	if p := spec.MemoryPool; p != nil {
 		if _, ok := d.h.pools[p.Name]; !ok {

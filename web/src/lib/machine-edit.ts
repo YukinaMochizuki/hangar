@@ -138,6 +138,8 @@ export type FormSpec = {
   memory?: string;
   /** The memory reserved in its tenant's pool; empty is all of memory (Dedicated). */
   memoryReserved?: string;
+  /** The CPU baseline in percent, 20 or 40 for a burstable machine; 0 is 100 (Standard). */
+  cpuBaseline?: number;
   disk?: string;
   /** A container's root disk growing by itself; null turns it off. */
   diskGrow?: { max: string; threshold: string; step: string } | null;
@@ -167,11 +169,19 @@ export function editedObject(base: MachineObject, changed: FormSpec): MachineObj
     if (changed.restartPolicy !== undefined) s.restartPolicy = changed.restartPolicy;
     if (changed.interfaces !== undefined) s.interfaces = changed.interfaces;
     if (changed.volumes !== undefined) s.volumes = volumesOf(changed.volumes, (base as Container).spec?.volumes);
-    if (changed.cpu !== undefined || changed.memory !== undefined || changed.memoryReserved !== undefined || changed.disk !== undefined || changed.diskGrow !== undefined) {
+    if (
+      changed.cpu !== undefined ||
+      changed.memory !== undefined ||
+      changed.memoryReserved !== undefined ||
+      changed.cpuBaseline !== undefined ||
+      changed.disk !== undefined ||
+      changed.diskGrow !== undefined
+    ) {
       s.resources = create(ResourcesSchema, {
         cpu: changed.cpu ?? s.resources?.cpu ?? "",
         memory: changed.memory ?? s.resources?.memory ?? "",
         memoryReserved: changed.memoryReserved ?? s.resources?.memoryReserved ?? "",
+        cpuBaseline: changed.cpuBaseline ?? s.resources?.cpuBaseline ?? 0,
         disk: changed.disk ?? s.resources?.disk ?? "",
         diskGrow: changed.diskGrow === null ? undefined : (changed.diskGrow ?? s.resources?.diskGrow),
       });
@@ -186,11 +196,12 @@ export function editedObject(base: MachineObject, changed: FormSpec): MachineObj
   if (changed.sshAuthorizedKeys !== undefined) s.sshAuthorizedKeys = changed.sshAuthorizedKeys;
   if (changed.userData !== undefined) s.userData = changed.userData;
   if (changed.serialNumber !== undefined) s.platform = changed.serialNumber ? create(VirtualMachinePlatformSchema, { serialNumber: changed.serialNumber }) : undefined;
-  if (changed.cpu !== undefined || changed.memory !== undefined || changed.memoryReserved !== undefined) {
+  if (changed.cpu !== undefined || changed.memory !== undefined || changed.memoryReserved !== undefined || changed.cpuBaseline !== undefined) {
     s.resources = create(VirtualMachineResourcesSchema, {
       cpu: changed.cpu ?? s.resources?.cpu ?? "",
       memory: changed.memory ?? s.resources?.memory ?? "",
       memoryReserved: changed.memoryReserved ?? s.resources?.memoryReserved ?? "",
+      cpuBaseline: changed.cpuBaseline ?? s.resources?.cpuBaseline ?? 0,
     });
   }
   return o;
@@ -274,6 +285,19 @@ function addReserved(ra: Json, rb: Json, memA: string, memB: string, outside: bo
   out.push({ field: "memoryReserved", label: "Memory", effect: outside ? "next-restart" : "nothing", detail: `${a} → ${b}` });
 }
 
+/** A baseline as a change shows it: Standard, or Burstable with its percent. */
+const baselineText = (v: JsonValue | undefined) => {
+  const b = Number(v ?? 0);
+  return b > 0 && b < 100 ? `Burstable ${b}%` : "Standard";
+};
+
+/** A CPU baseline change: it restarts nothing (docs/decisions/cpu-credits.md). */
+function addBaseline(ra: Json, rb: Json, out: Change[]) {
+  const a = baselineText(ra.cpuBaseline);
+  const b = baselineText(rb.cpuBaseline);
+  if (a !== b) out.push({ field: "cpuBaseline", label: "CPU", effect: "nothing", detail: `${a} → ${b}` });
+}
+
 const restartText = (v: JsonValue | undefined) =>
   ({ RESTART_POLICY_ON_FAILURE: "on-failure", RESTART_POLICY_NEVER: "no" } as Record<string, string>)[String(v)] ?? "always";
 
@@ -318,6 +342,7 @@ export function changesOf(base: MachineObject, next: MachineObject, opts: { outs
     const cpuA = String(ra.cpu || d.cpu), memA = String(ra.memory || d.memory), cpuB = String(rb.cpu || d.cpu), memB = String(rb.memory || d.memory);
     if (!same(ra.cpu, rb.cpu) || !same(ra.memory, rb.memory)) out.push({ field: "size", label: "Size", effect: "restart", detail: `${sizeText(cpuA, memA)} → ${sizeText(cpuB, memB)}` });
     addReserved(ra, rb, memA, memB, !!opts.outsidePool, out);
+    addBaseline(ra, rb, out);
     // A root disk grows while its container runs (docs/decisions/disk-autogrow.md).
     if (!same(ra.disk, rb.disk)) {
       out.push({ field: "disk", label: "Disk", effect: "nothing", detail: `${formatNumber(quantityGiB(String(ra.disk || d.disk)))} → ${formatNumber(quantityGiB(String(rb.disk || d.disk)))} GiB` });
@@ -334,6 +359,7 @@ export function changesOf(base: MachineObject, next: MachineObject, opts: { outs
       out.push({ field: "size", label: "Size", effect: "restart", detail: `${sizeText(String(ra.cpu || d.cpu), String(ra.memory || d.memory))} → ${sizeText(String(rb.cpu || d.cpu), String(rb.memory || d.memory))}` });
     }
     addReserved(ra, rb, String(ra.memory || d.memory), String(rb.memory || d.memory), !!opts.outsidePool, out);
+    addBaseline(ra, rb, out);
     addInterfaces(a, b, out);
     add("disks", "Data disks", "restart", listDetail(a.disks, b.disks, (d) => String(d.disk ?? "")));
     add("fileShares", "File shares", "nothing", listDetail(a.fileShares, b.fileShares, (s) => String(s.name ?? "")));
