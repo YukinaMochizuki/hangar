@@ -3,10 +3,10 @@
 // list. A limit left unset reads "no limit".
 
 import type { Limits, Usage } from "@hangar/api/hangar/tenancy/v1alpha1/plan_pb";
+import { FittingText } from "@/components/fitting-text";
 import { Meter } from "@/components/meter";
 import { Skeleton } from "@/components/states";
 import { Card, CardHeader } from "@/components/ui";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { formatNumber, quantityCPU, quantityGiB } from "@/lib/quantity";
 
@@ -48,40 +48,6 @@ export type PoolTile = { planGi: number; ceilingGi: number; capGi: number };
  * back, in percent, when known.
  */
 export type CpuPoolTile = { planCPU: number; vcpus: number; capCPU: number; slowedPercent?: number };
-
-/**
- * The first of texts that fits the width it is given, measured: the longest
- * is drawn first, and the next while it overflows; a change of width starts
- * over. The last is cut short when even it does not fit.
- */
-function FittingText({ texts, className }: { texts: string[]; className?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  // Which text is drawn, and how often its width changed, so a new width measures again.
-  const [fit, setFit] = useState({ i: 0, key: texts.join("\n"), resizes: 0 });
-  const key = texts.join("\n");
-  if (fit.key !== key) setFit({ i: 0, key, resizes: fit.resizes });
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (el && el.scrollWidth > el.clientWidth && fit.i < texts.length - 1) setFit((f) => ({ ...f, i: f.i + 1 }));
-  }, [fit, texts.length]);
-  useEffect(() => {
-    const parent = ref.current?.parentElement;
-    if (!parent || typeof ResizeObserver === "undefined") return;
-    let width = parent.clientWidth;
-    const ro = new ResizeObserver(() => {
-      if (parent.clientWidth === width) return;
-      width = parent.clientWidth;
-      setFit((f) => ({ ...f, i: 0, resizes: f.resizes + 1 }));
-    });
-    ro.observe(parent);
-    return () => ro.disconnect();
-  }, []);
-  return (
-    <span ref={ref} className={className}>
-      {texts[Math.min(fit.i, texts.length - 1)]}
-    </span>
-  );
-}
 
 /**
  * The memory tile of a tenant whose machines share its memory as a pool
