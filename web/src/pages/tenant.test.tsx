@@ -6,7 +6,7 @@ import { NameService } from "@hangar/api/hangar/tenancy/v1alpha1/names_pb";
 import { ProjectService, type ApplyProjectRequest } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
 import { TenantCapabilityService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_capability_pb";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewProjectDialog, ProjectPicker } from "@/components/project-picker";
@@ -199,7 +199,9 @@ describe("TenantOverview", () => {
 
 describe("TenantOverview's vCPU with a CPU pool", () => {
   function show(s: Setup) {
-    render(<TenantOverview />, { wrapper: withApi(api(s), { kind: "tenant", name: "acme" }) });
+    const a = api(s);
+    render(<TenantOverview />, { wrapper: withApi(a, { kind: "tenant", name: "acme" }) });
+    return a;
   }
   /** The vCPU tile, by its label. */
   const tile = () => screen.getAllByText("vCPU")[0].parentElement!;
@@ -214,8 +216,12 @@ describe("TenantOverview's vCPU with a CPU pool", () => {
   });
 
   it("says only how much it is past while the pool slowed nothing, and only the slowing within the plan", async () => {
-    show({ cpuPool: { percent: 200, vcpus: "6", slowed: 0 } });
-    await waitFor(() => expect(within(tile()).getByText("2 over plan · shared")).toBeTruthy());
+    // Below 1% is nothing to say: the note stays as before the nodes answered.
+    const a = show({ cpuPool: { percent: 200, vcpus: "6", slowed: 0.004 } });
+    await waitFor(() => expect(a.calls).toContain("CPUPoolUsage"));
+    await act(async () => {});
+    expect(within(tile()).getByText("2 over plan · shared")).toBeTruthy();
+    expect(within(tile()).queryByText(/slowed/)).toBeNull();
     cleanup();
     show({ cpuPool: { percent: 200, vcpus: "3", slowed: 0.4 } });
     await waitFor(() => expect(within(tile()).getByText("slowed 40%")).toBeTruthy());

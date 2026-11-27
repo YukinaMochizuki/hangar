@@ -65,7 +65,7 @@ type Fake = {
   sizesAnswer?: () => Promise<{ items: MachineSize[] }>;
   /** The project's limits and usage; none unless set. */
   quota?: {
-    limits: { cpu?: string; memory?: string; disk?: string; memoryLimitPercent?: number };
+    limits: { cpu?: string; memory?: string; disk?: string; memoryLimitPercent?: number; cpuLimitPercent?: number };
     usage: { cpu?: string; memory?: string; disk?: string; memoryCeiling?: string };
   };
   /** The tenant's billing account's type; it has none unless set. */
@@ -393,6 +393,17 @@ describe("CreateMachine", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Size M" }));
     await createAllowed(a, "api");
     expect(sentResources(a)).toMatchObject({ cpu: "2", memory: "4Gi", disk: "20Gi" });
+  });
+
+  it("lets a CPU pool's vCPUs go past the cpu limit to its plan's percent of it", async () => {
+    const a = api({ containers: async () => ({ items: [] }), quota: { limits: { cpu: "2", cpuLimitPercent: 200 }, usage: { cpu: "0" } } });
+    render(<CreateMachine kind="container" size="l" />, { wrapper: withApi(a) });
+    // 4 vCPUs of a limit of 2 at 200%: within it.
+    const large = await screen.findByRole("radio", { name: "Size L" });
+    fill("api");
+    await createAllowed(a, "api");
+    expect(large.textContent).not.toContain("Over quota");
+    expect(sentResources(a)).toMatchObject({ cpu: "4" });
   });
 });
 
