@@ -142,6 +142,8 @@ type execWorld struct {
 	log  *syncBuffer
 	// uid is the machine's.
 	uid string
+	// agents stop, by node, the agent connectNodeAs runs for it.
+	agents map[string]func()
 }
 
 type syncBuffer struct {
@@ -237,9 +239,18 @@ func (w *execWorld) connectNodeServing(t *testing.T, h nodev1connect.NodeService
 	w.connectNodeAs(t, "n1", h)
 }
 
-// connectNodeAs connects node, serving h, through its tunnel.
+// connectNodeAs connects node, serving h, through its tunnel, in place of
+// what served it before, and returns once the apiserver calls h. The
+// node's agent before is stopped first: left running, it dials again as
+// its tunnel is replaced, after a backoff, and takes the node back.
 func (w *execWorld) connectNodeAs(t *testing.T, node string, h nodev1connect.NodeServiceHandler) {
 	t.Helper()
+	if stop := w.agents[node]; stop != nil {
+		stop()
+	}
+	// The stopped agent's tunnel may still be the node's until the hub
+	// sees it drop: the new one is any other.
+	before, _ := w.s.tunnels.Node(node)
 	sock := listen(t, w.s, auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(os.Getuid())}, NodeName: node}})
 	mux := http.NewServeMux()
 	mux.Handle(nodev1connect.NewNodeServiceHandler(h))
@@ -252,10 +263,15 @@ func (w *execWorld) connectNodeAs(t *testing.T, node string, h nodev1connect.Nod
 			return d.DialContext(ctx, "unix", sock)
 		}, Handler: mux}).Run(ctx)
 	}()
-	t.Cleanup(func() { cancel(); <-done })
-	testutil.EventuallyWithin(t, 5*time.Second, node+"'s tunnel open", func() (bool, string) {
-		_, err := w.s.tunnels.Node(node)
-		return err == nil, fmt.Sprint(err)
+	stop := sync.OnceFunc(func() { cancel(); <-done })
+	t.Cleanup(stop)
+	if w.agents == nil {
+		w.agents = map[string]func(){}
+	}
+	w.agents[node] = stop
+	testutil.EventuallyWithin(t, 5*time.Second, node+"'s new tunnel open", func() (bool, string) {
+		tun, err := w.s.tunnels.Node(node)
+		return err == nil && tun != before, fmt.Sprint(err)
 	})
 }
 
