@@ -3,10 +3,14 @@ package node
 import (
 	"context"
 	"errors"
+	"maps"
+	"math"
 	"slices"
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -97,6 +101,50 @@ func (u *usages) poolSlowed(pool string) (float64, bool) {
 	return slowed(p.points)
 }
 
+// poolMinutes are the pool's minutes kept in which any period passed,
+// oldest first, each with the share of them the limit cut short.
+func (u *usages) poolMinutes(pool string) []*nodev1.CPUPoolMinute {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	p, ok := u.pools[pool]
+	if !ok {
+		return nil
+	}
+	var out []*nodev1.CPUPoolMinute
+	for _, pt := range p.points {
+		if share, ok := slowed([]poolPoint{pt}); ok {
+			out = append(out, &nodev1.CPUPoolMinute{Time: timestamppb.New(pt.at), Slowed: share})
+		}
+	}
+	return out
+}
+
+// poolMembers are the machines the sampler saw running in the pool's
+// slice, by uid, each with the CPU, in millicores, of its latest sample
+// taken at staleBefore or after; and when the oldest of those was taken,
+// zero for none.
+func (u *usages) poolMembers(pool string, staleBefore time.Time) ([]*nodev1.CPUPoolMember, time.Time) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	var out []*nodev1.CPUPoolMember
+	var oldest time.Time
+	for _, uid := range slices.Sorted(maps.Keys(u.machines)) {
+		m := u.machines[uid]
+		if m.pool != pool {
+			continue
+		}
+		member := &nodev1.CPUPoolMember{MachineUid: uid}
+		if l := m.latest; l != nil && !l.at.Before(staleBefore) {
+			member.MilliCpu = proto.Int64(int64(math.Round(l.cpu * float64(max(m.vcpus, 1)) * 1000)))
+			if oldest.IsZero() || l.at.Before(oldest) {
+				oldest = l.at
+			}
+		}
+		out = append(out, member)
+	}
+	return out, oldest
+}
+
 // sampleCPUPools samples each CPU pool's slice's counters, and forgets the
 // pools the host no longer reports.
 func (a *Agent) sampleCPUPools(ctx context.Context) {
@@ -153,5 +201,13 @@ func (s nodeService) CPUPoolUsage(_ context.Context, req *connect.Request[nodev1
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("pool is required"))
 	}
 	share, milli := s.a.cpuPoolAnswer(pool)
-	return connect.NewResponse(&nodev1.CPUPoolUsageResponse{Slowed: share, MilliCpu: milli}), nil
+	res := &nodev1.CPUPoolUsageResponse{Slowed: share, MilliCpu: milli, Minutes: s.a.usages.poolMinutes(pool)}
+	// As MachineUsage: a latest sample more than three polls old is no
+	// longer the latest.
+	members, oldest := s.a.usages.poolMembers(pool, s.a.cfg.Clock.Now().Add(-3*s.a.cfg.UsagePoll))
+	res.Members = members
+	if !oldest.IsZero() {
+		res.SampleTime = timestamppb.New(oldest)
+	}
+	return connect.NewResponse(res), nil
 }

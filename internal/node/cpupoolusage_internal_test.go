@@ -138,8 +138,8 @@ func TestPoolSlowedNeedsPeriods(t *testing.T) {
 }
 
 // startPooled starts pc, a container of 1 vCPU in CPU pool acme of 2
-// CPUs, which the agent holds the pool to, and mp, one in memory pool
-// memonly alone, whose slice has no CPU limit.
+// CPUs, which the agent holds the pool to, and mp, one of 2 vCPUs in
+// memory pool memonly alone, whose slice has no CPU limit.
 func startPooled(t *testing.T, u *usageHost) {
 	t.Helper()
 	ctx := t.Context()
@@ -156,7 +156,7 @@ func startPooled(t *testing.T, u *usageHost) {
 		t.Fatal(err)
 	}
 	mem := &driver.MemoryPool{Name: "memonly", SizeMiB: 1024}
-	if err := u.host.Hypervisor().Start(ctx, driver.VMSpec{MachineUID: "mp", Machine: "p/mp", VCPUs: 1, MemoryMiB: 512, Root: mroot, MemoryPool: mem, ReservedMiB: 512}); err != nil {
+	if err := u.host.Hypervisor().Start(ctx, driver.VMSpec{MachineUID: "mp", Machine: "p/mp", VCPUs: 2, MemoryMiB: 512, Root: mroot, MemoryPool: mem, ReservedMiB: 512}); err != nil {
 		t.Fatal(err)
 	}
 	u.a.memoryShares = map[string]memoryShare{
@@ -221,6 +221,9 @@ func TestUsageSaysHowOftenTheCPUPoolSlowed(t *testing.T) {
 			t.Errorf("pool %s: %v, want nothing", pool, got)
 		}
 	}
+	if got := u.poolUsage(t, "acme").GetMinutes(); len(got) != 1 || !got[0].GetTime().AsTime().Equal(poolT0.Truncate(time.Minute)) || !near(got[0].GetSlowed(), 0.25) {
+		t.Errorf("pool acme's minutes: %v, want 12:00 at 0.25", got)
+	}
 	// Once no VM runs in a pool the host reports it no more, and it is
 	// forgotten.
 	if err := u.host.Hypervisor().Stop(t.Context(), "pc"); err != nil {
@@ -232,5 +235,72 @@ func TestUsageSaysHowOftenTheCPUPoolSlowed(t *testing.T) {
 	u.a.usages.mu.Unlock()
 	if kept {
 		t.Error("pool acme, no longer reported, is still kept")
+	}
+}
+
+// TestCPUPoolUsageSaysWhatEachMemberUsesNow: each VM running in the
+// pool's slice is a member, with the CPU of its latest usage sample times
+// its vCPUs; one in another pool's slice or in none is not. The oldest of
+// the members' latest samples is when the pool was sampled; a member
+// whose latest went stale says nothing of now, and is not counted in it.
+func TestCPUPoolUsageSaysWhatEachMemberUsesNow(t *testing.T) {
+	t.Parallel()
+	u := newUsageHost(t)
+	startPooled(t, u)
+	u.tick(t, nil)
+	// Over the next poll pc, of 1 vCPU, used 6 s of CPU: 600 millicores.
+	u.tick(t, map[string]time.Duration{"pc": 6 * time.Second, "ct": 10 * time.Second, "mp": 2 * time.Second})
+	sampled := u.clock.Now()
+	res := u.poolUsage(t, "acme")
+	if len(res.GetMembers()) != 1 || res.GetMembers()[0].GetMachineUid() != "pc" || res.GetMembers()[0].GetMilliCpu() != 600 {
+		t.Fatalf("acme's members: %v, want pc at 600 millicores", res.GetMembers())
+	}
+	if !res.GetSampleTime().AsTime().Equal(sampled) {
+		t.Errorf("sampled %v, want %v", res.GetSampleTime().AsTime(), sampled)
+	}
+	if got := u.poolUsage(t, "memonly").GetMembers(); len(got) != 1 || got[0].GetMachineUid() != "mp" || got[0].GetMilliCpu() != 200 {
+		t.Errorf("memonly's members: %v, want mp at 200 millicores, 2 s over 10 s", got)
+	}
+
+	// Four polls on with no sample, pc's latest is stale.
+	u.clock.Advance(4 * DefaultUsagePoll)
+	res = u.poolUsage(t, "acme")
+	if len(res.GetMembers()) != 1 || res.GetMembers()[0].MilliCpu != nil || res.GetSampleTime() != nil {
+		t.Errorf("with pc's sample stale: %v, want pc with nothing of now, and no sample time", res)
+	}
+}
+
+// TestPoolMinutesAreEachTheirOwn: each minute says its own share, and a
+// minute in which no period passed is left out.
+func TestPoolMinutesAreEachTheirOwn(t *testing.T) {
+	t.Parallel()
+	u := newUsages()
+	minute := poolT0.Truncate(time.Minute)
+	u.pools["acme"] = &poolUsage{points: []poolPoint{
+		{at: minute, periods: 1000, throttled: 100},
+		{at: minute.Add(time.Minute), periods: 0},
+		{at: minute.Add(2 * time.Minute), periods: 500, throttled: 250},
+	}}
+	got := u.poolMinutes("acme")
+	if len(got) != 2 || !got[0].GetTime().AsTime().Equal(minute) || !near(got[0].GetSlowed(), 0.1) ||
+		!got[1].GetTime().AsTime().Equal(minute.Add(2*time.Minute)) || !near(got[1].GetSlowed(), 0.5) {
+		t.Errorf("minutes %v, want 12:00 at 0.1 and 12:02 at 0.5", got)
+	}
+	if got := u.poolMinutes("absent"); got != nil {
+		t.Errorf("a pool not sampled: %v", got)
+	}
+}
+
+// TestPoolMembersSampledAtTheOldest: the pool's sample time is the oldest
+// of its members' fresh latest samples, whichever order they are in.
+func TestPoolMembersSampledAtTheOldest(t *testing.T) {
+	t.Parallel()
+	u := newUsages()
+	for uid, at := range map[string]time.Time{"a": poolT0.Add(5 * time.Second), "b": poolT0, "c": poolT0.Add(9 * time.Second)} {
+		u.machines[uid] = &machineUsage{vcpus: 1, pool: "acme", latest: &usageSample{at: at, cpu: 0.5}}
+	}
+	members, oldest := u.poolMembers("acme", poolT0.Add(-time.Minute))
+	if len(members) != 3 || !oldest.Equal(poolT0) {
+		t.Errorf("%d members sampled at %v, want 3 at %v", len(members), oldest, poolT0)
 	}
 }

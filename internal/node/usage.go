@@ -42,6 +42,8 @@ type usageSample struct {
 // (docs/decisions/machine-usage.md).
 type machineUsage struct {
 	vcpus int32
+	// pool is the pool whose slice its VM started in, "" for none.
+	pool string
 	// hostMemory says its memory is what its unit holds on the host, not
 	// what its guest says it uses: a firmware VM's, which has no guest
 	// agent.
@@ -237,7 +239,7 @@ func (a *Agent) sampleMachine(ctx context.Context, vm driver.VM, slowGuest bool)
 		}
 		m.guestCannot = false
 	}
-	m.vcpus, m.hostMemory = vm.VCPUs, vm.Firmware
+	m.vcpus, m.hostMemory, m.pool = vm.VCPUs, vm.Firmware, vm.Pool
 	askGuest := !m.hostMemory && !m.guestCannot && !slowGuest && !at.Before(m.guestQuietUntil)
 	timeout := u.guestTimeout
 	u.mu.Unlock()
