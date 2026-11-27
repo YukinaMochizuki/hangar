@@ -63,8 +63,12 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 				a.trackMemory(uid, nil)
 			}
 		}
+		a.credits.forget(k)
 		return nil
 	}
+	// Before anything starts its VM, which starts held to its baseline
+	// while its credits say so.
+	a.credits.track(m, a.cfg.Clock.Now())
 	uid := m.GetMetadata().GetUid()
 	share := wantedShare(m)
 	was, tracked := a.memoryShares[uid]
@@ -107,6 +111,11 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 		report, err = a.converge(ctx, m, vm, epoch)
 		if err == nil && share != nil && report != nil && report.phase == computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING {
 			a.applyMemoryShare(ctx, uid, *share)
+		}
+		if report != nil && report.phase == computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING && !creditTermsOf(m).burstable() {
+			// Whatever its unit was left held to, as by a baseline raised
+			// to 100 while the agent was down, which leaves it no ledger.
+			a.liftCPULimit(ctx, uid)
 		}
 		if cpuPooled && err == nil {
 			// A changed CPU pool holds at once, not at the squeeze's next look.
@@ -359,6 +368,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if spec, err = withMemoryShare(spec, m); err != nil {
 		return nil, err
 	}
+	spec.CPULimit = a.credits.startLimit(uid, a.cfg.UsagePoll)
 	// Its one mount of each share fails the boot if the share's server does
 	// not serve it yet: a boot the node starts waits, its VM of an earlier
 	// spec running on. A boot of the VM's own restart policy is not gated:

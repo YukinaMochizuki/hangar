@@ -130,6 +130,18 @@ message UsageResponse {
   // The CPUs of the machine's CPU pool, in millicores, as its node holds
   // the pool to them now; unset when it runs in no CPU pool.
   optional int64 cpu_pool_milli_cpu = 8;
+  // The machine's resources.cpu_baseline, in percent of each vCPU, when it
+  // is burstable (below 100); unset otherwise, as are the three after it.
+  // See docs/decisions/cpu-credits.md.
+  optional int32 cpu_baseline = 9;
+  // Its CPU credits now, in CPU-minutes: one vCPU fully busy for a minute
+  // is one. Unset when its node has no balance for it yet.
+  optional double cpu_credits = 10;
+  // The most CPU credits it can hold, in CPU-minutes: a day of what it
+  // earns.
+  optional double cpu_credit_cap = 11;
+  // Whether its node holds it to its baseline now, its credits spent.
+  optional bool cpu_held = 12;
 }
 
 // MachineUsagePoint is a machine's usage at a time, or over the minute from

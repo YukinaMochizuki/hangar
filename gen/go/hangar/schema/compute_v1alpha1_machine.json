@@ -1,5 +1,21 @@
 {
   "$defs": {
+    "hangar.compute.v1alpha1.CPULaunchDecision": {
+      "additionalProperties": false,
+      "description": "CPULaunchDecision is whether a burstable machine gets launch credits.",
+      "properties": {
+        "decided": {
+          "description": "When it was decided. A balance gone past 7 days gives way to launch credits only for a grant decided after it was last accounted.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "granted": {
+          "description": "True while its tenant had been given fewer than 10 in the last 24 hours (TenantStatus.cpu_launch_grants); false starts the machine with no credits.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "hangar.compute.v1alpha1.CPUPool": {
       "additionalProperties": false,
       "description": "CPUPool is CPUs a tenant's machines share.",
@@ -181,6 +197,22 @@
       },
       "type": "object"
     },
+    "hangar.compute.v1alpha1.MachineCPUCredits": {
+      "additionalProperties": false,
+      "description": "MachineCPUCredits is a burstable machine's credit balance at a time.",
+      "properties": {
+        "asOf": {
+          "description": "When the node had accounted the machine's CPU up to; it accounts nothing before it again.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "balance": {
+          "description": "In CPU-minutes: one vCPU fully busy for a minute is one.",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
     "hangar.compute.v1alpha1.MachineCloudInit": {
       "additionalProperties": false,
       "description": "MachineCloudInit is a firmware machine's NoCloud data, served by its networks' metadata service. Changing it does not restart the machine: cloud-init reads it once per instance.",
@@ -290,6 +322,10 @@
           "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerBoot",
           "description": "Set at most one of container, firmware, fileShareServer."
         },
+        "cpuLaunch": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.CPULaunchDecision",
+          "description": "Whether the machine's node gives it launch credits as it starts a balance afresh. Its owner's controller decides as the machine first becomes burstable (resources.cpu_baseline below 100), and again as it is started with its balance more than 7 days old; it is kept between. Unset before the machine was first burstable. See docs/decisions/cpu-credits.md."
+        },
         "cpuPool": {
           "$ref": "#/$defs/hangar.compute.v1alpha1.CPUPool",
           "description": "The CPUs the machine shares with its tenant's other machines; unset for a machine in no CPU pool, which may use its vCPUs whatever the others do. Its owner's controller sets it from the tenant's Plan and BillingAccount, and keeps it up to date while the machine runs: changing it restarts nothing. See docs/decisions/cpu-pool.md."
@@ -368,6 +404,10 @@
           },
           "type": "array"
         },
+        "cpuCredits": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.MachineCPUCredits",
+          "description": "The CPU credits of a burstable machine (resources.cpu_baseline below 100), as its node last wrote them: first soon after the node starts accounting it, then every few minutes while it runs, once it stops, and as the node's agent stops. Unset until that first write; kept, as last written, once the machine is no longer burstable. Its node reads them back once it restarts. See docs/decisions/cpu-credits.md."
+        },
         "diskNeeded": {
           "description": "The root disk size, in whole Gi, the base of the machine's image needs, which the node asks for before it makes the root disk of a machine whose resources.disk is smaller and whose resources.disk_grow lets it be that large; empty when it asks for none. Its owner's controller grants it within quota.",
           "type": "string"
@@ -436,6 +476,11 @@
         "cpu": {
           "description": "Whole vCPUs: \"2\" or \"2000m\", never a fraction.",
           "type": "string"
+        },
+        "cpuBaseline": {
+          "description": "The machine's CPU baseline: the share of each vCPU, in percent, it is held to once its CPU credits are spent: 20, 40 or 100; unset is 100, a machine never held. Below 100 the machine is burstable: it earns CPU credits while it runs below its baseline and spends them to run above it, up to all its vCPUs, and with none left it is held to its baseline. Below 100 only for a tenant whose BillingAccount is PAY_AS_YOU_GO. It changes nothing the quota counts, and changing it restarts nothing. A Machine carries it only when below 100. See docs/decisions/cpu-credits.md.",
+          "format": "int32",
+          "type": "integer"
         },
         "disk": {
           "description": "Root disk size, at least 1Gi. It can grow but never shrink. With disk_grow set, the size the root disk starts at, or the size its image's base needs, in whole Gi, if that is larger. A size below the base fails with DiskTooSmall without disk_grow, and so does a base past disk_grow.max.",

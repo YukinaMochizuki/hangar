@@ -48,6 +48,11 @@ can choose a shape within rules instead.
   bounds every machine has whoever writes it (at least 128Mi for a
   container and 256Mi for a VM, at least 1Gi of disk, the maximums) are
   checked as before, apart from these rules.
+- **A CPU baseline is no part of the shape.** Any shape may be burstable:
+  `resources.cpu_baseline`, 20, 40 or 100, is checked apart from these
+  rules, for every caller, and changes neither the vCPUs the rules count
+  nor what the quota counts (`cpu-credits.md`). A `MachineSize` has no
+  baseline.
 - **The exemption follows the permission to define sizes.** A caller the
   authorizer allows `compute.machinesizes.apply` at the platform is not
   checked: `platform.root`, whether a person, root on the host or a service

@@ -108,6 +108,7 @@ func conformanceHost(t *testing.T, h *host) drivertest.Host {
 				}
 			}
 		},
+		CPULimit:      func(t *testing.T, uid string) int64 { return unitCPULimit(t, uid) },
 		Tailnet:       testbedTailnet(),
 		TailscaleDisk: testbedTailscaleDisk(),
 		BootDisk: func(t *testing.T, uid string) (driver.ShareExport, os.FileMode, int) {

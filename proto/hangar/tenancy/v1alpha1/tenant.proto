@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package hangar.tenancy.v1alpha1;
 
+import "google/protobuf/timestamp.proto";
 import "hangar/meta/v1/meta.proto";
 import "hangar/meta/v1/options.proto";
 import "hangar/tenancy/v1alpha1/plan.proto";
@@ -41,6 +42,18 @@ message TenantStatus {
   Limits limits = 4;
   // What all the tenant's projects hold.
   Usage usage = 5;
+  // The launch credits given to the tenant's burstable machines in the
+  // last 24 hours, oldest first: at most 10, past which a new burstable
+  // machine gets none. Deleting a machine gives none back. Written by the
+  // system. See docs/decisions/cpu-credits.md.
+  repeated CPULaunchGrant cpu_launch_grants = 6;
+}
+
+// CPULaunchGrant is a burstable machine's launch credits, given.
+message CPULaunchGrant {
+  // The uid of the Container or VirtualMachine the machine runs for.
+  string owner_uid = 1;
+  google.protobuf.Timestamp time = 2;
 }
 
 // TenantService manages tenants.

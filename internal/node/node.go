@@ -90,6 +90,10 @@ type Config struct {
 	// UsagePoll is how often each running machine's usage is sampled.
 	// Zero means DefaultUsagePoll.
 	UsagePoll time.Duration
+	// CreditCheckpoint is how often each running burstable machine's CPU
+	// credits are written to its status. Zero means
+	// DefaultCreditCheckpoint.
+	CreditCheckpoint time.Duration
 	// SqueezePoll is how often each memory pool on the node is checked.
 	// Zero means DefaultSqueezePoll.
 	SqueezePoll time.Duration
@@ -271,6 +275,8 @@ type Agent struct {
 	// usages is what the usage sampler keeps of each running machine,
 	// which MachineUsage answers.
 	usages *usages
+	// credits are the burstable machines' CPU credits (cpucredits.go).
+	credits *credits
 	// shareWaiters are the machines waiting for their shares to serve them
 	// (sharesServe), which a server taking an export, or a network's
 	// firewall written, queues again; requeue queues them, the machine
@@ -361,6 +367,9 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.SqueezePoll == 0 {
 		cfg.SqueezePoll = DefaultSqueezePoll
 	}
+	if cfg.CreditCheckpoint == 0 {
+		cfg.CreditCheckpoint = DefaultCreditCheckpoint
+	}
 	if cfg.PullTimeout == 0 {
 		cfg.PullTimeout = 30 * time.Minute
 	}
@@ -430,6 +439,7 @@ func New(cfg Config) (*Agent, error) {
 		toldTailnets:     map[string]toldTailnet{},
 		tailnetTrigger:   make(chan struct{}, 1),
 		usages:           newUsages(),
+		credits:          newCredits(),
 		images:           images,
 		netChecked:       map[string]int64{},
 		told:             map[string]toldIPv6{},
@@ -568,6 +578,8 @@ func (a *Agent) Run(ctx context.Context) error {
 		wg.Go(func() { a.rootLoop(ctx) })
 		wg.Go(func() { a.tailnetLoop(ctx) })
 		wg.Go(func() { a.usageLoop(ctx) })
+		wg.Go(func() { a.creditLoop(ctx) })
+		wg.Go(func() { a.creditWriteLoop(ctx) })
 		wg.Go(func() { a.squeezeLoop(ctx) })
 		wg.Go(func() { _ = a.sharesCtl.Run(ctx) })
 		wg.Go(func() { _ = a.forwardsCtl.Run(ctx) })

@@ -10,6 +10,7 @@ import (
 	v1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -167,9 +168,14 @@ type TenantStatus struct {
 	// machine_calls, which is then 64.
 	Limits *Limits `protobuf:"bytes,4,opt,name=limits,proto3" json:"limits,omitempty"`
 	// What all the tenant's projects hold.
-	Usage         *Usage `protobuf:"bytes,5,opt,name=usage,proto3" json:"usage,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Usage *Usage `protobuf:"bytes,5,opt,name=usage,proto3" json:"usage,omitempty"`
+	// The launch credits given to the tenant's burstable machines in the
+	// last 24 hours, oldest first: at most 10, past which a new burstable
+	// machine gets none. Deleting a machine gives none back. Written by the
+	// system. See docs/decisions/cpu-credits.md.
+	CpuLaunchGrants []*CPULaunchGrant `protobuf:"bytes,6,rep,name=cpu_launch_grants,json=cpuLaunchGrants,proto3" json:"cpu_launch_grants,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *TenantStatus) Reset() {
@@ -237,6 +243,67 @@ func (x *TenantStatus) GetUsage() *Usage {
 	return nil
 }
 
+func (x *TenantStatus) GetCpuLaunchGrants() []*CPULaunchGrant {
+	if x != nil {
+		return x.CpuLaunchGrants
+	}
+	return nil
+}
+
+// CPULaunchGrant is a burstable machine's launch credits, given.
+type CPULaunchGrant struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The uid of the Container or VirtualMachine the machine runs for.
+	OwnerUid      string                 `protobuf:"bytes,1,opt,name=owner_uid,json=ownerUid,proto3" json:"owner_uid,omitempty"`
+	Time          *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=time,proto3" json:"time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CPULaunchGrant) Reset() {
+	*x = CPULaunchGrant{}
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CPULaunchGrant) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CPULaunchGrant) ProtoMessage() {}
+
+func (x *CPULaunchGrant) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CPULaunchGrant.ProtoReflect.Descriptor instead.
+func (*CPULaunchGrant) Descriptor() ([]byte, []int) {
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CPULaunchGrant) GetOwnerUid() string {
+	if x != nil {
+		return x.OwnerUid
+	}
+	return ""
+}
+
+func (x *CPULaunchGrant) GetTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Time
+	}
+	return nil
+}
+
 type GetTenantRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -246,7 +313,7 @@ type GetTenantRequest struct {
 
 func (x *GetTenantRequest) Reset() {
 	*x = GetTenantRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[3]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -258,7 +325,7 @@ func (x *GetTenantRequest) String() string {
 func (*GetTenantRequest) ProtoMessage() {}
 
 func (x *GetTenantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[3]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -271,7 +338,7 @@ func (x *GetTenantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTenantRequest.ProtoReflect.Descriptor instead.
 func (*GetTenantRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{3}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetTenantRequest) GetName() string {
@@ -290,7 +357,7 @@ type GetTenantResponse struct {
 
 func (x *GetTenantResponse) Reset() {
 	*x = GetTenantResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[4]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -302,7 +369,7 @@ func (x *GetTenantResponse) String() string {
 func (*GetTenantResponse) ProtoMessage() {}
 
 func (x *GetTenantResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[4]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -315,7 +382,7 @@ func (x *GetTenantResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTenantResponse.ProtoReflect.Descriptor instead.
 func (*GetTenantResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{4}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetTenantResponse) GetTenant() *Tenant {
@@ -336,7 +403,7 @@ type ListTenantsRequest struct {
 
 func (x *ListTenantsRequest) Reset() {
 	*x = ListTenantsRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[5]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -348,7 +415,7 @@ func (x *ListTenantsRequest) String() string {
 func (*ListTenantsRequest) ProtoMessage() {}
 
 func (x *ListTenantsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[5]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -361,7 +428,7 @@ func (x *ListTenantsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTenantsRequest.ProtoReflect.Descriptor instead.
 func (*ListTenantsRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{5}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListTenantsRequest) GetLabelSelector() string {
@@ -396,7 +463,7 @@ type ListTenantsResponse struct {
 
 func (x *ListTenantsResponse) Reset() {
 	*x = ListTenantsResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[6]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -408,7 +475,7 @@ func (x *ListTenantsResponse) String() string {
 func (*ListTenantsResponse) ProtoMessage() {}
 
 func (x *ListTenantsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[6]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -421,7 +488,7 @@ func (x *ListTenantsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTenantsResponse.ProtoReflect.Descriptor instead.
 func (*ListTenantsResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{6}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListTenantsResponse) GetItems() []*Tenant {
@@ -455,7 +522,7 @@ type WatchTenantsRequest struct {
 
 func (x *WatchTenantsRequest) Reset() {
 	*x = WatchTenantsRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[7]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -467,7 +534,7 @@ func (x *WatchTenantsRequest) String() string {
 func (*WatchTenantsRequest) ProtoMessage() {}
 
 func (x *WatchTenantsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[7]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -480,7 +547,7 @@ func (x *WatchTenantsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchTenantsRequest.ProtoReflect.Descriptor instead.
 func (*WatchTenantsRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{7}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *WatchTenantsRequest) GetLabelSelector() string {
@@ -508,7 +575,7 @@ type WatchTenantsResponse struct {
 
 func (x *WatchTenantsResponse) Reset() {
 	*x = WatchTenantsResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[8]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -520,7 +587,7 @@ func (x *WatchTenantsResponse) String() string {
 func (*WatchTenantsResponse) ProtoMessage() {}
 
 func (x *WatchTenantsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[8]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -533,7 +600,7 @@ func (x *WatchTenantsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchTenantsResponse.ProtoReflect.Descriptor instead.
 func (*WatchTenantsResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{8}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *WatchTenantsResponse) GetType() v1.EventType {
@@ -568,7 +635,7 @@ type ApplyTenantRequest struct {
 
 func (x *ApplyTenantRequest) Reset() {
 	*x = ApplyTenantRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[9]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -580,7 +647,7 @@ func (x *ApplyTenantRequest) String() string {
 func (*ApplyTenantRequest) ProtoMessage() {}
 
 func (x *ApplyTenantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[9]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -593,7 +660,7 @@ func (x *ApplyTenantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyTenantRequest.ProtoReflect.Descriptor instead.
 func (*ApplyTenantRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{9}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ApplyTenantRequest) GetTenant() *Tenant {
@@ -621,7 +688,7 @@ type ApplyTenantResponse struct {
 
 func (x *ApplyTenantResponse) Reset() {
 	*x = ApplyTenantResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[10]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -633,7 +700,7 @@ func (x *ApplyTenantResponse) String() string {
 func (*ApplyTenantResponse) ProtoMessage() {}
 
 func (x *ApplyTenantResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[10]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -646,7 +713,7 @@ func (x *ApplyTenantResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyTenantResponse.ProtoReflect.Descriptor instead.
 func (*ApplyTenantResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{10}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ApplyTenantResponse) GetTenant() *Tenant {
@@ -680,7 +747,7 @@ type DeleteTenantRequest struct {
 
 func (x *DeleteTenantRequest) Reset() {
 	*x = DeleteTenantRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[11]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -692,7 +759,7 @@ func (x *DeleteTenantRequest) String() string {
 func (*DeleteTenantRequest) ProtoMessage() {}
 
 func (x *DeleteTenantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[11]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -705,7 +772,7 @@ func (x *DeleteTenantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTenantRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTenantRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{11}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeleteTenantRequest) GetName() string {
@@ -731,7 +798,7 @@ type DeleteTenantResponse struct {
 
 func (x *DeleteTenantResponse) Reset() {
 	*x = DeleteTenantResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[12]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -743,7 +810,7 @@ func (x *DeleteTenantResponse) String() string {
 func (*DeleteTenantResponse) ProtoMessage() {}
 
 func (x *DeleteTenantResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[12]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -756,7 +823,7 @@ func (x *DeleteTenantResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTenantResponse.ProtoReflect.Descriptor instead.
 func (*DeleteTenantResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{12}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DeleteTenantResponse) GetTenant() *Tenant {
@@ -777,7 +844,7 @@ type UpdateTenantStatusRequest struct {
 
 func (x *UpdateTenantStatusRequest) Reset() {
 	*x = UpdateTenantStatusRequest{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[13]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -789,7 +856,7 @@ func (x *UpdateTenantStatusRequest) String() string {
 func (*UpdateTenantStatusRequest) ProtoMessage() {}
 
 func (x *UpdateTenantStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[13]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -802,7 +869,7 @@ func (x *UpdateTenantStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateTenantStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateTenantStatusRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{13}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UpdateTenantStatusRequest) GetName() string {
@@ -835,7 +902,7 @@ type UpdateTenantStatusResponse struct {
 
 func (x *UpdateTenantStatusResponse) Reset() {
 	*x = UpdateTenantStatusResponse{}
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[14]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -847,7 +914,7 @@ func (x *UpdateTenantStatusResponse) String() string {
 func (*UpdateTenantStatusResponse) ProtoMessage() {}
 
 func (x *UpdateTenantStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[14]
+	mi := &file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -860,7 +927,7 @@ func (x *UpdateTenantStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateTenantStatusResponse.ProtoReflect.Descriptor instead.
 func (*UpdateTenantStatusResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{14}
+	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UpdateTenantStatusResponse) GetTenant() *Tenant {
@@ -874,7 +941,7 @@ var File_hangar_tenancy_v1alpha1_tenant_proto protoreflect.FileDescriptor
 
 const file_hangar_tenancy_v1alpha1_tenant_proto_rawDesc = "" +
 	"\n" +
-	"$hangar/tenancy/v1alpha1/tenant.proto\x12\x17hangar.tenancy.v1alpha1\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\x1a\"hangar/tenancy/v1alpha1/plan.proto\"\x86\x02\n" +
+	"$hangar/tenancy/v1alpha1/tenant.proto\x12\x17hangar.tenancy.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\x1a\"hangar/tenancy/v1alpha1/plan.proto\"\x86\x02\n" +
 	"\x06Tenant\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
@@ -886,7 +953,7 @@ const file_hangar_tenancy_v1alpha1_tenant_proto_rawDesc = "" +
 	"\n" +
 	"TenantSpec\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x12\n" +
-	"\x04plan\x18\x02 \x01(\tR\x04plan\"\xfd\x01\n" +
+	"\x04plan\x18\x02 \x01(\tR\x04plan\"\xd2\x02\n" +
 	"\fTenantStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
@@ -894,7 +961,11 @@ const file_hangar_tenancy_v1alpha1_tenant_proto_rawDesc = "" +
 	"conditions\x12\x12\n" +
 	"\x04plan\x18\x03 \x01(\tR\x04plan\x127\n" +
 	"\x06limits\x18\x04 \x01(\v2\x1f.hangar.tenancy.v1alpha1.LimitsR\x06limits\x124\n" +
-	"\x05usage\x18\x05 \x01(\v2\x1e.hangar.tenancy.v1alpha1.UsageR\x05usage\"&\n" +
+	"\x05usage\x18\x05 \x01(\v2\x1e.hangar.tenancy.v1alpha1.UsageR\x05usage\x12S\n" +
+	"\x11cpu_launch_grants\x18\x06 \x03(\v2'.hangar.tenancy.v1alpha1.CPULaunchGrantR\x0fcpuLaunchGrants\"]\n" +
+	"\x0eCPULaunchGrant\x12\x1b\n" +
+	"\towner_uid\x18\x01 \x01(\tR\bownerUid\x12.\n" +
+	"\x04time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\"&\n" +
 	"\x10GetTenantRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"L\n" +
 	"\x11GetTenantResponse\x127\n" +
@@ -957,62 +1028,66 @@ func file_hangar_tenancy_v1alpha1_tenant_proto_rawDescGZIP() []byte {
 	return file_hangar_tenancy_v1alpha1_tenant_proto_rawDescData
 }
 
-var file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_hangar_tenancy_v1alpha1_tenant_proto_goTypes = []any{
 	(*Tenant)(nil),                     // 0: hangar.tenancy.v1alpha1.Tenant
 	(*TenantSpec)(nil),                 // 1: hangar.tenancy.v1alpha1.TenantSpec
 	(*TenantStatus)(nil),               // 2: hangar.tenancy.v1alpha1.TenantStatus
-	(*GetTenantRequest)(nil),           // 3: hangar.tenancy.v1alpha1.GetTenantRequest
-	(*GetTenantResponse)(nil),          // 4: hangar.tenancy.v1alpha1.GetTenantResponse
-	(*ListTenantsRequest)(nil),         // 5: hangar.tenancy.v1alpha1.ListTenantsRequest
-	(*ListTenantsResponse)(nil),        // 6: hangar.tenancy.v1alpha1.ListTenantsResponse
-	(*WatchTenantsRequest)(nil),        // 7: hangar.tenancy.v1alpha1.WatchTenantsRequest
-	(*WatchTenantsResponse)(nil),       // 8: hangar.tenancy.v1alpha1.WatchTenantsResponse
-	(*ApplyTenantRequest)(nil),         // 9: hangar.tenancy.v1alpha1.ApplyTenantRequest
-	(*ApplyTenantResponse)(nil),        // 10: hangar.tenancy.v1alpha1.ApplyTenantResponse
-	(*DeleteTenantRequest)(nil),        // 11: hangar.tenancy.v1alpha1.DeleteTenantRequest
-	(*DeleteTenantResponse)(nil),       // 12: hangar.tenancy.v1alpha1.DeleteTenantResponse
-	(*UpdateTenantStatusRequest)(nil),  // 13: hangar.tenancy.v1alpha1.UpdateTenantStatusRequest
-	(*UpdateTenantStatusResponse)(nil), // 14: hangar.tenancy.v1alpha1.UpdateTenantStatusResponse
-	(*v1.ObjectMeta)(nil),              // 15: hangar.meta.v1.ObjectMeta
-	(*v1.Condition)(nil),               // 16: hangar.meta.v1.Condition
-	(*Limits)(nil),                     // 17: hangar.tenancy.v1alpha1.Limits
-	(*Usage)(nil),                      // 18: hangar.tenancy.v1alpha1.Usage
-	(v1.EventType)(0),                  // 19: hangar.meta.v1.EventType
+	(*CPULaunchGrant)(nil),             // 3: hangar.tenancy.v1alpha1.CPULaunchGrant
+	(*GetTenantRequest)(nil),           // 4: hangar.tenancy.v1alpha1.GetTenantRequest
+	(*GetTenantResponse)(nil),          // 5: hangar.tenancy.v1alpha1.GetTenantResponse
+	(*ListTenantsRequest)(nil),         // 6: hangar.tenancy.v1alpha1.ListTenantsRequest
+	(*ListTenantsResponse)(nil),        // 7: hangar.tenancy.v1alpha1.ListTenantsResponse
+	(*WatchTenantsRequest)(nil),        // 8: hangar.tenancy.v1alpha1.WatchTenantsRequest
+	(*WatchTenantsResponse)(nil),       // 9: hangar.tenancy.v1alpha1.WatchTenantsResponse
+	(*ApplyTenantRequest)(nil),         // 10: hangar.tenancy.v1alpha1.ApplyTenantRequest
+	(*ApplyTenantResponse)(nil),        // 11: hangar.tenancy.v1alpha1.ApplyTenantResponse
+	(*DeleteTenantRequest)(nil),        // 12: hangar.tenancy.v1alpha1.DeleteTenantRequest
+	(*DeleteTenantResponse)(nil),       // 13: hangar.tenancy.v1alpha1.DeleteTenantResponse
+	(*UpdateTenantStatusRequest)(nil),  // 14: hangar.tenancy.v1alpha1.UpdateTenantStatusRequest
+	(*UpdateTenantStatusResponse)(nil), // 15: hangar.tenancy.v1alpha1.UpdateTenantStatusResponse
+	(*v1.ObjectMeta)(nil),              // 16: hangar.meta.v1.ObjectMeta
+	(*v1.Condition)(nil),               // 17: hangar.meta.v1.Condition
+	(*Limits)(nil),                     // 18: hangar.tenancy.v1alpha1.Limits
+	(*Usage)(nil),                      // 19: hangar.tenancy.v1alpha1.Usage
+	(*timestamppb.Timestamp)(nil),      // 20: google.protobuf.Timestamp
+	(v1.EventType)(0),                  // 21: hangar.meta.v1.EventType
 }
 var file_hangar_tenancy_v1alpha1_tenant_proto_depIdxs = []int32{
-	15, // 0: hangar.tenancy.v1alpha1.Tenant.metadata:type_name -> hangar.meta.v1.ObjectMeta
+	16, // 0: hangar.tenancy.v1alpha1.Tenant.metadata:type_name -> hangar.meta.v1.ObjectMeta
 	1,  // 1: hangar.tenancy.v1alpha1.Tenant.spec:type_name -> hangar.tenancy.v1alpha1.TenantSpec
 	2,  // 2: hangar.tenancy.v1alpha1.Tenant.status:type_name -> hangar.tenancy.v1alpha1.TenantStatus
-	16, // 3: hangar.tenancy.v1alpha1.TenantStatus.conditions:type_name -> hangar.meta.v1.Condition
-	17, // 4: hangar.tenancy.v1alpha1.TenantStatus.limits:type_name -> hangar.tenancy.v1alpha1.Limits
-	18, // 5: hangar.tenancy.v1alpha1.TenantStatus.usage:type_name -> hangar.tenancy.v1alpha1.Usage
-	0,  // 6: hangar.tenancy.v1alpha1.GetTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	0,  // 7: hangar.tenancy.v1alpha1.ListTenantsResponse.items:type_name -> hangar.tenancy.v1alpha1.Tenant
-	19, // 8: hangar.tenancy.v1alpha1.WatchTenantsResponse.type:type_name -> hangar.meta.v1.EventType
-	0,  // 9: hangar.tenancy.v1alpha1.WatchTenantsResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	0,  // 10: hangar.tenancy.v1alpha1.ApplyTenantRequest.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	0,  // 11: hangar.tenancy.v1alpha1.ApplyTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	0,  // 12: hangar.tenancy.v1alpha1.DeleteTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	2,  // 13: hangar.tenancy.v1alpha1.UpdateTenantStatusRequest.status:type_name -> hangar.tenancy.v1alpha1.TenantStatus
-	0,  // 14: hangar.tenancy.v1alpha1.UpdateTenantStatusResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	3,  // 15: hangar.tenancy.v1alpha1.TenantService.GetTenant:input_type -> hangar.tenancy.v1alpha1.GetTenantRequest
-	5,  // 16: hangar.tenancy.v1alpha1.TenantService.ListTenants:input_type -> hangar.tenancy.v1alpha1.ListTenantsRequest
-	7,  // 17: hangar.tenancy.v1alpha1.TenantService.WatchTenants:input_type -> hangar.tenancy.v1alpha1.WatchTenantsRequest
-	9,  // 18: hangar.tenancy.v1alpha1.TenantService.ApplyTenant:input_type -> hangar.tenancy.v1alpha1.ApplyTenantRequest
-	11, // 19: hangar.tenancy.v1alpha1.TenantService.DeleteTenant:input_type -> hangar.tenancy.v1alpha1.DeleteTenantRequest
-	13, // 20: hangar.tenancy.v1alpha1.TenantService.UpdateTenantStatus:input_type -> hangar.tenancy.v1alpha1.UpdateTenantStatusRequest
-	4,  // 21: hangar.tenancy.v1alpha1.TenantService.GetTenant:output_type -> hangar.tenancy.v1alpha1.GetTenantResponse
-	6,  // 22: hangar.tenancy.v1alpha1.TenantService.ListTenants:output_type -> hangar.tenancy.v1alpha1.ListTenantsResponse
-	8,  // 23: hangar.tenancy.v1alpha1.TenantService.WatchTenants:output_type -> hangar.tenancy.v1alpha1.WatchTenantsResponse
-	10, // 24: hangar.tenancy.v1alpha1.TenantService.ApplyTenant:output_type -> hangar.tenancy.v1alpha1.ApplyTenantResponse
-	12, // 25: hangar.tenancy.v1alpha1.TenantService.DeleteTenant:output_type -> hangar.tenancy.v1alpha1.DeleteTenantResponse
-	14, // 26: hangar.tenancy.v1alpha1.TenantService.UpdateTenantStatus:output_type -> hangar.tenancy.v1alpha1.UpdateTenantStatusResponse
-	21, // [21:27] is the sub-list for method output_type
-	15, // [15:21] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	17, // 3: hangar.tenancy.v1alpha1.TenantStatus.conditions:type_name -> hangar.meta.v1.Condition
+	18, // 4: hangar.tenancy.v1alpha1.TenantStatus.limits:type_name -> hangar.tenancy.v1alpha1.Limits
+	19, // 5: hangar.tenancy.v1alpha1.TenantStatus.usage:type_name -> hangar.tenancy.v1alpha1.Usage
+	3,  // 6: hangar.tenancy.v1alpha1.TenantStatus.cpu_launch_grants:type_name -> hangar.tenancy.v1alpha1.CPULaunchGrant
+	20, // 7: hangar.tenancy.v1alpha1.CPULaunchGrant.time:type_name -> google.protobuf.Timestamp
+	0,  // 8: hangar.tenancy.v1alpha1.GetTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	0,  // 9: hangar.tenancy.v1alpha1.ListTenantsResponse.items:type_name -> hangar.tenancy.v1alpha1.Tenant
+	21, // 10: hangar.tenancy.v1alpha1.WatchTenantsResponse.type:type_name -> hangar.meta.v1.EventType
+	0,  // 11: hangar.tenancy.v1alpha1.WatchTenantsResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	0,  // 12: hangar.tenancy.v1alpha1.ApplyTenantRequest.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	0,  // 13: hangar.tenancy.v1alpha1.ApplyTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	0,  // 14: hangar.tenancy.v1alpha1.DeleteTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	2,  // 15: hangar.tenancy.v1alpha1.UpdateTenantStatusRequest.status:type_name -> hangar.tenancy.v1alpha1.TenantStatus
+	0,  // 16: hangar.tenancy.v1alpha1.UpdateTenantStatusResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	4,  // 17: hangar.tenancy.v1alpha1.TenantService.GetTenant:input_type -> hangar.tenancy.v1alpha1.GetTenantRequest
+	6,  // 18: hangar.tenancy.v1alpha1.TenantService.ListTenants:input_type -> hangar.tenancy.v1alpha1.ListTenantsRequest
+	8,  // 19: hangar.tenancy.v1alpha1.TenantService.WatchTenants:input_type -> hangar.tenancy.v1alpha1.WatchTenantsRequest
+	10, // 20: hangar.tenancy.v1alpha1.TenantService.ApplyTenant:input_type -> hangar.tenancy.v1alpha1.ApplyTenantRequest
+	12, // 21: hangar.tenancy.v1alpha1.TenantService.DeleteTenant:input_type -> hangar.tenancy.v1alpha1.DeleteTenantRequest
+	14, // 22: hangar.tenancy.v1alpha1.TenantService.UpdateTenantStatus:input_type -> hangar.tenancy.v1alpha1.UpdateTenantStatusRequest
+	5,  // 23: hangar.tenancy.v1alpha1.TenantService.GetTenant:output_type -> hangar.tenancy.v1alpha1.GetTenantResponse
+	7,  // 24: hangar.tenancy.v1alpha1.TenantService.ListTenants:output_type -> hangar.tenancy.v1alpha1.ListTenantsResponse
+	9,  // 25: hangar.tenancy.v1alpha1.TenantService.WatchTenants:output_type -> hangar.tenancy.v1alpha1.WatchTenantsResponse
+	11, // 26: hangar.tenancy.v1alpha1.TenantService.ApplyTenant:output_type -> hangar.tenancy.v1alpha1.ApplyTenantResponse
+	13, // 27: hangar.tenancy.v1alpha1.TenantService.DeleteTenant:output_type -> hangar.tenancy.v1alpha1.DeleteTenantResponse
+	15, // 28: hangar.tenancy.v1alpha1.TenantService.UpdateTenantStatus:output_type -> hangar.tenancy.v1alpha1.UpdateTenantStatusResponse
+	23, // [23:29] is the sub-list for method output_type
+	17, // [17:23] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_hangar_tenancy_v1alpha1_tenant_proto_init() }
@@ -1021,15 +1096,15 @@ func file_hangar_tenancy_v1alpha1_tenant_proto_init() {
 		return
 	}
 	file_hangar_tenancy_v1alpha1_plan_proto_init()
-	file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[11].OneofWrappers = []any{}
-	file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[13].OneofWrappers = []any{}
+	file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[12].OneofWrappers = []any{}
+	file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_tenancy_v1alpha1_tenant_proto_rawDesc), len(file_hangar_tenancy_v1alpha1_tenant_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

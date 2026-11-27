@@ -14,6 +14,7 @@ import (
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
+	"github.com/YukinaMochizuki/hangar/internal/billing"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
@@ -132,7 +133,7 @@ func (s *Server) meterReadings(ctx context.Context, tenant string) ([]store.Mete
 				return nil, err
 			}
 		}
-		running, err := s.runningShapes(ctx, project, pooled)
+		running, baselines, err := s.runningShapes(ctx, project, pooled)
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +147,15 @@ func (s *Server) meterReadings(ctx context.Context, tenant string) ([]store.Mete
 						a[dimCPU], a[dimMemory] = shape[dimCPU], shape[dimMemory]
 					}
 				}
-				out = append(out, readingsOf(kind, project, meta.GetName(), meta.GetUid(), a)...)
+				readings := readingsOf(kind, project, meta.GetName(), meta.GetUid(), a)
+				if item, ok := billing.BurstableItems[baselines[meta.GetUid()]]; ok {
+					for i := range readings {
+						if readings[i].Item == "cpu" {
+							readings[i].Item = item
+						}
+					}
+				}
+				out = append(out, readings...)
 			}
 		}
 	}
@@ -170,14 +179,16 @@ func (s *Server) meterReadings(ctx context.Context, tenant string) ([]store.Mete
 // asks for since. Its memory is what is reserved for it while its tenant has
 // a memory pool, as pooled says (poolTerms.pooled), which is what the quota
 // counts too, and all of its memory otherwise, which is what a machine of a
-// tenant that pays as it goes always is. A file share's server is the
-// platform's, and not here.
-func (s *Server) runningShapes(ctx context.Context, project string, pooled bool) (map[string]amounts, error) {
+// tenant that pays as it goes always is. baselines are the cpu_baseline of
+// each that is burstable, whose vCPUs are billed at its baseline's price.
+// A file share's server is the platform's, and not here.
+func (s *Server) runningShapes(ctx context.Context, project string, pooled bool) (shapes map[string]amounts, baselines map[string]int32, err error) {
 	objs, err := s.listWith(ctx, registry.Machine, project, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out := map[string]amounts{}
+	baselines = map[string]int32{}
 	for _, obj := range objs {
 		m := obj.(*computev1alpha1.Machine)
 		if m.GetStatus().GetPhase() != computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING {
@@ -200,9 +211,12 @@ func (s *Server) runningShapes(ctx context.Context, project string, pooled bool)
 				a[dimMemory] = int64(wholeMi(mem) * quantity.MiB)
 			}
 			out[ref.GetUid()] = a
+			if b := m.GetSpec().GetResources().GetCpuBaseline(); b != 0 {
+				baselines[ref.GetUid()] = b
+			}
 		}
 	}
-	return out, nil
+	return out, baselines, nil
 }
 
 // readingsOf is an object's amounts as the meter records them, in its

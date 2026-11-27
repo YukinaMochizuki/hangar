@@ -26,6 +26,15 @@ spec:
 hangar apply -f standard.yaml
 ```
 
+A burstable machine's vCPUs (`docs/decisions/cpu-credits.md`) are rated at
+`cpuBurstable20` or `cpuBurstable40`, by its baseline. Left out, each is
+`cpu` times its baseline, 0.12 and 0.24 above; set them for prices of
+their own:
+
+```yaml
+      prices: {cpu: "0.6", cpuBurstable20: "0.15", cpuBurstable40: "0.28", memory: "0.2"}
+```
+
 To change a price, add an entry at the end, taking effect now or later.
 An entry whose time has come cannot be changed or removed; the apply is
 refused and says so. Every minute is rated at the entry in effect in it.

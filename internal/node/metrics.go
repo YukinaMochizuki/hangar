@@ -24,6 +24,9 @@ type agentMetrics struct {
 	// balloonUnresponsive counts the balloons found not following what
 	// they are asked.
 	balloonUnresponsive prometheus.Counter
+	// creditSpansDropped counts the spans of a burstable machine's CPU
+	// charged nothing, by why (ledger.account).
+	creditSpansDropped *prometheus.CounterVec
 	// tunnelOpened says a tunnel was opened before, so the next is a
 	// reconnect. Only the tunnel's one goroutine reads and writes it.
 	tunnelOpened bool
@@ -74,12 +77,19 @@ func newAgentMetrics() *agentMetrics {
 			Name: "hangar_node_memory_pool_balloons_unresponsive_total",
 			Help: "Balloons of memory pools' machines found not following what they are asked, as a guest with no balloon driver: asked nothing more until the VM starts again.",
 		}),
+		creditSpansDropped: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "hangar_node_cpu_credit_spans_dropped_total",
+			Help: "Spans of a burstable machine's CPU, between two reads of its unit in one boot, charged nothing and earning nothing, by reason: late, read more than two usage polls after the one before; counter, its CPU time gone back.",
+		}, []string{"reason"}),
 	}
 	for _, r := range []string{pullResultOK, pullResultFailed, pullResultUnauthorized, pullResultTimeout, pullResultInvalid, pullResultDiskFailed, pullResultCanceled} {
 		m.pulls.WithLabelValues(r)
 	}
 	for _, s := range []squeeze.Stage{squeeze.Safe, squeeze.Reserve, squeeze.Deflate} {
 		m.squeezes.WithLabelValues(s.String())
+	}
+	for _, r := range []string{spanLate, spanCounter} {
+		m.creditSpansDropped.WithLabelValues(r)
 	}
 	return m
 }
@@ -117,7 +127,7 @@ func (o oomKills) Collect(ch chan<- prometheus.Metric) {
 // listener serves.
 func (a *Agent) Collectors() []prometheus.Collector {
 	m := a.metrics
-	cs := []prometheus.Collector{m.tunnelUp, m.tunnelReconnects, m.heartbeatFailures, m.statusFailures, m.pulls, m.imageCache, m.squeezes, m.balloonUnresponsive}
+	cs := []prometheus.Collector{m.tunnelUp, m.tunnelReconnects, m.heartbeatFailures, m.statusFailures, m.pulls, m.imageCache, m.squeezes, m.balloonUnresponsive, m.creditSpansDropped}
 	if a.cfg.Drivers != nil {
 		cs = append(cs, newOOMKills(a.cfg.Drivers.Hypervisor.OOMGroupKills))
 	}

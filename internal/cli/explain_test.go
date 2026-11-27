@@ -110,7 +110,7 @@ func TestExplain(t *testing.T) {
 		want string
 	}{
 		{[]string{"explain", "containr"}, "did you mean containers?"},
-		{[]string{"explain", "container.spec.resources.cpus"}, `spec.resources has no field "cpus"; did you mean cpu?; it has cpu, disk, diskGrow, memory`},
+		{[]string{"explain", "container.spec.resources.cpus"}, `spec.resources has no field "cpus"; did you mean cpu?; it has cpu, cpuBaseline, disk, diskGrow, memory`},
 		{[]string{"explain", "container.spec.image.x"}, "spec.image has no fields"},
 	} {
 		r := w.run("", tt.args...)

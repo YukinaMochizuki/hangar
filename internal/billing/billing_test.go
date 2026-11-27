@@ -252,6 +252,39 @@ func TestRate(t *testing.T) {
 	}
 }
 
+// TestABurstableVCPUIsRatedAtItsTier: a burstable machine's vCPUs are
+// rated at its baseline's price; with that price empty, at cpu's times its
+// baseline, never free; with cpu empty too, free as cpu is.
+func TestABurstableVCPUIsRatedAtItsTier(t *testing.T) {
+	t0 := date(2026, 11, 1, 0, 0, time.UTC)
+	hour := int64(60)
+	held := map[string]int64{"cpu_burstable_20": 2000 * hour, "cpu_burstable_40": 1000 * hour}
+	rated := func(p *billingv1alpha1.Prices) map[string]string {
+		t.Helper()
+		span := billing.Spans(entries(t, entry(t0, p)), t0, t0.Add(time.Hour))[0]
+		out := map[string]string{}
+		for _, l := range billing.Rate(span, held) {
+			out[l.Item] = l.Amount.String() + " at " + l.UnitPrice.String()
+		}
+		return out
+	}
+	got := rated(&billingv1alpha1.Prices{Cpu: "1", CpuBurstable_20: "0.15", CpuBurstable_40: "0.3"})
+	if got["cpu_burstable_20"] != "0.3 at 0.15" || got["cpu_burstable_40"] != "0.3 at 0.3" {
+		t.Errorf("at their own prices, an hour of 2 vCPUs at 20%% and 1 at 40%% = %v, want 0.3 at 0.15 and 0.3 at 0.3", got)
+	}
+	got = rated(&billingv1alpha1.Prices{Cpu: "0.6"})
+	if got["cpu_burstable_20"] != "0.24 at 0.12" || got["cpu_burstable_40"] != "0.24 at 0.24" {
+		t.Errorf("with no burstable prices, = %v, want 0.24 at 0.12 and 0.24 at 0.24: cpu's price times the baseline", got)
+	}
+	got = rated(&billingv1alpha1.Prices{Cpu: "0.6", CpuBurstable_40: "0.2"})
+	if got["cpu_burstable_20"] != "0.24 at 0.12" || got["cpu_burstable_40"] != "0.2 at 0.2" {
+		t.Errorf("with one burstable price, = %v, want 0.24 at 0.12 and 0.2 at 0.2", got)
+	}
+	if got := rated(&billingv1alpha1.Prices{Memory: "1"}); len(got) != 0 {
+		t.Errorf("with cpu free, burstable vCPUs = %v, want free", got)
+	}
+}
+
 func TestFeeLine(t *testing.T) {
 	fee, _ := billing.ParseMoney("300")
 	month := 30 * 24 * time.Hour

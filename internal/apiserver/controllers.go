@@ -508,6 +508,9 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 			return m, err
 		}
 		want.MemoryPool, want.CpuPool = pools.memory, pools.cpu
+		if err := s.decideLaunch(ctx, meta.GetProject(), meta.GetUid(), m, want); err != nil {
+			return m, err
+		}
 	}
 	if m == nil {
 		// Addresses are chosen and written as one decision.
@@ -637,6 +640,7 @@ func machineSpec(name string, cs *computev1alpha1.ContainerSpec, st *computev1al
 	}
 	resources := sz.canonical()
 	resources.MemoryReserved = canonicalReserved(reserved, sz.memory)
+	resources.CpuBaseline = canonicalBaseline(cs.GetResources().GetCpuBaseline())
 	if g := cs.GetResources().GetDiskGrow(); g != nil {
 		resources.DiskGrow = proto.Clone(g).(*computev1alpha1.DiskGrow)
 	}

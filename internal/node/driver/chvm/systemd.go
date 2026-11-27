@@ -128,6 +128,9 @@ func baseProps(spec driver.VMSpec, argv, stopPost []string, restart string, stop
 		// An exited VM's record is its exit file: the unit goes.
 		property("CollectMode", "inactive-or-failed"),
 	}
+	if spec.CPULimit > 0 {
+		props = append(props, cpuLimitProps(spec.CPULimit)...)
+	}
 	if stopPost != nil {
 		// Whatever it exits with: it only records an OOM kill, which the
 		// unit's result says already.

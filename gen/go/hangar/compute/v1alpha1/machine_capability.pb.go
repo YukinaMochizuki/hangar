@@ -233,8 +233,20 @@ type UsageResponse struct {
 	// The CPUs of the machine's CPU pool, in millicores, as its node holds
 	// the pool to them now; unset when it runs in no CPU pool.
 	CpuPoolMilliCpu *int64 `protobuf:"varint,8,opt,name=cpu_pool_milli_cpu,json=cpuPoolMilliCpu,proto3,oneof" json:"cpu_pool_milli_cpu,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The machine's resources.cpu_baseline, in percent of each vCPU, when it
+	// is burstable (below 100); unset otherwise, as are the three after it.
+	// See docs/decisions/cpu-credits.md.
+	CpuBaseline *int32 `protobuf:"varint,9,opt,name=cpu_baseline,json=cpuBaseline,proto3,oneof" json:"cpu_baseline,omitempty"`
+	// Its CPU credits now, in CPU-minutes: one vCPU fully busy for a minute
+	// is one. Unset when its node has no balance for it yet.
+	CpuCredits *float64 `protobuf:"fixed64,10,opt,name=cpu_credits,json=cpuCredits,proto3,oneof" json:"cpu_credits,omitempty"`
+	// The most CPU credits it can hold, in CPU-minutes: a day of what it
+	// earns.
+	CpuCreditCap *float64 `protobuf:"fixed64,11,opt,name=cpu_credit_cap,json=cpuCreditCap,proto3,oneof" json:"cpu_credit_cap,omitempty"`
+	// Whether its node holds it to its baseline now, its credits spent.
+	CpuHeld       *bool `protobuf:"varint,12,opt,name=cpu_held,json=cpuHeld,proto3,oneof" json:"cpu_held,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UsageResponse) Reset() {
@@ -321,6 +333,34 @@ func (x *UsageResponse) GetCpuPoolMilliCpu() int64 {
 		return *x.CpuPoolMilliCpu
 	}
 	return 0
+}
+
+func (x *UsageResponse) GetCpuBaseline() int32 {
+	if x != nil && x.CpuBaseline != nil {
+		return *x.CpuBaseline
+	}
+	return 0
+}
+
+func (x *UsageResponse) GetCpuCredits() float64 {
+	if x != nil && x.CpuCredits != nil {
+		return *x.CpuCredits
+	}
+	return 0
+}
+
+func (x *UsageResponse) GetCpuCreditCap() float64 {
+	if x != nil && x.CpuCreditCap != nil {
+		return *x.CpuCreditCap
+	}
+	return 0
+}
+
+func (x *UsageResponse) GetCpuHeld() bool {
+	if x != nil && x.CpuHeld != nil {
+		return *x.CpuHeld
+	}
+	return false
 }
 
 // MachineUsagePoint is a machine's usage at a time, or over the minute from
@@ -1811,7 +1851,7 @@ const file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc = "" +
 	"\fUsageRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\"\xee\x03\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\xc8\x05\n" +
 	"\rUsageResponse\x12\x14\n" +
 	"\x05vcpus\x18\x01 \x01(\x05R\x05vcpus\x12,\n" +
 	"\x12memory_limit_bytes\x18\x02 \x01(\x03R\x10memoryLimitBytes\x12K\n" +
@@ -1821,10 +1861,20 @@ const file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc = "" +
 	"\x06latest\x18\x05 \x01(\v2*.hangar.compute.v1alpha1.MachineUsagePointR\x06latest\x12(\n" +
 	"\rballoon_bytes\x18\x06 \x01(\x03H\x00R\fballoonBytes\x88\x01\x01\x12+\n" +
 	"\x0fcpu_pool_slowed\x18\a \x01(\x01H\x01R\rcpuPoolSlowed\x88\x01\x01\x120\n" +
-	"\x12cpu_pool_milli_cpu\x18\b \x01(\x03H\x02R\x0fcpuPoolMilliCpu\x88\x01\x01B\x10\n" +
+	"\x12cpu_pool_milli_cpu\x18\b \x01(\x03H\x02R\x0fcpuPoolMilliCpu\x88\x01\x01\x12&\n" +
+	"\fcpu_baseline\x18\t \x01(\x05H\x03R\vcpuBaseline\x88\x01\x01\x12$\n" +
+	"\vcpu_credits\x18\n" +
+	" \x01(\x01H\x04R\n" +
+	"cpuCredits\x88\x01\x01\x12)\n" +
+	"\x0ecpu_credit_cap\x18\v \x01(\x01H\x05R\fcpuCreditCap\x88\x01\x01\x12\x1e\n" +
+	"\bcpu_held\x18\f \x01(\bH\x06R\acpuHeld\x88\x01\x01B\x10\n" +
 	"\x0e_balloon_bytesB\x12\n" +
 	"\x10_cpu_pool_slowedB\x15\n" +
-	"\x13_cpu_pool_milli_cpu\"\x8e\x01\n" +
+	"\x13_cpu_pool_milli_cpuB\x0f\n" +
+	"\r_cpu_baselineB\x0e\n" +
+	"\f_cpu_creditsB\x11\n" +
+	"\x0f_cpu_credit_capB\v\n" +
+	"\t_cpu_held\"\x8e\x01\n" +
 	"\x11MachineUsagePoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x10\n" +
 	"\x03cpu\x18\x02 \x01(\x01R\x03cpu\x12&\n" +

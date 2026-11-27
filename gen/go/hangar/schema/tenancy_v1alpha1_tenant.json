@@ -140,6 +140,21 @@
       },
       "type": "object"
     },
+    "hangar.tenancy.v1alpha1.CPULaunchGrant": {
+      "additionalProperties": false,
+      "description": "CPULaunchGrant is a burstable machine's launch credits, given.",
+      "properties": {
+        "ownerUid": {
+          "description": "The uid of the Container or VirtualMachine the machine runs for.",
+          "type": "string"
+        },
+        "time": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "hangar.tenancy.v1alpha1.Limits": {
       "additionalProperties": false,
       "description": "Limits caps what a tenant, or one of its projects, may hold. Where Limits is set says what an unset field means. cpu and memory count only machines asked to run; a stopped machine still counts its disk and its place among machines.",
@@ -247,6 +262,13 @@
         "conditions": {
           "items": {
             "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "cpuLaunchGrants": {
+          "description": "The launch credits given to the tenant's burstable machines in the last 24 hours, oldest first: at most 10, past which a new burstable machine gets none. Deleting a machine gives none back. Written by the system. See docs/decisions/cpu-credits.md.",
+          "items": {
+            "$ref": "#/$defs/hangar.tenancy.v1alpha1.CPULaunchGrant"
           },
           "type": "array"
         },

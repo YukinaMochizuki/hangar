@@ -153,6 +153,11 @@
           "description": "Whole vCPUs; the default is 1.",
           "type": "string"
         },
+        "cpuBaseline": {
+          "description": "The VM's CPU baseline, the share of each vCPU, in percent, it is held to once its CPU credits are spent, as a container's resources.cpu_baseline is; unset is 100.",
+          "format": "int32",
+          "type": "integer"
+        },
         "memory": {
           "description": "Guest memory, at least 256Mi; the default is 1Gi.",
           "type": "string"

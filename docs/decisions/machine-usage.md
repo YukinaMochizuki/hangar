@@ -57,6 +57,10 @@ each VM's unit, and, for what a guest uses of its memory, the guest itself.
   the points kept that its limit cut short, and the CPUs the node holds
   the pool to now (`cpu-pool.md`). Both are unset for a machine in no
   pool; the share also when no period was counted.
+- **The answer says a burstable machine's CPU credits**: its baseline, its
+  balance and the most it can hold, in CPU-minutes, and whether its node
+  holds it to its baseline now, from the node's ledger (`cpu-credits.md`).
+  All are unset for a machine that is not burstable.
 - **The apiserver reads it from the node, under the object's get.**
   `MachineCapabilityService.Usage` resolves kind and name to the machine
   as `Logs` does and asks its node over the tunnel (`node-tunnel.md`). It

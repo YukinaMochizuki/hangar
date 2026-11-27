@@ -51,7 +51,7 @@ func TestListFileShareDirAsksTheServer(t *testing.T) {
 	a := &Agent{cfg: Config{
 		Name: "n1", Clock: clockwork.NewFakeClockAt(time.Now()), Log: slog.New(slog.DiscardHandler),
 		Drivers: &Drivers{Storage: host.Storage(), Hypervisor: host.Hypervisor(), Guest: host.Guest()},
-	}, guests: newGuests(), usages: newUsages()}
+	}, guests: newGuests(), usages: newUsages(), credits: newCredits()}
 	list := func(uid string, path ...string) (*nodev1.ListFileShareDirResponse, error) {
 		req := &nodev1.ListFileShareDirRequest{MachineUid: uid}
 		for _, p := range path {

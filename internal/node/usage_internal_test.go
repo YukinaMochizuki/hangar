@@ -55,7 +55,7 @@ func newUsageHost(t *testing.T) *usageHost {
 			Name: "n1", UsagePoll: DefaultUsagePoll, Clock: clock, Log: slog.New(slog.DiscardHandler),
 			Drivers: &Drivers{Storage: host.Storage(), Hypervisor: host.Hypervisor(), Guest: host.Guest()},
 		},
-		guests: newGuests(), usages: newUsages(),
+		guests: newGuests(), usages: newUsages(), credits: newCredits(),
 	}
 	return &usageHost{a: a, host: host, clock: clock}
 }
