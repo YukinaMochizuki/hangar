@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net"
 	"net/http"
@@ -26,8 +27,9 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chguest"
 )
 
-// poolSlicePrefix starts the name of each memory pool's slice, inside
-// machinesSlice: a dash past it would make systemd nest the slice a level
+// poolSlicePrefix starts the name of each pool's slice, inside
+// machinesSlice: a tenant's memory pool and CPU pool share one, of the
+// tenant's name; a dash past it would make systemd nest the slice a level
 // deeper, so the pool's name, a DNS label, has its dashes as underscores,
 // which no DNS label holds.
 const poolSlicePrefix = "hangar-pool_"
@@ -42,15 +44,27 @@ func poolSlice(name string) string {
 
 // sliceOf is the slice a VM's unit runs in: its pool's, or machinesSlice.
 func sliceOf(spec driver.VMSpec) string {
-	if spec.MemoryPool != nil {
-		return poolSlice(spec.MemoryPool.Name)
+	if name := spec.Pool(); name != "" {
+		return poolSlice(name)
 	}
 	return machinesSlice
 }
 
 // poolSliceDescription is a pool's slice's description.
 func poolSliceDescription(name string) string {
-	return fmt.Sprintf("Hangar's memory pool %s", name)
+	return fmt.Sprintf("Hangar's pool %s", name)
+}
+
+// checkCPUPool refuses a CPU pool whose name cannot name a slice, or of no
+// CPU.
+func checkCPUPool(p driver.CPUPool) error {
+	if !poolNamePattern.MatchString(p.Name) {
+		return fmt.Errorf("CPU pool %q cannot name a slice", p.Name)
+	}
+	if p.MilliCPU <= 0 {
+		return fmt.Errorf("CPU pool %s has %d millicores", p.Name, p.MilliCPU)
+	}
+	return nil
 }
 
 // checkPool refuses a pool whose name cannot name a slice, or of no size.
@@ -70,6 +84,17 @@ func unitOverhead(spec driver.VMSpec) uint64 {
 	return unitMemoryMax(spec) - uint64(spec.MemoryMiB)<<20
 }
 
+// sliceShare is what a VM's unit adds to its pool's slice's MemoryMax past
+// the guests' memory a memory pool is held to: its overhead, for a VM in
+// the memory pool, whose guest's memory the pool holds; all its unit may
+// hold, for a VM in the slice for a CPU pool alone, whose memory is its own.
+func sliceShare(spec driver.VMSpec) uint64 {
+	if spec.MemoryPool == nil {
+		return unitMemoryMax(spec)
+	}
+	return unitOverhead(spec)
+}
+
 // cgroupDir is the cgroup of a machine's VM's unit, in the slice its spec
 // file says it was started in.
 func (h *Hypervisor) cgroupDir(uid string) (string, error) {
@@ -83,8 +108,8 @@ func (h *Hypervisor) cgroupDir(uid string) (string, error) {
 // unitCgroup is the cgroup of the unit of a VM started with spec.
 func (h *Hypervisor) unitCgroup(spec driver.VMSpec, uid string) string {
 	dir := filepath.Join(h.cfg.cgroupRoot, machinesSlice)
-	if spec.MemoryPool != nil {
-		dir = filepath.Join(dir, poolSlice(spec.MemoryPool.Name))
+	if name := spec.Pool(); name != "" {
+		dir = filepath.Join(dir, poolSlice(name))
 	}
 	return filepath.Join(dir, unitName(uid))
 }
@@ -97,7 +122,8 @@ type poolMember struct {
 }
 
 // allPoolMembers lists the VMs whose units run, or wait to restart, in a
-// pool's slice, by their spec files, by pool.
+// pool's slice, by their spec files, by pool: a memory pool's VMs and a
+// CPU pool's alike.
 func (h *Hypervisor) allPoolMembers(ctx context.Context) (map[string][]poolMember, error) {
 	units, err := h.sd.list(ctx)
 	if err != nil {
@@ -110,10 +136,10 @@ func (h *Hypervisor) allPoolMembers(ctx context.Context) (map[string][]poolMembe
 			continue
 		}
 		ln, err := readLaunch(h.dir(uid))
-		if err != nil || ln.Spec.MemoryPool == nil {
+		if err != nil || ln.Spec.Pool() == "" {
 			continue
 		}
-		name := ln.Spec.MemoryPool.Name
+		name := ln.Spec.Pool()
 		out[name] = append(out[name], poolMember{uid: uid, spec: ln.Spec, started: u.Started})
 	}
 	return out, nil
@@ -134,6 +160,10 @@ func (h *Hypervisor) PoolVMs(ctx context.Context) ([]driver.PoolVM, error) {
 	var out []driver.PoolVM
 	for _, members := range all {
 		for _, m := range members {
+			if m.spec.MemoryPool == nil {
+				// In the slice for its CPU pool alone: no memory pool's.
+				continue
+			}
 			out = append(out, driver.PoolVM{
 				MachineUID: m.uid, Pool: *m.spec.MemoryPool, MemoryMiB: m.spec.MemoryMiB,
 				ReservedMiB: m.spec.Reserved(), Started: m.started,
@@ -148,7 +178,7 @@ func (h *Hypervisor) PoolVMs(ctx context.Context) ([]driver.PoolVM, error) {
 func (h *Hypervisor) poolProps(guestMiB int64, members []poolMember, starting *driver.VMSpec) (memory, weight uint64) {
 	memory = uint64(max(guestMiB, 0)) << 20
 	for _, m := range members {
-		memory += unitOverhead(m.spec)
+		memory += sliceShare(m.spec)
 		w, err := readUint(filepath.Join(h.unitCgroup(m.spec, m.uid), "cpu.weight"))
 		if err != nil {
 			w = cpuWeight(m.spec)
@@ -156,7 +186,7 @@ func (h *Hypervisor) poolProps(guestMiB int64, members []poolMember, starting *d
 		weight += w
 	}
 	if starting != nil {
-		memory += unitOverhead(*starting)
+		memory += sliceShare(*starting)
 		weight += cpuWeight(*starting)
 	}
 	if guestMiB <= 0 {
@@ -176,7 +206,7 @@ func (h *Hypervisor) setSlice(ctx context.Context, name string, memory, weight u
 	}
 	props := []sd.Property{property("MemoryMax", memory), noSwap(), property("CPUWeight", weight)}
 	if err := h.sd.slice(ctx, poolSlice(name), poolSliceDescription(name), props); err != nil {
-		return fmt.Errorf("the memory pool's slice %s: %w", poolSlice(name), err)
+		return fmt.Errorf("the pool's slice %s: %w", poolSlice(name), err)
 	}
 	h.watchEvents(filepath.Join(dir, "memory.events"))
 	return nil
@@ -195,22 +225,49 @@ func cgroupMax(path string) (uint64, bool) {
 	return n, err == nil
 }
 
-// startPool makes or raises the slice of the pool of a VM about to start (docs/decisions/node-agent.md "Memory pools").
+// startPool makes or raises the slice of the pool of a VM about to start,
+// and gives it the VM's CPU pool's limit (docs/decisions/node-agent.md
+// "Memory pools", docs/decisions/cpu-pool.md).
 func (h *Hypervisor) startPool(ctx context.Context, spec driver.VMSpec) error {
-	pool := *spec.MemoryPool
-	members, err := h.poolMembers(ctx, pool.Name)
+	name := spec.Pool()
+	members, err := h.poolMembers(ctx, name)
 	if err != nil {
 		return err
 	}
-	memory, weight := h.poolProps(pool.SizeMiB, members, &spec)
-	if have, ok := cgroupMax(filepath.Join(h.cfg.cgroupRoot, machinesSlice, poolSlice(pool.Name), "memory.max")); ok {
-		if have == math.MaxUint64&^4095 {
+	// A slice for CPU alone holds no memory to a limit until a VM of a
+	// memory pool starts in it, and the squeeze gives it one.
+	var guestMiB int64
+	if spec.MemoryPool != nil {
+		guestMiB = spec.MemoryPool.SizeMiB
+	}
+	memory, weight := h.poolProps(guestMiB, members, &spec)
+	inMemoryPool := slices.ContainsFunc(members, func(m poolMember) bool { return m.spec.MemoryPool != nil })
+	if have, ok := cgroupMax(filepath.Join(h.cfg.cgroupRoot, machinesSlice, poolSlice(name), "memory.max")); ok {
+		switch {
+		case have == math.MaxUint64&^4095 && (inMemoryPool || spec.MemoryPool == nil):
+			// A memory pool lifted, which the squeeze sets again, or a slice
+			// with no memory pool's VM, kept so.
 			memory = math.MaxUint64
-		} else {
-			memory = max(memory, have+unitOverhead(spec))
+		case have == math.MaxUint64&^4095:
+			// The first of a memory pool's VMs in a slice made for a CPU
+			// pool alone: held from the start, as poolProps counts it.
+		case spec.MemoryPool == nil:
+			// Into a memory pool's slice, for its CPU pool alone: all its
+			// unit may hold comes on top, and the pool's limit stays.
+			memory = have + sliceShare(spec)
+		default:
+			memory = max(memory, have+sliceShare(spec))
 		}
 	}
-	return h.setSlice(ctx, pool.Name, memory, weight)
+	if err := h.setSlice(ctx, name, memory, weight); err != nil {
+		return err
+	}
+	if spec.CPUPool == nil {
+		// A VM of the memory pool alone leaves the slice's CPU limit as it
+		// is: the agent sets it from the specs of the machines in it.
+		return nil
+	}
+	return h.setSliceCPU(ctx, name, spec.CPUPool.MilliCPU)
 }
 
 func (h *Hypervisor) SetMemoryPool(ctx context.Context, name string, guestMiB int64) error {
@@ -225,6 +282,115 @@ func (h *Hypervisor) SetMemoryPool(ctx context.Context, name string, guestMiB in
 	}
 	memory, weight := h.poolProps(guestMiB, members, nil)
 	return h.setSlice(ctx, name, memory, weight)
+}
+
+// cpuQuotaPeriod is the period of a CPU pool's limit, short for the pause a
+// guest sees (docs/decisions/node-agent.md "CPU pools").
+const cpuQuotaPeriod = 20 * time.Millisecond
+
+// cpuMax reads a cgroup's cpu.max: what its processes may run each period,
+// zero for no limit, and the period.
+func cpuMax(path string) (quota, period time.Duration, ok bool) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0, false
+	}
+	q, p, found := strings.Cut(strings.TrimSpace(string(b)), " ")
+	if !found {
+		return 0, 0, false
+	}
+	pn, err := strconv.ParseUint(p, 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	period = time.Duration(pn) * time.Microsecond
+	if q == "max" {
+		return 0, period, true
+	}
+	qn, err := strconv.ParseUint(q, 10, 64)
+	return time.Duration(qn) * time.Microsecond, period, err == nil
+}
+
+// cpuQuota is what a pool of milliCPU runs each cpuQuotaPeriod; zero, for a
+// milliCPU of zero, is no limit.
+func cpuQuota(milliCPU int64) time.Duration {
+	if milliCPU <= 0 {
+		return 0
+	}
+	return time.Duration(milliCPU) * cpuQuotaPeriod / 1000
+}
+
+// setSliceCPU holds a pool's slice to milliCPU of the CPUs, or lifts its
+// limit for zero, where its cgroup differs.
+func (h *Hypervisor) setSliceCPU(ctx context.Context, name string, milliCPU int64) error {
+	want := cpuQuota(milliCPU)
+	quota, period, ok := cpuMax(filepath.Join(h.cfg.cgroupRoot, machinesSlice, poolSlice(name), "cpu.max"))
+	if ok && quota == want && (want == 0 || period == cpuQuotaPeriod) {
+		return nil
+	}
+	// systemd takes the limit as CPU time per second, infinity for none.
+	perSec := uint64(math.MaxUint64)
+	if milliCPU > 0 {
+		perSec = uint64(milliCPU) * 1000
+	}
+	props := []sd.Property{property("CPUQuotaPerSecUSec", perSec), property("CPUQuotaPeriodUSec", usec(cpuQuotaPeriod))}
+	if err := h.sd.slice(ctx, poolSlice(name), poolSliceDescription(name), props); err != nil {
+		return fmt.Errorf("the CPU limit of the pool's slice %s: %w", poolSlice(name), err)
+	}
+	return nil
+}
+
+func (h *Hypervisor) SetCPUPools(ctx context.Context, want map[string]int64, read map[string]bool) error {
+	h.pools.Lock()
+	defer h.pools.Unlock()
+	all, err := h.allPoolMembers(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, name := range slices.Sorted(maps.Keys(all)) {
+		if err := h.setSliceCPU(ctx, name, cpuPoolLimit(name, all[name], want, read)); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// cpuPoolLimit is the millicores a pool's slice is held to, zero for no
+// limit: what want gives it, or more where a member whose spec is not read
+// was launched in the pool with more, so an agent starting holds the pool
+// as it was until it has read its machines.
+func cpuPoolLimit(name string, members []poolMember, want map[string]int64, read map[string]bool) int64 {
+	limit := max(want[name], 0)
+	for _, m := range members {
+		if p := m.spec.CPUPool; p != nil && !read[m.uid] && p.Name == name {
+			limit = max(limit, p.MilliCPU)
+		}
+	}
+	return limit
+}
+
+func (h *Hypervisor) CPUPoolStats(ctx context.Context) (map[string]driver.CPUPoolStat, error) {
+	all, err := h.allPoolMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]driver.CPUPoolStat{}
+	for name := range all {
+		b, err := os.ReadFile(filepath.Join(h.cfg.cgroupRoot, machinesSlice, poolSlice(name), "cpu.stat"))
+		if err != nil {
+			continue
+		}
+		var st driver.CPUPoolStat
+		for key, v := range map[string]*uint64{"nr_periods": &st.Periods, "nr_throttled": &st.Throttled} {
+			*v, _ = keyedValue(b, key)
+		}
+		throttled, _ := keyedValue(b, "throttled_usec")
+		usage, _ := keyedValue(b, "usage_usec")
+		st.ThrottledTime, st.Usage = time.Duration(throttled)*time.Microsecond, time.Duration(usage)*time.Microsecond
+		out[name] = st
+	}
+	return out, nil
 }
 
 // SweepMemoryPools stops each pool's slice with no member and nothing in

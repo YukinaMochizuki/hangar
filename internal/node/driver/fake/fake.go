@@ -59,8 +59,12 @@ type Host struct {
 	memEvents chan struct{}
 	// stuckBalloons take no SetBalloon (UnresponsiveBalloon).
 	stuckBalloons map[string]bool
-	guestMemUsed  map[string]uint64
-	oldMemGuests  map[string]bool
+	// cpuPools are the CPU limits, in millicores, SetCPUPools last held
+	// the pools VMs run in to; cpuStats what CPUPoolStats answers.
+	cpuPools     map[string]int64
+	cpuStats     map[string]driver.CPUPoolStat
+	guestMemUsed map[string]uint64
+	oldMemGuests map[string]bool
 
 	tags      map[string]string             // reference to digest
 	configs   map[string]driver.ImageConfig // by digest; a digest stays pullable
@@ -309,7 +313,7 @@ func New() *Host {
 		rootUsed: map[string]uint64{}, rootFilesUsed: map[string]uint64{}, rootClaims: map[string]driver.FSUsage{}, oldRootGuests: map[string]bool{}, noLiveResize: map[string]bool{}, rootCalls: map[string][]string{}, rootHolds: map[string]chan struct{}{},
 		volumeUsed: map[string]uint64{}, volumeFilesUsed: map[string]uint64{}, volumeClaims: map[string]driver.FSUsage{}, oldVolumeGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
-		memHeld: map[string]uint64{}, pools: map[string]int64{}, memEvents: make(chan struct{}, 1), stuckBalloons: map[string]bool{}, guestMemUsed: map[string]uint64{}, oldMemGuests: map[string]bool{},
+		memHeld: map[string]uint64{}, pools: map[string]int64{}, memEvents: make(chan struct{}, 1), stuckBalloons: map[string]bool{}, cpuPools: map[string]int64{}, cpuStats: map[string]driver.CPUPoolStat{}, guestMemUsed: map[string]uint64{}, oldMemGuests: map[string]bool{},
 		shareRoots: map[string]string{}, oldListGuests: map[string]bool{},
 	}
 }
@@ -1681,6 +1685,10 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		}
 		// As the real driver's: the squeeze gives it its allowance now.
 		signal(d.h.memEvents)
+	}
+	if p := spec.CPUPool; p != nil {
+		// As the real driver's: its pool is held to its CPUs as it starts.
+		d.h.cpuPools[p.Name] = p.MilliCPU
 	}
 	if spec.TPM {
 		if _, ok := d.h.tpms[spec.MachineUID]; !ok {

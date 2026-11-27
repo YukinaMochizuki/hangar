@@ -17,6 +17,7 @@ the change.
 | `custom-images.md` | `CustomImage`: a project's own disk image, captured from a stopped Disk as an independent copy on its node, held to the tenant's disk quota by what it holds |
 | `disk-autogrow.md` | A container's root disk, and a Disk it mounts, may grow by itself as it fills, while it runs, up to a max; each step is granted within quota and the node's room and recorded in its status, never its spec |
 | `memory-pool.md` | A tenant's machines may share its plan's memory as a pool, never another tenant's: each with `memory_reserved` set aside for it and `memory` as its limit, the plan's `memory_limit_percent` capping their memory, the scheduler holding a pool once per node, a pooled machine billed its reservation |
+| `cpu-pool.md` | A tenant's machines may share its plan's CPUs as a pool: their vCPUs adding up to the plan's `cpu_limit_percent` of its `cpu`, the node holding them to its `cpu` together, idle CPUs or not; no CPU reserved per machine, billing unchanged |
 | `machine-sizes.md` | A machine's shape is held to rules (256Mi steps of memory, 512Mi to 8Gi of it per vCPU, a disk of 2Gi or more); `MachineSize`s are the administrator's presets, read by all, never recorded on a machine |
 | `api-versioning.md` | Proto packages and `apiVersion` are per group, mapped 1:1 |
 | `api-rpc-shape.md` | One typed service per kind, buf STANDARD request/response wrappers |

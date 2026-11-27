@@ -248,6 +248,13 @@ type Agent struct {
 	// running say of their memory, as their last reconciles read them,
 	// for the squeeze (memorypool.go).
 	memoryShares map[string]memoryShare
+	// sharesRead counts the changes to memoryShares; cpuPools orders the
+	// CPU pools' limits set from them, cpuPoolsSet the count they were last
+	// set at, so an older read never overwrites a newer one
+	// (applyCPUPools).
+	sharesRead  uint64
+	cpuPools    sync.Mutex
+	cpuPoolsSet uint64
 	// squeezer keeps what the squeeze keeps of the pools' guests.
 	squeezer      *squeeze.Squeezer
 	rootGrowths   map[string]diskGrowth

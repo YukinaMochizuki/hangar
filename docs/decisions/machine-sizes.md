@@ -99,4 +99,6 @@ can choose a shape within rules instead.
   more than its size and which is never shared with another tenant
   (`memory-pool.md`). The shape rules read a machine's memory, not its
   reservation. The CPU a machine is sure of under full load follows its
-  memory; it can use idle CPU up to its vCPUs at any time.
+  memory; it can use idle CPU up to its vCPUs at any time, but in a CPU
+  pool, whose machines use no more than their tenant's plan's CPUs
+  together (`cpu-pool.md`).

@@ -67,6 +67,8 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 	}
 	uid := m.GetMetadata().GetUid()
 	share := wantedShare(m)
+	was, tracked := a.memoryShares[uid]
+	cpuPooled := (tracked && was.cpuPool != nil) || (share != nil && share.cpuPool != nil)
 	a.trackMemory(uid, share)
 	if a.stops.running[uid] {
 		// Its stop's success, or its own retry, checks it again.
@@ -105,6 +107,10 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 		report, err = a.converge(ctx, m, vm, epoch)
 		if err == nil && share != nil && report != nil && report.phase == computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING {
 			a.applyMemoryShare(ctx, uid, *share)
+		}
+		if cpuPooled && err == nil {
+			// A changed CPU pool holds at once, not at the squeeze's next look.
+			a.applyCPUPools(ctx)
 		}
 	}
 	var s *stuck

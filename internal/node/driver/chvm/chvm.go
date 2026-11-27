@@ -637,7 +637,7 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	if spec.Converter != nil {
 		props = append(props, property("RuntimeMaxUSec", usec(h.cfg.ConverterRuntime)))
 	}
-	if spec.MemoryPool != nil {
+	if spec.Pool() != "" {
 		h.pools.Lock()
 		defer h.pools.Unlock()
 		if err := h.startPool(ctx, spec); err != nil {
@@ -784,6 +784,14 @@ func checkSpec(s driver.VMSpec) error {
 	if s.MemoryPool != nil {
 		if err := checkPool(*s.MemoryPool); err != nil {
 			return fmt.Errorf("machine %s: %w", s.MachineUID, err)
+		}
+	}
+	if s.CPUPool != nil {
+		if err := checkCPUPool(*s.CPUPool); err != nil {
+			return fmt.Errorf("machine %s: %w", s.MachineUID, err)
+		}
+		if s.MemoryPool != nil && s.MemoryPool.Name != s.CPUPool.Name {
+			return fmt.Errorf("machine %s: memory pool %s and CPU pool %s are not one tenant's", s.MachineUID, s.MemoryPool.Name, s.CPUPool.Name)
 		}
 	}
 	if s.ReservedMiB < 0 || s.ReservedMiB > s.MemoryMiB {

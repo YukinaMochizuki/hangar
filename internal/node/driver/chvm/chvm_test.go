@@ -90,7 +90,16 @@ func (f *fakeSystemd) tasksMax(_ context.Context, name string) (uint64, error) {
 func (f *fakeSystemd) slice(_ context.Context, name, _ string, props []sd.Property) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.props[name] = props
+	// A slice loaded already takes the properties given, keeping the rest,
+	// as systemd's SetUnitProperties does.
+	for _, p := range props {
+		i := slices.IndexFunc(f.props[name], func(q sd.Property) bool { return q.Name == p.Name })
+		if i < 0 {
+			f.props[name] = append(f.props[name], p)
+		} else {
+			f.props[name][i] = p
+		}
+	}
 	if f.slices == nil {
 		f.slices = map[string]bool{}
 	}

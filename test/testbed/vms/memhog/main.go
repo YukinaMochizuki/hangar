@@ -8,6 +8,8 @@
 //	             touching it again now and then so it stays in use
 //	memhog tick  wakes every 10 ms and says, every second, the most a wake
 //	             came late in that second: "late N ms"
+//	memhog burn N  keeps N threads busy, for the CPU pools' tests
+//	             (test/testbed/vms/cpupool_test.go), and says "burning N"
 package main
 
 import (
@@ -18,8 +20,11 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "burn" {
+		burn(os.Args[2])
+	}
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: memhog MiB | memhog tick")
+		fmt.Fprintln(os.Stderr, "usage: memhog MiB | memhog tick | memhog burn N")
 		os.Exit(2)
 	}
 	if os.Args[1] == "tick" {
@@ -63,4 +68,23 @@ func tick() {
 			worst, window = 0, now
 		}
 	}
+}
+
+// burn keeps n threads busy, each a vCPU's worth while it may run, and
+// never returns.
+func burn(arg string) {
+	n, err := strconv.Atoi(arg)
+	if err != nil || n < 1 {
+		fmt.Fprintln(os.Stderr, "usage: memhog burn N")
+		os.Exit(2)
+	}
+	for range n {
+		go func() {
+			for x := 0; ; x++ {
+				_ = x
+			}
+		}()
+	}
+	fmt.Printf("burning %d\n", n)
+	select {}
 }

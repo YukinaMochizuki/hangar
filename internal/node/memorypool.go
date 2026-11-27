@@ -22,11 +22,12 @@ const DefaultSqueezePoll = 5 * time.Second
 
 // memoryShare is what a machine's spec says of its memory, as its last
 // reconcile read it: its pool, if any, and the least of its memory it is
-// left when the pool is short.
+// left when the pool is short; and of its CPUs, its CPU pool, if any.
 type memoryShare struct {
 	key                    controller.Key
 	pool                   *driver.MemoryPool
 	memoryMiB, reservedMiB int64
+	cpuPool                *driver.CPUPool
 }
 
 // wantedShare is what a machine's spec says of its memory, nil for one
@@ -50,6 +51,13 @@ func wantedShare(m *computev1alpha1.Machine) *memoryShare {
 // outside a pool all of it is reserved.
 func shareOf(m *computev1alpha1.Machine, memoryMiB int64) (memoryShare, error) {
 	s := memoryShare{key: controller.Key{Project: m.GetMetadata().GetProject(), Name: m.GetMetadata().GetName()}, memoryMiB: memoryMiB, reservedMiB: memoryMiB}
+	if c := m.GetSpec().GetCpuPool(); c != nil {
+		milli, err := quantity.MilliCPU(c.GetCpu())
+		if err != nil {
+			return s, fmt.Errorf("CPU pool %s's cpu: %w", c.GetName(), err)
+		}
+		s.cpuPool = &driver.CPUPool{Name: c.GetName(), MilliCPU: milli}
+	}
 	p := m.GetSpec().GetMemoryPool()
 	if p == nil {
 		return s, nil
@@ -76,7 +84,7 @@ func withMemoryShare(spec driver.VMSpec, m *computev1alpha1.Machine) (driver.VMS
 	if err != nil {
 		return spec, blocked(computeapi.ReasonBootFailed, err)
 	}
-	spec.MemoryPool, spec.ReservedMiB = s.pool, s.specReserved()
+	spec.MemoryPool, spec.ReservedMiB, spec.CPUPool = s.pool, s.specReserved(), s.cpuPool
 	return spec, nil
 }
 
@@ -92,6 +100,7 @@ func (s memoryShare) specReserved() int64 {
 // trackMemory keeps what a machine on the node, wanted running, says of
 // its memory for the squeeze, or forgets it. a.host is held.
 func (a *Agent) trackMemory(uid string, s *memoryShare) {
+	a.sharesRead++
 	if s == nil {
 		delete(a.memoryShares, uid)
 		return
@@ -107,7 +116,55 @@ func (a *Agent) applyMemoryShare(ctx context.Context, uid string, s memoryShare)
 	}
 }
 
+// cpuPoolsRead is what the CPU pools' limits are set from: the limits, in
+// millicores, the specs of the machines read give their pools, the most
+// while they disagree as a plan changes; which machines were read; and
+// a.sharesRead then.
+type cpuPoolsRead struct {
+	want map[string]int64
+	read map[string]bool
+	at   uint64
+}
+
+// readCPUPools reads the CPU pools' limits from memoryShares. a.host is
+// held.
+func (a *Agent) readCPUPools() cpuPoolsRead {
+	r := cpuPoolsRead{want: map[string]int64{}, read: map[string]bool{}, at: a.sharesRead}
+	for uid, s := range a.memoryShares {
+		r.read[uid] = true
+		if p := s.cpuPool; p != nil {
+			r.want[p.Name] = max(r.want[p.Name], p.MilliCPU)
+		}
+	}
+	return r
+}
+
+// setCPUPools holds each pool on the host to the CPUs r gives it
+// (docs/decisions/cpu-pool.md), unless the limits were set from a later
+// read already. A pool none of the machines read names has none, but for
+// what its VMs not read yet were launched with, so the agent starting
+// leaves each pool as it was.
+func (a *Agent) setCPUPools(ctx context.Context, r cpuPoolsRead) {
+	a.cpuPools.Lock()
+	defer a.cpuPools.Unlock()
+	if r.at < a.cpuPoolsSet {
+		return
+	}
+	if err := a.cfg.Drivers.Hypervisor.SetCPUPools(ctx, r.want, r.read); err != nil {
+		a.cfg.Log.Warn("setting the CPU pools' limits", "error", err)
+		return
+	}
+	a.cpuPoolsSet = r.at
+}
+
+// applyCPUPools holds each pool on the host to the CPUs the machines' specs
+// give it now (setCPUPools). a.host is held.
+func (a *Agent) applyCPUPools(ctx context.Context) {
+	a.setCPUPools(ctx, a.readCPUPools())
+}
+
 // squeezeLoop checks every memory pool on the node as squeeze.Run says.
+// Each check holds the CPU pools to their limits again too.
 func (a *Agent) squeezeLoop(ctx context.Context) {
 	squeeze.Run(ctx, a.cfg.Clock, a.cfg.Drivers.Hypervisor.MemoryEvents(), a.cfg.SqueezePoll, a.squeeze)
 }
@@ -118,6 +175,10 @@ func (a *Agent) squeezeLoop(ctx context.Context) {
 // were started; the specs say only what of it changes while they run.
 func (a *Agent) squeeze(ctx context.Context, pressure bool) bool {
 	hv := a.cfg.Drivers.Hypervisor
+	a.host.Lock()
+	cpus := a.readCPUPools()
+	a.host.Unlock()
+	a.setCPUPools(ctx, cpus)
 	inPools, err := hv.PoolVMs(ctx)
 	if err != nil {
 		a.cfg.Log.Debug("listing the pools' VMs", "error", err)

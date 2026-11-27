@@ -100,7 +100,64 @@ func (d hypervisor) SweepMemoryPools(context.Context) error {
 			delete(d.h.pools, name)
 		}
 	}
+	// A CPU pool's slice goes with its last VM, as the real driver's does.
+	for name := range d.h.cpuPools {
+		if !slices.ContainsFunc(slices.Collect(maps.Values(d.h.vms)), func(v *vm) bool { return v.State == driver.VMRunning && v.spec.Pool() == name }) {
+			delete(d.h.cpuPools, name)
+		}
+	}
 	return nil
+}
+
+func (d hypervisor) SetCPUPools(_ context.Context, want map[string]int64, read map[string]bool) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	limits := map[string]int64{}
+	for uid, v := range d.h.vms {
+		name := v.spec.Pool()
+		if v.State != driver.VMRunning || name == "" {
+			continue
+		}
+		limits[name] = max(limits[name], want[name])
+		if p := v.spec.CPUPool; p != nil && !read[uid] {
+			limits[name] = max(limits[name], p.MilliCPU)
+		}
+	}
+	for name, m := range limits {
+		if m > 0 {
+			d.h.cpuPools[name] = m
+		} else {
+			delete(d.h.cpuPools, name)
+		}
+	}
+	return nil
+}
+
+func (d hypervisor) CPUPoolStats(context.Context) (map[string]driver.CPUPoolStat, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	out := map[string]driver.CPUPoolStat{}
+	for _, v := range d.h.vms {
+		if name := v.spec.Pool(); v.State == driver.VMRunning && name != "" {
+			out[name] = d.h.cpuStats[name]
+		}
+	}
+	return out, nil
+}
+
+// CPUPool is the CPU limit, in millicores, SetCPUPools holds the pool to;
+// zero for none.
+func (h *Host) CPUPool(name string) int64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.cpuPools[name]
+}
+
+// SetCPUPoolStat sets what CPUPoolStats answers for the pool.
+func (h *Host) SetCPUPoolStat(name string, st driver.CPUPoolStat) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.cpuStats[name] = st
 }
 
 // poolMembersLocked counts the running VMs started in the pool.
