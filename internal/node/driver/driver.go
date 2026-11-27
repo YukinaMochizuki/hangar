@@ -918,12 +918,14 @@ type Hypervisor interface {
 	// pool on the host, as each was started: what the pool holds until its
 	// VM is gone, whatever its machine's spec says now.
 	PoolVMs(ctx context.Context) ([]PoolVM, error)
-	// SetMemoryPool holds the VMs running in a pool on the host to guestMiB
-	// of their guests' memory together, past their VMMs' own overheads:
-	// past that the host kills one of them whole. Zero or less lifts the
-	// limit. A pool no VM runs in is left alone.
+	// SetMemoryPool holds the VMs running in a memory pool on the host to
+	// guestMiB of their guests' memory together, past their VMMs' own
+	// overheads: past that the host kills one of them whole. A VM in the
+	// pool's slice for its tenant's CPU pool alone holds its own memory on
+	// top. Zero or less lifts the limit. A pool no VM runs in is left alone.
 	SetMemoryPool(ctx context.Context, name string, guestMiB int64) error
-	// SweepMemoryPools removes what holds a pool no VM runs in any more.
+	// SweepMemoryPools removes what holds a pool, of memory or of CPUs, no
+	// VM runs in any more.
 	SweepMemoryPools(ctx context.Context) error
 	// Balloon reads a running VM's balloon, and its guest's memory as the
 	// guest last reported it. A machine with no running VM fails.
@@ -938,6 +940,34 @@ type Hypervisor interface {
 	// MemoryEvents signals that a pool's VM has started, or that what a
 	// pool's VMs hold has reached SetMemoryPool's limit. Signals coalesce.
 	MemoryEvents() <-chan struct{}
+	// SetCPUPools holds the VMs running in each pool on the host to the
+	// CPUs want gives it, in millicores, together, whether or not the
+	// host's other CPUs are idle. A pool want leaves out, or gives zero, has
+	// no CPU limit, but where a VM in it whose machine is not in read was
+	// launched in a CPU pool of more: then that, as it was launched. A pool
+	// no VM runs in is left alone.
+	SetCPUPools(ctx context.Context, want map[string]int64, read map[string]bool) error
+	// CPUPoolStats reads, for each pool VMs run in on the host, how often
+	// its CPU limit has held them back since it was made.
+	CPUPoolStats(ctx context.Context) (map[string]CPUPoolStat, error)
+}
+
+// CPUPool is CPUs VMs share on the host: together they use at most
+// MilliCPU of them (docs/decisions/cpu-pool.md). Name is the API's pool
+// name, a DNS label, the same as the tenant's memory pool's.
+type CPUPool struct {
+	Name     string
+	MilliCPU int64
+}
+
+// CPUPoolStat is how far a pool's CPU limit has held its VMs back, as
+// the host counts it for the pool's whole slice: of Periods of its
+// limit's period, Throttled were cut short, for ThrottledTime in all, and
+// its VMs used Usage of CPU time. The counts only grow while the slice
+// stays.
+type CPUPoolStat struct {
+	Periods, Throttled   uint64
+	ThrottledTime, Usage time.Duration
 }
 
 // MemoryPool is memory VMs share on the host: together they hold at most
@@ -1122,6 +1152,23 @@ type VMSpec struct {
 	// the pool it started in.
 	MemoryPool  *MemoryPool `json:",omitempty"`
 	ReservedMiB int64       `json:",omitempty"`
+	// CPUPool is the pool the VM shares CPUs in, nil for none. It is no
+	// part of the hash: the pool's CPUs change while the VM runs
+	// (Hypervisor.SetCPUPools), though it stays in the pool's slice it
+	// started in.
+	CPUPool *CPUPool `json:",omitempty"`
+}
+
+// Pool is the name of the pool the VM runs in, its memory pool's or its
+// CPU pool's, which are its tenant's both; "" for none.
+func (s VMSpec) Pool() string {
+	switch {
+	case s.MemoryPool != nil:
+		return s.MemoryPool.Name
+	case s.CPUPool != nil:
+		return s.CPUPool.Name
+	}
+	return ""
 }
 
 // Reserved is the memory, in MiB, the VM is left when its pool is short:
@@ -1307,7 +1354,7 @@ func (s VMSpec) Runs(vm VM) bool {
 }
 
 func (s VMSpec) hash() string {
-	s.MemoryPool, s.ReservedMiB = nil, 0
+	s.MemoryPool, s.ReservedMiB, s.CPUPool = nil, 0, nil
 	b, err := json.Marshal(s.noExport())
 	if err != nil {
 		panic(fmt.Sprintf("encoding a VM spec: %v", err)) // every field encodes
@@ -1361,6 +1408,9 @@ type VM struct {
 	// Firmware and FileShareServer say what it runs, as its spec's do:
 	// neither is a container's.
 	Firmware, FileShareServer bool
+	// Pool is the pool whose slice it started in (VMSpec.Pool), "" for
+	// none.
+	Pool string
 	// OOMKilled says an exited VM was killed whole by the host's OOM
 	// killer, its pool being out of memory, rather than ending by itself.
 	OOMKilled bool

@@ -54,6 +54,12 @@ message MachineSpec {
   // keeps it up to date while the machine runs: changing it restarts
   // nothing. See docs/decisions/memory-pool.md.
   MemoryPool memory_pool = 24;
+  // The CPUs the machine shares with its tenant's other machines; unset
+  // for a machine in no CPU pool, which may use its vCPUs whatever the
+  // others do. Its owner's controller sets it from the tenant's Plan and
+  // BillingAccount, and keeps it up to date while the machine runs:
+  // changing it restarts nothing. See docs/decisions/cpu-pool.md.
+  CPUPool cpu_pool = 25;
 }
 
 // MemoryPool is memory a tenant's machines share.
@@ -64,6 +70,17 @@ message MemoryPool {
   // reserves for the pool's machines on it and the most they may use
   // there together.
   string size = 2;
+}
+
+// CPUPool is CPUs a tenant's machines share.
+message CPUPool {
+  // The tenant's name: one pool per tenant, never shared across tenants,
+  // and the same as its memory pool's when it has one.
+  string name = 1;
+  // The tenant's Plan's cpu, as Limits writes it, such as "4" or
+  // "2500m": the most CPU the pool's machines may use together on each
+  // node.
+  string cpu = 2;
 }
 
 // MachineDisk is a Disk attached to the machine as a block device.

@@ -5,7 +5,8 @@ import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import { NameService } from "@hangar/api/hangar/tenancy/v1alpha1/names_pb";
 import { ProjectService, type ApplyProjectRequest } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { TenantCapabilityService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_capability_pb";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewProjectDialog, ProjectPicker } from "@/components/project-picker";
@@ -51,6 +52,8 @@ type Setup = {
   platform?: boolean;
   /** The plan's memory_limit_percent, with 8Gi of memory, and the memory of the machines asked to run. */
   pool?: { percent: number; ceiling: string };
+  /** The plan's cpu_limit_percent, with 4 CPUs, the vCPUs asked to run, and the share of the last hour the pool slowed them, as its nodes say. */
+  cpuPool?: { percent: number; vcpus: string; slowed?: number };
 };
 
 function api(s: Setup = {}): Api {
@@ -60,8 +63,8 @@ function api(s: Setup = {}): Api {
     spec: { displayName: names[name] },
     status: {
       plan: "default",
-      limits: { cpu: "8", memory: s.pool ? "8Gi" : "16Gi", disk: "100Gi", machines: 10, projects: 5, memoryLimitPercent: s.pool?.percent },
-      usage: { cpu: "5", memory: "5Gi", disk: "30Gi", machines: 3, projects: s.used ?? 2, memoryCeiling: s.pool?.ceiling ?? "5Gi" },
+      limits: { cpu: s.cpuPool ? "4" : "8", memory: s.pool ? "8Gi" : "16Gi", disk: "100Gi", machines: 10, projects: 5, memoryLimitPercent: s.pool?.percent, cpuLimitPercent: s.cpuPool?.percent },
+      usage: { cpu: s.cpuPool?.vcpus ?? "5", memory: "5Gi", disk: "30Gi", machines: 3, projects: s.used ?? 2, memoryCeiling: s.pool?.ceiling ?? "5Gi" },
     },
   });
   return fakeApi((r) => {
@@ -83,6 +86,9 @@ function api(s: Setup = {}): Api {
         }
         return { project: req.project, created: true };
       },
+    });
+    r.service(TenantCapabilityService, {
+      cPUPoolUsage: async () => ({ slowed: s.cpuPool?.slowed, milliCpu: 4000n, nodesUnread: 0 }),
     });
     r.service(NameService, {
       checkName: async () => {
@@ -188,6 +194,44 @@ describe("TenantOverview", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Edit limits/ }));
     expect(await screen.findByText("Limits of Agents")).toBeTruthy();
     expect((screen.getByLabelText("vCPU") as HTMLInputElement).value).toBe("2");
+  });
+});
+
+describe("TenantOverview's vCPU with a CPU pool", () => {
+  function show(s: Setup) {
+    const a = api(s);
+    render(<TenantOverview />, { wrapper: withApi(a, { kind: "tenant", name: "acme" }) });
+    return a;
+  }
+  /** The vCPU tile, by its label. */
+  const tile = () => screen.getAllByText("vCPU")[0].parentElement!;
+
+  it("counts the vCPUs against the plan's CPUs, says by how much and how often the pool slowed them, on the number's line", async () => {
+    show({ cpuPool: { percent: 200, vcpus: "6", slowed: 0.12 } });
+    await waitFor(() => expect(within(tile()).getByText("2 over plan · shared · slowed 12%")).toBeTruthy());
+    expect(within(tile()).getByText("/ 4")).toBeTruthy();
+    expect(tile().getAttribute("title")).toBe("Your machines used all 4 CPUs of your plan for 12% of the last hour, so they ran slower.");
+    // No percent of the plan is shown anywhere.
+    expect(screen.queryByText(/200/)).toBeNull();
+  });
+
+  it("says only how much it is past while the pool slowed nothing, and only the slowing within the plan", async () => {
+    // Below 1% is nothing to say: the note stays as before the nodes answered.
+    const a = show({ cpuPool: { percent: 200, vcpus: "6", slowed: 0.004 } });
+    await waitFor(() => expect(a.calls).toContain("CPUPoolUsage"));
+    await act(async () => {});
+    expect(within(tile()).getByText("2 over plan · shared")).toBeTruthy();
+    expect(within(tile()).queryByText(/slowed/)).toBeNull();
+    cleanup();
+    show({ cpuPool: { percent: 200, vcpus: "3", slowed: 0.4 } });
+    await waitFor(() => expect(within(tile()).getByText("slowed 40%")).toBeTruthy());
+    expect(within(tile()).queryByText(/over plan/)).toBeNull();
+  });
+
+  it("keeps today's tile without a CPU pool", async () => {
+    show({ cpuPool: { percent: 100, vcpus: "3", slowed: 0.4 } });
+    await waitFor(() => expect(within(tile()).getByText("/ 4")).toBeTruthy());
+    expect(within(tile()).queryByText(/slowed|over plan/)).toBeNull();
   });
 });
 

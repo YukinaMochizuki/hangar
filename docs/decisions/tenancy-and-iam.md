@@ -364,6 +364,13 @@ tenant's: what all its projects together hold, against its Plan.
   `memory` holds both sums the same way, with its tenant's percent. Each
   check refuses on its own, the second naming the percent. `usage.memory`
   is the first sum and `usage.memory_ceiling` the second.
+- CPU counts the vCPUs of the machines asked to run against `limits.cpu`,
+  or, for a tenant whose machines share its CPUs as a pool, against
+  `limits.cpu` times the Plan's `cpu_limit_percent`, from 100 to 400 and
+  only with `cpu` (`cpu-pool.md`). A tenant paying as it goes has no pool,
+  and its percent counts as 100. A project may not set the percent; its
+  own `cpu` holds its vCPUs with its tenant's percent. `usage.cpu` is the
+  vCPUs' sum, which in a pool may read past the plan's `cpu`.
 - A tenant owner may give a project `spec.limits`, a budget inside the
   tenant's, such as one to cap an agent's project. It may not be above the
   tenant's limits, and the limits that hold for a project are the smaller of

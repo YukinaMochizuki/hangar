@@ -500,13 +500,14 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 	key := resource.Key{Project: meta.GetProject(), Name: name}
 	owner := ipv6Owner{project: meta.GetProject(), kind: r.Kind, name: meta.GetName(), machine: name}
 	// A FileShare's server is in no pool: it counts toward no quota, so
-	// its memory would come out of its tenant's reservations unseen.
+	// its memory would come out of its tenant's reservations unseen, and
+	// its CPU out of its tenant's CPUs, slowing every client of the share.
 	if r.Kind != registry.FileShare.Kind {
-		pool, err := s.memoryPoolOf(ctx, meta.GetProject())
+		pools, err := s.poolsOf(ctx, meta.GetProject())
 		if err != nil {
 			return m, err
 		}
-		want.MemoryPool = pool
+		want.MemoryPool, want.CpuPool = pools.memory, pools.cpu
 	}
 	if m == nil {
 		// Addresses are chosen and written as one decision.

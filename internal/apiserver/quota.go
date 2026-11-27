@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,6 +36,9 @@ const DefaultPlan = "default"
 
 // MaxMemoryLimitPercent is the highest memory_limit_percent a Plan may set.
 const MaxMemoryLimitPercent = 400
+
+// MaxCPULimitPercent is the highest cpu_limit_percent a Plan may set.
+const MaxCPULimitPercent = 400
 
 // DefaultMaxOwnedTenants is how many tenants a person or service token may
 // own when nothing says otherwise: the one signing up opens.
@@ -105,8 +107,9 @@ func (a *amounts) add(b amounts) {
 }
 
 // limitSet is a Limits read as numbers; a dimension not set has no limit.
-// machineCalls counts no object, so it is no dimension (nodecalls.go), and
-// memoryPercent is how far dimMemoryCeiling may go past dimMemory's limit.
+// machineCalls counts no object, so it is no dimension (nodecalls.go),
+// memoryPercent is how far dimMemoryCeiling may go past dimMemory's limit,
+// and cpuPercent how far dimCPU may go past its own in a CPU pool.
 type limitSet struct {
 	val              [numDims]int64
 	set              [numDims]bool
@@ -114,6 +117,8 @@ type limitSet struct {
 	machineCallsSet  bool
 	memoryPercent    int64
 	memoryPercentSet bool
+	cpuPercent       int64
+	cpuPercentSet    bool
 }
 
 // memoryLimitPercent is the plan's memory_limit_percent: 100 when unset,
@@ -123,6 +128,29 @@ func (ls limitSet) memoryLimitPercent() int64 {
 		return 100
 	}
 	return max(ls.memoryPercent, 100)
+}
+
+// cpuLimitPercent is the plan's cpu_limit_percent: 100 when unset, and
+// never below, which admission refuses.
+func (ls limitSet) cpuLimitPercent() int64 {
+	if !ls.cpuPercentSet {
+		return 100
+	}
+	return max(ls.cpuPercent, 100)
+}
+
+// limitOf is what dimension d may come to under these limits, with
+// cpuPercent the percent the tenant's vCPUs may add up to past its cpu
+// limit: 100 outside a CPU pool (poolTerms.cpuPercent).
+func (ls limitSet) limitOf(d dim, cpuPercent int64) int64 {
+	v := ls.val[d]
+	if d != dimCPU || cpuPercent <= 100 {
+		return v
+	}
+	if v > math.MaxInt64/cpuPercent {
+		return math.MaxInt64
+	}
+	return v * cpuPercent / 100
 }
 
 // memoryCeiling is how far the memory of machines asked to run may add up
@@ -146,7 +174,7 @@ func parseLimits(l *tenancyv1alpha1.Limits) (limitSet, error) {
 		return ls, nil
 	}
 	if l.Cpu != nil {
-		m, err := milliCPU(l.GetCpu())
+		m, err := quantity.MilliCPU(l.GetCpu())
 		if err != nil {
 			return ls, fmt.Errorf("cpu: %w", err)
 		}
@@ -194,25 +222,10 @@ func parseLimits(l *tenancyv1alpha1.Limits) (limitSet, error) {
 	if l.MemoryLimitPercent != nil {
 		ls.memoryPercent, ls.memoryPercentSet = int64(l.GetMemoryLimitPercent()), true
 	}
+	if l.CpuLimitPercent != nil {
+		ls.cpuPercent, ls.cpuPercentSet = int64(l.GetCpuLimitPercent()), true
+	}
 	return ls, nil
-}
-
-// milliCPU reads a cpu quantity, such as "2" or "500m", in millicores.
-func milliCPU(s string) (int64, error) {
-	v, err := quantity.Parse(s)
-	if err != nil {
-		return 0, err
-	}
-	v.Mul(v, big.NewRat(1000, 1))
-	switch {
-	case v.Sign() < 0:
-		return 0, fmt.Errorf("%q is negative", s)
-	case !v.IsInt():
-		return 0, fmt.Errorf("%q is finer than a millicore", s)
-	case !v.Num().IsInt64():
-		return 0, fmt.Errorf("%q is too large", s)
-	}
-	return v.Num().Int64(), nil
 }
 
 // tighter is the smaller of a and b in every dimension either limits.
@@ -271,6 +284,9 @@ func (ls limitSet) proto() *tenancyv1alpha1.Limits {
 	}
 	if ls.memoryPercentSet {
 		l.MemoryLimitPercent = proto.Int32(int32(ls.memoryPercent))
+	}
+	if ls.cpuPercentSet {
+		l.CpuLimitPercent = proto.Int32(int32(ls.cpuPercent))
 	}
 	return l
 }
@@ -504,6 +520,9 @@ type tally struct {
 	projects map[string]amounts
 	// objects are the tenant's projects, by name.
 	objects map[string]*tenancyv1alpha1.Project
+	// cpuPercent is how far the tenant's vCPUs may add up past a cpu limit:
+	// its plan's cpu_limit_percent while it has a CPU pool, 100 otherwise.
+	cpuPercent int64
 }
 
 // tally counts what tenant holds, read straight from the store, with over,
@@ -512,12 +531,15 @@ type tally struct {
 // reservations as memory only while the tenant has a memory pool
 // (poolTerms.pooled), and their memory otherwise, as the meter bills them.
 func (s *Server) tally(ctx context.Context, tenant string, over *override) (tally, error) {
-	t := tally{projects: map[string]amounts{}, objects: map[string]*tenancyv1alpha1.Project{}}
+	t := tally{projects: map[string]amounts{}, objects: map[string]*tenancyv1alpha1.Project{}, cpuPercent: 100}
 	terms, ok, err := s.poolTermsOf(ctx, tenant)
 	if err != nil {
 		return tally{}, err
 	}
 	pooled := ok && terms.pooled()
+	if ok {
+		t.cpuPercent = terms.cpuPercent()
+	}
 	objs, err := s.listWith(ctx, registry.Project, "", over)
 	if err != nil {
 		return tally{}, err
@@ -695,12 +717,20 @@ func (s *Server) checkFits(ctx context.Context, r registry.Resource, obj proto.M
 	if err != nil {
 		return err
 	}
+	cpuPercent := after.cpuPercent
 	for d := range numDims {
-		if after.tenant[d] > before.tenant[d] && planLimits.set[d] && after.tenant[d] > planLimits.val[d] {
-			return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf(
-				"quota exceeded: tenant %q's %s limit is %s (plan %q) and it uses %s; this would bring it to %s. Free some, or ask a platform administrator for a bigger plan",
-				tenantName, dimNames[d], formatAmount(d, planLimits.val[d]), planName, formatAmount(d, before.tenant[d]), formatAmount(d, after.tenant[d])))
+		limit := planLimits.limitOf(d, cpuPercent)
+		if after.tenant[d] <= before.tenant[d] || !planLimits.set[d] || after.tenant[d] <= limit {
+			continue
 		}
+		if limit != planLimits.val[d] {
+			return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf(
+				"quota exceeded: the vCPUs of tenant %q's machines asked to run may come to %s, %d%% of its cpu limit of %s (plan %q, cpu_limit_percent), and come to %s; this would bring them to %s. Stop or shrink some, or ask a platform administrator for a bigger plan",
+				tenantName, formatAmount(d, limit), cpuPercent, formatAmount(d, planLimits.val[d]), planName, formatAmount(d, before.tenant[d]), formatAmount(d, after.tenant[d])))
+		}
+		return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf(
+			"quota exceeded: tenant %q's %s limit is %s (plan %q) and it uses %s; this would bring it to %s. Free some, or ask a platform administrator for a bigger plan",
+			tenantName, dimNames[d], formatAmount(d, planLimits.val[d]), planName, formatAmount(d, before.tenant[d]), formatAmount(d, after.tenant[d])))
 	}
 	percent := planLimits.memoryLimitPercent()
 	if ceiling, ok := planLimits.memoryCeiling(percent); ok && ceilingRaised(before.tenant, after.tenant, ceiling) {
@@ -719,11 +749,18 @@ func (s *Server) checkFits(ctx context.Context, r registry.Resource, obj proto.M
 	}
 	was, now := before.projects[meta.GetProject()], after.projects[meta.GetProject()]
 	for d := range numDims {
-		if now[d] > was[d] && own.set[d] && now[d] > own.val[d] {
-			return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf(
-				"quota exceeded: project %q's %s limit is %s (its spec.limits) and it uses %s; this would bring it to %s. Free some, or ask an owner of tenant %q to raise the project's limit",
-				meta.GetProject(), dimNames[d], formatAmount(d, own.val[d]), formatAmount(d, was[d]), formatAmount(d, now[d]), tenantName))
+		limit := own.limitOf(d, cpuPercent)
+		if now[d] <= was[d] || !own.set[d] || now[d] <= limit {
+			continue
 		}
+		if limit != own.val[d] {
+			return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf(
+				"quota exceeded: the vCPUs of project %q's machines asked to run may come to %s, %d%% (tenant %q's cpu_limit_percent) of its cpu limit of %s (its spec.limits), and come to %s; this would bring them to %s. Stop or shrink some, or ask an owner of tenant %q to raise the project's limit",
+				meta.GetProject(), formatAmount(d, limit), cpuPercent, tenantName, formatAmount(d, own.val[d]), formatAmount(d, was[d]), formatAmount(d, now[d]), tenantName))
+		}
+		return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf(
+			"quota exceeded: project %q's %s limit is %s (its spec.limits) and it uses %s; this would bring it to %s. Free some, or ask an owner of tenant %q to raise the project's limit",
+			meta.GetProject(), dimNames[d], formatAmount(d, own.val[d]), formatAmount(d, was[d]), formatAmount(d, now[d]), tenantName))
 	}
 	if ceiling, ok := own.memoryCeiling(percent); ok && ceilingRaised(was, now, ceiling) {
 		return connect.NewError(connect.CodeResourceExhausted, fmt.Errorf(
@@ -854,6 +891,14 @@ func validatePlan(ctx context.Context, s *Server, _ auth.Principal, old, obj pro
 			return invalid("spec.limits.memory_limit_percent is a percent of spec.limits.memory, which is not set")
 		}
 	}
+	if ls.cpuPercentSet {
+		if ls.cpuPercent < 100 || ls.cpuPercent > MaxCPULimitPercent {
+			return invalid("spec.limits.cpu_limit_percent: %d is not from 100 to %d", ls.cpuPercent, MaxCPULimitPercent)
+		}
+		if !ls.set[dimCPU] {
+			return invalid("spec.limits.cpu_limit_percent is a percent of spec.limits.cpu, which is not set")
+		}
+	}
 	if price := plan.GetSpec().GetPrice(); price != nil {
 		if _, err := billing.ParseMoney(price.GetMonthlyFee()); err != nil {
 			return invalid("spec.price.monthly_fee: %v", err)
@@ -930,6 +975,9 @@ func (s *Server) validateProjectLimits(ctx context.Context, p auth.Principal, ol
 	}
 	if ls.memoryPercentSet {
 		return invalid("spec.limits.memory_limit_percent is not a project's to set; the tenant's plan's holds for its projects")
+	}
+	if ls.cpuPercentSet {
+		return invalid("spec.limits.cpu_limit_percent is not a project's to set; the tenant's plan's holds for its projects")
 	}
 	tenantName := proj.GetSpec().GetTenant()
 	if !s.authz.Allowed(p, authz.Permission(registry.Project, authz.Apply), authz.Target{Tenant: tenantName}) {

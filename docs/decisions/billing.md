@@ -26,7 +26,9 @@ events are compacted (`sqlite-store.md`).
   is what the quota counts as its memory; its memory past that is a
   ceiling, never billed (`memory-pool.md`). A tenant without a pool, every
   PAY_AS_YOU_GO one among them, is billed its machines' memory, which the
-  quota then counts too. Disks, addresses, public endpoints,
+  quota then counts too. A CPU pool changes nothing billed: a machine is
+  billed its vCPUs in it or not, and a PAY_AS_YOU_GO tenant has none
+  (`cpu-pool.md`). Disks, addresses, public endpoints,
   port forwards, file shares, network endpoints and custom domains are
   billed while they exist. Each object counts as the quota counts it
   (`quotaCounters` in `internal/apiserver/quota.go`), but for cpu and

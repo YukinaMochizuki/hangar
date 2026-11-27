@@ -422,7 +422,7 @@ func (h *Hypervisor) vm(uid string, unit *unitState) (driver.VM, bool, error) {
 	vm := driver.VM{
 		LastOOMKill: lastOOMKill(dir),
 		MachineUID:  uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces, RootSize: ln.Spec.Root.Size,
-		VCPUs: ln.Spec.VCPUs, Firmware: ln.Spec.Firmware, FileShareServer: ln.Spec.FileShareServer != nil,
+		VCPUs: ln.Spec.VCPUs, Firmware: ln.Spec.Firmware, FileShareServer: ln.Spec.FileShareServer != nil, Pool: ln.Spec.Pool(),
 	}
 	for _, v := range ln.Spec.Disks {
 		vm.DiskSizes = append(vm.DiskSizes, v.Size)
@@ -637,7 +637,7 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	if spec.Converter != nil {
 		props = append(props, property("RuntimeMaxUSec", usec(h.cfg.ConverterRuntime)))
 	}
-	if spec.MemoryPool != nil {
+	if spec.Pool() != "" {
 		h.pools.Lock()
 		defer h.pools.Unlock()
 		if err := h.startPool(ctx, spec); err != nil {
@@ -784,6 +784,14 @@ func checkSpec(s driver.VMSpec) error {
 	if s.MemoryPool != nil {
 		if err := checkPool(*s.MemoryPool); err != nil {
 			return fmt.Errorf("machine %s: %w", s.MachineUID, err)
+		}
+	}
+	if s.CPUPool != nil {
+		if err := checkCPUPool(*s.CPUPool); err != nil {
+			return fmt.Errorf("machine %s: %w", s.MachineUID, err)
+		}
+		if s.MemoryPool != nil && s.MemoryPool.Name != s.CPUPool.Name {
+			return fmt.Errorf("machine %s: memory pool %s and CPU pool %s are not one tenant's", s.MachineUID, s.MemoryPool.Name, s.CPUPool.Name)
 		}
 	}
 	if s.ReservedMiB < 0 || s.ReservedMiB > s.MemoryMiB {

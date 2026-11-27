@@ -223,9 +223,18 @@ type UsageResponse struct {
 	// its guest now, in bytes, by its balloon: its guest has
 	// memory_limit_bytes less this. Zero when nothing is taken; unset when
 	// its node could not tell. See docs/decisions/memory-pool.md.
-	BalloonBytes  *int64 `protobuf:"varint,6,opt,name=balloon_bytes,json=balloonBytes,proto3,oneof" json:"balloon_bytes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	BalloonBytes *int64 `protobuf:"varint,6,opt,name=balloon_bytes,json=balloonBytes,proto3,oneof" json:"balloon_bytes,omitempty"`
+	// How often the machine's CPU pool slowed it and the pool's other
+	// machines on its node over the last hour: of the pool's limit's
+	// periods, the share, from 0 to 1, in which they had used all of the
+	// pool's CPUs and waited. Unset when the machine runs in no CPU pool,
+	// or its node has no value yet. See docs/decisions/cpu-pool.md.
+	CpuPoolSlowed *float64 `protobuf:"fixed64,7,opt,name=cpu_pool_slowed,json=cpuPoolSlowed,proto3,oneof" json:"cpu_pool_slowed,omitempty"`
+	// The CPUs of the machine's CPU pool, in millicores, as its node holds
+	// the pool to them now; unset when it runs in no CPU pool.
+	CpuPoolMilliCpu *int64 `protobuf:"varint,8,opt,name=cpu_pool_milli_cpu,json=cpuPoolMilliCpu,proto3,oneof" json:"cpu_pool_milli_cpu,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *UsageResponse) Reset() {
@@ -296,6 +305,20 @@ func (x *UsageResponse) GetLatest() *MachineUsagePoint {
 func (x *UsageResponse) GetBalloonBytes() int64 {
 	if x != nil && x.BalloonBytes != nil {
 		return *x.BalloonBytes
+	}
+	return 0
+}
+
+func (x *UsageResponse) GetCpuPoolSlowed() float64 {
+	if x != nil && x.CpuPoolSlowed != nil {
+		return *x.CpuPoolSlowed
+	}
+	return 0
+}
+
+func (x *UsageResponse) GetCpuPoolMilliCpu() int64 {
+	if x != nil && x.CpuPoolMilliCpu != nil {
+		return *x.CpuPoolMilliCpu
 	}
 	return 0
 }
@@ -1788,7 +1811,7 @@ const file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc = "" +
 	"\fUsageRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\"\xe4\x02\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\xee\x03\n" +
 	"\rUsageResponse\x12\x14\n" +
 	"\x05vcpus\x18\x01 \x01(\x05R\x05vcpus\x12,\n" +
 	"\x12memory_limit_bytes\x18\x02 \x01(\x03R\x10memoryLimitBytes\x12K\n" +
@@ -1796,8 +1819,12 @@ const file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc = "" +
 	"memoryKind\x12B\n" +
 	"\x06points\x18\x04 \x03(\v2*.hangar.compute.v1alpha1.MachineUsagePointR\x06points\x12B\n" +
 	"\x06latest\x18\x05 \x01(\v2*.hangar.compute.v1alpha1.MachineUsagePointR\x06latest\x12(\n" +
-	"\rballoon_bytes\x18\x06 \x01(\x03H\x00R\fballoonBytes\x88\x01\x01B\x10\n" +
-	"\x0e_balloon_bytes\"\x8e\x01\n" +
+	"\rballoon_bytes\x18\x06 \x01(\x03H\x00R\fballoonBytes\x88\x01\x01\x12+\n" +
+	"\x0fcpu_pool_slowed\x18\a \x01(\x01H\x01R\rcpuPoolSlowed\x88\x01\x01\x120\n" +
+	"\x12cpu_pool_milli_cpu\x18\b \x01(\x03H\x02R\x0fcpuPoolMilliCpu\x88\x01\x01B\x10\n" +
+	"\x0e_balloon_bytesB\x12\n" +
+	"\x10_cpu_pool_slowedB\x15\n" +
+	"\x13_cpu_pool_milli_cpu\"\x8e\x01\n" +
 	"\x11MachineUsagePoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x10\n" +
 	"\x03cpu\x18\x02 \x01(\x01R\x03cpu\x12&\n" +

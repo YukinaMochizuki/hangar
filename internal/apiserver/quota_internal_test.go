@@ -61,7 +61,7 @@ func askedFor(t *testing.T, r *computev1alpha1.Resources) amounts {
 	t.Helper()
 	var a amounts
 	a[dimMachines] = 1
-	cpu, err := milliCPU(r.GetCpu())
+	cpu, err := quantity.MilliCPU(r.GetCpu())
 	if err != nil {
 		t.Fatal(err)
 	}

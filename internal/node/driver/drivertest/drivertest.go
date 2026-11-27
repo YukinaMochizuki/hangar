@@ -188,6 +188,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("volume growth", volumeGrowth, vms)
 	part("usage", usage, vms)
 	part("memory pools", memoryPools, vms)
+	part("CPU pools", cpuPools, vms)
 	part("logs", logs, vms)
 	part("exec", exec, func(h Host) bool { return vms(h) && h.Exec != nil })
 	part("firmware", firmware, func(h Host) bool { return vms(h) && h.Firmware })

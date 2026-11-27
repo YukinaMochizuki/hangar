@@ -79,6 +79,9 @@ type world struct {
 	// sweepInterval, if set before the agent starts, is how often it
 	// sweeps; 100ms if not.
 	sweepInterval time.Duration
+	// squeezePoll, if set before the agent starts, is how often it looks
+	// at the pools; zero is node.DefaultSqueezePoll.
+	squeezePoll time.Duration
 	// uploadDir is where the agent stages custom images' uploads, kept
 	// across its restarts; uploadExpiry and maxImageDisk, if set before it
 	// starts, bound them.
@@ -199,6 +202,7 @@ func (w *world) startAgent() {
 		RootPoll:          20 * time.Millisecond,
 		TailnetPoll:       20 * time.Millisecond,
 		UsagePoll:         w.usagePoll,
+		SqueezePoll:       w.squeezePoll,
 		PullTimeout:       w.pullTimeout,
 		CaptureTimeout:    w.captureTimeout,
 		DNSUpstreams:      w.dnsUpstreams,

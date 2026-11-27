@@ -30,12 +30,15 @@ type poolVM struct {
 }
 
 // poolHost is a hypervisor running vms, started an hour before its
-// clock's now; it keeps the limits its pools' slices were last given.
+// clock's now; it keeps the limits its pools' slices were last given, of
+// memory and of CPUs.
 type poolHost struct {
 	driver.Hypervisor
 	clock  clockwork.Clock
 	vms    map[string]*poolVM
 	limits map[string]int64
+	cpus   map[string]int64
+	read   map[string]bool
 }
 
 func (h *poolHost) PoolVMs(context.Context) ([]driver.PoolVM, error) {
@@ -89,6 +92,11 @@ func (h *poolHost) SetMemoryPool(_ context.Context, name string, guestMiB int64)
 }
 
 func (h *poolHost) MemoryEvents() <-chan struct{} { return nil }
+
+func (h *poolHost) SetCPUPools(_ context.Context, want map[string]int64, read map[string]bool) error {
+	h.cpus, h.read = maps.Clone(want), maps.Clone(read)
+	return nil
+}
 
 // newPoolAgent is an agent on a host running, in pool acme of 4096 with
 // reservations of 1024, a and s, each of 4096 at 2048, the balloon the

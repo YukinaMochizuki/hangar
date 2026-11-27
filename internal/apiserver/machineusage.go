@@ -74,7 +74,10 @@ func (h machineCapabilities) Usage(ctx context.Context, req *connect.Request[com
 		}
 		return nil, call.failed(err)
 	}
-	res := &computev1alpha1.UsageResponse{Vcpus: vcpus, MemoryLimitBytes: int64(memory), Latest: usagePoint(used.Msg.GetLatest())}
+	res := &computev1alpha1.UsageResponse{
+		Vcpus: vcpus, MemoryLimitBytes: int64(memory), Latest: usagePoint(used.Msg.GetLatest()),
+		CpuPoolSlowed: used.Msg.CpuPoolSlowed, CpuPoolMilliCpu: used.Msg.CpuPoolMilliCpu,
+	}
 	switch used.Msg.GetMemorySource() {
 	case nodev1.MemorySource_MEMORY_SOURCE_GUEST_USED:
 		res.MemoryKind = computev1alpha1.MachineMemoryKind_MACHINE_MEMORY_KIND_GUEST_USED

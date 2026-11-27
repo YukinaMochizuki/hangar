@@ -642,6 +642,19 @@ language; the plan's percent is never shown.
   owner on screenshots, after a taller tile with two bars, and then a note
   under the number, left space under the others. A tenant's Projects table
   heads its memory column "Memory (reserved)", which is what it counts.
+- **The vCPU tile of a tenant in a CPU pool** (`cpu-pool.md`) counts the
+  vCPUs of machines asked to run against the plan's CPUs, as the Memory
+  tile does: past them, "2 over plan · shared", and how often the pool held
+  its machines back in the last hour, "slowed 12%", from the nodes
+  (`TenantCapabilityService.CPUPoolUsage`), shown from 1%. Both go in one
+  note on the number's line, the longest of "2 over plan · shared · slowed
+  12%", "2 over plan · slowed 12%", "+2 · slowed 12%" or "slowed 12%" that
+  fits, never a line of their own, so the tile keeps its neighbours'
+  height (settled with the owner on screenshots). The whole sentence is the
+  tile's title. No percent is shown. A pooled machine's Usage card says
+  under its CPU plot "Shares your plan's 4 CPUs with your other machines",
+  with "· slowed 12% in the last hour" from 1%. The create and edit forms
+  hold vCPUs to the plan's CPUs times its percent in a CPU pool.
 - **A Shared machine is marked "Shared"** beside its size in its list's row
   and its page's head. Its page's Summary has a Memory row, "Shared · 4 GiB
   limit · 2.6 GiB available now · 2 GiB reserved", what is available being

@@ -507,6 +507,57 @@ host, the slice's `cpu.weight` and `cpuset.cpus.effective`, each unit's
 cpuset controller no further down than the slice, whose cpuset binds the
 units' processes.
 
+## CPU pools
+
+A tenant's machines may share its CPUs as a pool
+(`docs/decisions/cpu-pool.md`): their vCPUs may add up past the CPUs the
+pool has, and on the node they use no more than those together.
+
+- **A CPU pool's VMs run in their tenant's pool's slice**,
+  `hangar.slice/hangar-pool_<tenant>.slice`, the slice the tenant's memory
+  pool uses (below), made the same way as the first of them starts. A VM
+  is in the slice when its spec names either pool; it is a memory pool's
+  member, squeezed and counted in the pool's size, only when it names a
+  memory pool. A VM in the slice for its CPU pool alone adds all its unit
+  may hold, its memory and its overhead, to the slice's `MemoryMax`, so a
+  memory pool's limit beside it is what it was.
+- **The slice's `cpu.max` is the pool's CPUs each period**, set through
+  systemd's `CPUQuotaPerSecUSec` and `CPUQuotaPeriodUSec` (20 ms): a pool
+  of 4 CPUs runs 80 ms of CPU time each 20 ms, whatever the host has
+  idle, and its VMs wait for the next period once they have used it. The
+  limit is set as a VM of the pool starts, from its spec, and the agent
+  sets it again from the machines' specs as one is reconciled and at each
+  look of the squeeze: the most any of them names, while they differ as a
+  plan changes, and none (`max`) for a pool none of them names. A VM in
+  the slice whose machine the agent has not read yet, as just after it
+  starts, holds the pool to the limit it was launched with, so an agent
+  starting again lifts no limit. A read is never overwritten by an
+  earlier one: the squeeze's, taken before a reconcile's, is passed by.
+  The driver reads the slice's `cpu.max` first and sets it only when it
+  differs. Changing it restarts nothing; a VM joins the slice only as it
+  starts.
+- **The period is 20 ms, for the pause a guest sees.** Measured on a
+  testbed (two 4-vCPU containers, all 8 vCPUs busy, a pool of 4), the
+  limit is exact at every period, and a pool over its limit waits about
+  half of each period: at systemd's 100 ms default, some 45 ms every
+  period; at 20 ms a 99th percentile wake-up of 12 ms and none past 20 ms;
+  at 5 ms the tail grows again (48 ms at worst), as the kernel hands out
+  quota in 5 ms slices. systemd 255 has no property for `cpu.max.burst`,
+  which resets whenever a unit in the slice is changed, and it helps only
+  a pool that idles before it is busy, never one held at its limit.
+- **A pool's CPUs go to its busy vCPUs, not by weight**, while the host
+  has a CPU for each: the limit is a pool of time every CPU's run queue
+  draws from, and a unit's `CPUWeight` decides only between threads that
+  share a CPU (measured: weights of 32 and 8 split a pool of 4 by 2.0 and
+  2.0). Weights hold again once the host's CPUs are short.
+- **A slice's `cpu.stat` says how far the limit held it back**: of
+  `nr_periods`, `nr_throttled` were cut short (`Hypervisor.CPUPoolStats`),
+  which is how often its VMs waited. `throttled_usec` adds up the wait of
+  each CPU it ran on, so it reads past the time passed. Its units' own
+  `cpu.stat` count nothing of what their parent's limit held back. The
+  agent samples both counts with the machines' usage and answers the
+  share over the last hour (`cpu-pool.md`, `machine-usage.md`).
+
 ## Memory pools
 
 A tenant's machines may share its memory as a pool
