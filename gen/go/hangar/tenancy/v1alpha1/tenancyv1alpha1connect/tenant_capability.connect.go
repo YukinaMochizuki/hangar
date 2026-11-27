@@ -45,10 +45,16 @@ const (
 // service.
 type TenantCapabilityServiceClient interface {
 	// CPUPoolUsage says how often the tenant's CPU pool slowed its machines
-	// over the last hour, and the pool's CPUs, from each connected node its
-	// pool's running machines are on. It needs the tenant's get, as reading
-	// the Tenant does. A tenant with no CPU pool answers nothing set. See
-	// docs/decisions/cpu-pool.md.
+	// over the last hour, minute by minute, the pool's CPUs, and what each
+	// running machine in it uses of its CPUs now, from each connected node
+	// the pool's running machines are on. It is asked as MemoryPoolUsage
+	// is: the get of Containers or VirtualMachines in some project of the
+	// tenant, and the machines of a project whose Containers and
+	// VirtualMachines the caller may not get are summed into other,
+	// unnamed. Such a caller learns the pool's CPUs, how often it slowed,
+	// and that sum, nothing more. A tenant with no CPU pool answers nothing
+	// set; a tenant that does not exist is NOT_FOUND to a caller over every
+	// tenant. See docs/decisions/cpu-pool.md.
 	CPUPoolUsage(context.Context, *connect.Request[v1alpha1.CPUPoolUsageRequest]) (*connect.Response[v1alpha1.CPUPoolUsageResponse], error)
 	// MemoryPoolUsage says who holds the tenant's memory pool now: each
 	// running machine in it, with what its guest has, from each connected
@@ -111,10 +117,16 @@ func (c *tenantCapabilityServiceClient) MemoryPoolUsage(ctx context.Context, req
 // hangar.tenancy.v1alpha1.TenantCapabilityService service.
 type TenantCapabilityServiceHandler interface {
 	// CPUPoolUsage says how often the tenant's CPU pool slowed its machines
-	// over the last hour, and the pool's CPUs, from each connected node its
-	// pool's running machines are on. It needs the tenant's get, as reading
-	// the Tenant does. A tenant with no CPU pool answers nothing set. See
-	// docs/decisions/cpu-pool.md.
+	// over the last hour, minute by minute, the pool's CPUs, and what each
+	// running machine in it uses of its CPUs now, from each connected node
+	// the pool's running machines are on. It is asked as MemoryPoolUsage
+	// is: the get of Containers or VirtualMachines in some project of the
+	// tenant, and the machines of a project whose Containers and
+	// VirtualMachines the caller may not get are summed into other,
+	// unnamed. Such a caller learns the pool's CPUs, how often it slowed,
+	// and that sum, nothing more. A tenant with no CPU pool answers nothing
+	// set; a tenant that does not exist is NOT_FOUND to a caller over every
+	// tenant. See docs/decisions/cpu-pool.md.
 	CPUPoolUsage(context.Context, *connect.Request[v1alpha1.CPUPoolUsageRequest]) (*connect.Response[v1alpha1.CPUPoolUsageResponse], error)
 	// MemoryPoolUsage says who holds the tenant's memory pool now: each
 	// running machine in it, with what its guest has, from each connected
