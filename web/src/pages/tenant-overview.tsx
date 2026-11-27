@@ -9,6 +9,7 @@ import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
 import { RowMenu } from "@/components/menu";
 import { ProjectLimitsDialog, useMaySetLimits } from "@/components/project-limits-dialog";
 import { limitDims, limitValue, ownLimitCount, type LimitKey } from "@/lib/project-limits";
+import { PoolCard } from "@/components/pool-card";
 import { OtherLimits, computeTiles, otherTiles, QuotaTiles } from "@/components/quota";
 import { usePoolTile } from "@/lib/memory-pool";
 import { useCpuPoolTile } from "@/lib/cpu-pool";
@@ -168,6 +169,7 @@ export function TenantOverview() {
         ) : (
           <QuotaTiles tiles={computeTiles(t?.status?.limits, t?.status?.usage)} loading={q.isPending} pool={pool} cpuPool={cpuPool} />
         )}
+        <PoolCard tenant={tenant} enabled={!!pool && !hidden && !q.error} />
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0">
             <Projects tenant={tenant} pooled={!!pool} />

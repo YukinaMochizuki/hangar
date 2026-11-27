@@ -3,14 +3,16 @@
 // memory, and what its node says of a pooled machine's memory.
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { useQuery } from "@connectrpc/connect-query";
+import { skipToken, useQuery } from "@connectrpc/connect-query";
+import type { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
+import { TenantCapabilityService, type MemoryPoolUsageResponse } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_capability_pb";
 import { useBillingAccount } from "@/lib/billing";
 import { BillingType } from "@hangar/api/hangar/billing/v1alpha1/billing_account_pb";
 import { ConditionStatus, type Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import type { Limits, Usage } from "@hangar/api/hangar/tenancy/v1alpha1/plan_pb";
 import { memoryStepMiB } from "@/lib/machine-sizes";
-import type { MachineView } from "@/lib/machines";
+import type { MachineKind, MachineView } from "@/lib/machines";
 import { parseQuantity, quantityGiB } from "@/lib/quantity";
 
 /** How a tenant's machines hold their memory: as a pool of `percent`, or each alone. */
@@ -117,6 +119,74 @@ export function poolFigures(limits: Limits | undefined, usage: Usage | undefined
   const planGi = quantityGiB(limits?.memory);
   const ceilingGi = exactGiB(usage?.memoryCeiling || "0");
   return { planGi, ceilingGi, capGi: (planGi * percent) / 100 };
+}
+
+/** A running machine in its tenant's pool, as its node last read it, in GiB. */
+export type PoolEntry = {
+  project: string;
+  kind: MachineKind;
+  name: string;
+  phase: MachinePhase;
+  /** Its limit, and what it keeps reserved: all of it when Dedicated. */
+  memoryGi: number;
+  reservedGi: number;
+  /** What its guest has now; undefined when its node could not tell. */
+  nowGi?: number;
+  /** When its node killed it for the pool's memory, within recentKillMs. */
+  killedAt?: Date;
+  /** Since when its balloon has not followed what its node asks. */
+  stuckSince?: Date;
+};
+
+/** Machines in the pool summed, in GiB: those of projects the caller does not read. */
+export type PoolTotal = { memoryGi: number; reservedGi: number; nowGi: number };
+
+/** Who holds a tenant's pool now: its size, the machines the caller reads, and the rest summed. */
+export type PoolOccupancy = { sizeGi: number; entries: PoolEntry[]; other?: PoolTotal };
+
+const bytesGi = (b: bigint) => Number(b) / 1024 ** 3;
+
+/** The pool's occupancy from MemoryPoolUsage's answer at now; undefined for a tenant with no pool. */
+export function poolOccupancy(r: MemoryPoolUsageResponse, now = Date.now()): PoolOccupancy | undefined {
+  if (r.sizeBytes === undefined) return undefined;
+  const entries: PoolEntry[] = [];
+  for (const m of r.machines) {
+    if (m.kind !== "Container" && m.kind !== "VirtualMachine") continue;
+    const killedAt = m.lastOomKillTime ? timestampDate(m.lastOomKillTime) : undefined;
+    entries.push({
+      project: m.project,
+      kind: m.kind,
+      name: m.name,
+      phase: m.phase,
+      memoryGi: bytesGi(m.memoryBytes),
+      reservedGi: bytesGi(m.reservedBytes),
+      nowGi: m.currentBytes === undefined ? undefined : bytesGi(m.currentBytes),
+      killedAt: killedAt && now - killedAt.getTime() < recentKillMs ? killedAt : undefined,
+      stuckSince: m.balloonUnresponsiveSince ? timestampDate(m.balloonUnresponsiveSince) : undefined,
+    });
+  }
+  const o = r.other;
+  return {
+    sizeGi: bytesGi(r.sizeBytes),
+    entries,
+    other: o ? { memoryGi: bytesGi(o.memoryBytes), reservedGi: bytesGi(o.reservedBytes), nowGi: bytesGi(o.currentBytes) } : undefined,
+  };
+}
+
+/** How often the pool card asks again: the nodes read their pools every few seconds. */
+export const poolRefetchMs = 10_000;
+
+/**
+ * Who holds the tenant's pool now, asked of its nodes every poolRefetchMs
+ * while enabled; undefined while the first answer is pending, when it
+ * failed, and for a tenant with no pool.
+ */
+export function usePoolOccupancy(tenant: string, enabled: boolean): PoolOccupancy | undefined {
+  const q = useQuery(TenantCapabilityService.method.memoryPoolUsage, enabled && tenant ? { tenant } : skipToken, {
+    refetchInterval: poolRefetchMs,
+    retry: false,
+  });
+  return q.data ? poolOccupancy(q.data) : undefined;
 }
 
 /**

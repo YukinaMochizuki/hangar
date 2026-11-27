@@ -89,6 +89,11 @@ function api(s: Setup = {}): Api {
     });
     r.service(TenantCapabilityService, {
       cPUPoolUsage: async () => ({ slowed: s.cpuPool?.slowed, milliCpu: 4000n, nodesUnread: 0 }),
+      // The pool's one machine, web's api: 2 GiB now, of 1–4.
+      memoryPoolUsage: async () =>
+        s.pool && s.pool.percent > 100
+          ? { sizeBytes: 8n * 1024n ** 3n, machines: [{ project: "acme-web", kind: "Container", name: "api", phase: 3, memoryBytes: 4n * 1024n ** 3n, reservedBytes: 1024n ** 3n, currentBytes: 2n * 1024n ** 3n }] }
+          : {},
     });
     r.service(NameService, {
       checkName: async () => {
@@ -276,6 +281,23 @@ describe("TenantOverview's memory with a pool", () => {
     expect(within(tile()).getByText("5")).toBeTruthy();
     expect(within(screen.getByRole("table")).getByText("Memory")).toBeTruthy();
     expect(screen.queryByText("Memory (reserved)")).toBeNull();
+  });
+
+  it("shows who holds the pool now right under the tiles, and asks nothing of it without a pool", async () => {
+    const a = api({ pool: { percent: 200, ceiling: "11Gi" } });
+    render(<TenantOverview />, { wrapper: withApi(a, { kind: "tenant", name: "acme" }) });
+    const card = await screen.findByLabelText("Memory pool");
+    expect(within(card).getByText("api").closest("a")?.getAttribute("href")).toBe("/projects/acme-web/containers/api");
+    // The tiles' row, then the card.
+    expect(card.previousElementSibling?.className).toContain("lg:grid-cols-4");
+    expect(a.requests.find((c) => c.method === "MemoryPoolUsage")!.request).toMatchObject({ tenant: "acme" });
+    cleanup();
+    const b = api({ pool: { percent: 100, ceiling: "5Gi" } });
+    render(<TenantOverview />, { wrapper: withApi(b, { kind: "tenant", name: "acme" }) });
+    expect(await screen.findByText("Plan default")).toBeTruthy();
+    await act(async () => {});
+    expect(b.calls).not.toContain("MemoryPoolUsage");
+    expect(screen.queryByLabelText("Memory pool")).toBeNull();
   });
 });
 

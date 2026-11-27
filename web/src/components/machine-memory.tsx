@@ -7,13 +7,44 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import type { Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
+import { Ban, TriangleAlert } from "lucide-react";
 import { PageBanner } from "@/components/notice";
 import { Badge } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { ago, type MachineView } from "@/lib/machines";
 import { balloonStuck, exactGiB, killedRecently, machineMemory, outsidePool, useProjectPool } from "@/lib/memory-pool";
 import { useProjects } from "@/lib/projects";
 import { formatNumber } from "@/lib/quantity";
 import { useMachineUsage } from "@/lib/usage";
+
+/**
+ * The mark of a machine its node stopped for its pool's memory, wherever it
+ * is named; the words beside it say so, so it is not read out.
+ */
+export function KilledIcon({ className }: { className?: string }) {
+  return <Ban aria-hidden data-mark="killed" className={cn("size-3.5 shrink-0 text-fail", className)} strokeWidth={2.25} />;
+}
+
+/** The mark of a machine whose balloon does not follow, so it shares none of its memory; not read out either. */
+export function StuckIcon({ className }: { className?: string }) {
+  return <TriangleAlert aria-hidden data-mark="stuck" className={cn("size-3.5 shrink-0 text-pending", className)} strokeWidth={2.25} />;
+}
+
+/**
+ * A machine's memory as a list shows it: "1–4 GiB" when Shared, from what it
+ * keeps reserved to its limit, the limit's part lighter; "4 GiB" when
+ * Dedicated.
+ */
+export function MemoryText({ m }: { m: MachineView }) {
+  const mem = machineMemory(m);
+  if (!mem.shared) return <>{formatNumber(m.memoryGi)} GiB</>;
+  return (
+    <>
+      {formatNumber(mem.reservedGi)}
+      <span className="text-subtle">–{formatNumber(mem.memoryGi)} GiB</span>
+    </>
+  );
+}
 
 /** "Shared" beside a machine's size, for one that keeps less than its memory reserved. */
 export function SharedBadge({ m }: { m: MachineView }) {
@@ -104,10 +135,26 @@ export function MemoryBanners({ m }: { m: MachineView }) {
   );
 }
 
-/** A list row's line under its state: killed for memory within the last day, or its balloon not following. */
+/**
+ * A list row's line under its state, with the mark the Overview's pool card
+ * gives it: killed for memory within the last day, or its balloon not
+ * following.
+ */
 export function MemoryStateLine({ m }: { m: MachineView }) {
   const killed = killedRecently(m);
-  if (killed && m.phase !== MachinePhase.FAILED) return <span className="block text-[11.5px] text-fail">Stopped for memory {ago(killed)} ago</span>;
-  if (balloonStuck(m) && !m.stopped) return <span className="block text-[11.5px] text-pending">Not sharing memory</span>;
+  if (killed && m.phase !== MachinePhase.FAILED)
+    return (
+      <span className="flex items-center gap-1 text-[11.5px] text-fail">
+        <KilledIcon />
+        Stopped for memory {ago(killed)} ago
+      </span>
+    );
+  if (balloonStuck(m) && !m.stopped)
+    return (
+      <span className="flex items-center gap-1 text-[11.5px] text-pending">
+        <StuckIcon />
+        Not sharing memory
+      </span>
+    );
   return null;
 }
