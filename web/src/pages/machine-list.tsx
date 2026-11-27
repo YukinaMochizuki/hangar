@@ -15,7 +15,7 @@ import { machinePath, useMachines, type MachineKind, type MachineView } from "@/
 import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
 import { machinePermKey, machinePerms, useMachineCan } from "@/lib/permissions";
 import { formatNumber } from "@/lib/quantity";
-import { MemoryStateLine, SharedBadge } from "@/components/machine-memory";
+import { MemoryStateLine, MemoryText } from "@/components/machine-memory";
 
 type StatusFilter = "all" | "running" | "stopped" | "failed";
 
@@ -177,9 +177,8 @@ export function MachineList({ kind }: { kind: MachineKind }) {
                         <span className="flex items-center gap-2">
                           {size && <SizeBadge size={size.label} />}
                           <span className="text-muted tabular">
-                            {formatNumber(m.cpu)} vCPU · {formatNumber(m.memoryGi)} GiB
+                            {formatNumber(m.cpu)} vCPU · <MemoryText m={m} />
                           </span>
-                          <SharedBadge m={m} />
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px]">

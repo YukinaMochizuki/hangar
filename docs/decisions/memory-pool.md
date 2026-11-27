@@ -1,7 +1,8 @@
 # A tenant's machines may share its memory as a pool
 
-Status: accepted, 2026-11. Built: the apiserver's part, and the node's
-(`node-agent.md`, "Memory pools").
+Status: accepted, 2026-11. Built: the apiserver's part, the node's
+(`node-agent.md`, "Memory pools"), and the console's, the Overviews'
+pool card among it (`console-design.md`, "Memory pools").
 
 ## Context
 
@@ -104,6 +105,33 @@ GiB nobody measured.
   rather than its memory, so a pool of 200% does not double its tenant's
   share of the CPUs. A machine joins a pool's slice, or leaves it, as it
   starts; its reservation's effects follow while it runs.
+- **Who uses a pool now is read from its nodes, never stored.**
+  `TenantCapabilityService.MemoryPoolUsage` asks each connected node the
+  tenant's running pooled machines are on what its squeeze last read
+  (`node-agent.md`), as `CPUPoolUsage` does for a CPU pool, and answers the
+  pool's size and each machine: its memory, its reservation, what its guest
+  has now (its memory less its balloon, unset when its node cannot tell),
+  what its guest uses of that (its total less its available memory, from
+  its balloon statistics, unset when it reports none or not lately), its
+  last OOM kill and since when its balloon has not followed. What a guest
+  has is not what it needs: the squeeze hands the pool's spare room to its
+  Shared guests, up to their limits, so whenever their limits add up past
+  the pool what they have fills it. What they use says how much of the
+  pool is wanted, which is what the console draws (owner's decision,
+  2026-11-27). It needs the get of Containers or VirtualMachines in some
+  project of the tenant, not the Tenant's, which no project role grants:
+  the project Overview shows the pool to a member of that project alone. A
+  machine whose object the caller may not get is summed into one `other`
+  total (memory, reservation, now, in use), with no name, kind or count.
+  Such a caller learns the pool's size, which is the plan's memory, and
+  those totals of the rest of the tenant; that was accepted for a project
+  member, since the pool is what its own machines share. What it is told
+  of nodes, when they last read the pool and how many could not be read
+  (a node with no read lately counts so), is of the nodes its named
+  machines are on alone. A machine whose memory does not parse is left
+  out and logged rather than failing everyone's answer, and a tenant that
+  does not exist is `NOT_FOUND` to a caller over every tenant, as for
+  `CPUPoolUsage`, which keeps the Tenant's get.
 
 ## Consequences
 

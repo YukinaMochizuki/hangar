@@ -119,18 +119,22 @@ describe("a Shared machine's page", () => {
 });
 
 describe("a Shared machine in its list", () => {
-  const row = () => screen.getByRole("table").querySelector("tbody tr")!;
+  const row = () => screen.getByRole("table").querySelector("tbody tr")! as HTMLElement;
 
-  it("marks it Shared beside its size, and says under its state what its node said", async () => {
+  it("reads its memory from its reservation to its limit, the limit lighter, and marks what its node said under its state", async () => {
     render(<MachineList kind="Container" />, { wrapper: withApi(paletteApi(machines("2Gi", [oom(minutesAgo(23))]))) });
-    await waitFor(() => expect(within(row() as HTMLElement).getByText("Shared")).toBeTruthy());
-    expect(within(row() as HTMLElement).getByText("Stopped for memory 23m ago")).toBeTruthy();
+    await waitFor(() => expect(within(row()).getByText("–4 GiB")).toBeTruthy());
+    expect(within(row()).getByText("–4 GiB").className).toContain("text-subtle");
+    expect(within(row()).getByText(/2 vCPU · 2/).textContent).toBe("2 vCPU · 2–4 GiB");
+    expect(within(row()).queryByText("Shared")).toBeNull();
+    const killed = within(row()).getByText("Stopped for memory 23m ago");
+    expect(killed.querySelector('[data-mark="killed"]')).toBeTruthy();
     cleanup();
     render(<MachineList kind="Container" />, { wrapper: withApi(paletteApi(machines("2Gi", [stuck]))) });
-    await waitFor(() => expect(within(row() as HTMLElement).getByText("Not sharing memory")).toBeTruthy());
+    await waitFor(() => expect(within(row()).getByText("Not sharing memory").querySelector('[data-mark="stuck"]')).toBeTruthy());
     cleanup();
     render(<MachineList kind="Container" />, { wrapper: withApi(paletteApi(machines(""))) });
-    await waitFor(() => expect(within(row() as HTMLElement).getByText("web")).toBeTruthy());
-    expect(within(row() as HTMLElement).queryByText("Shared")).toBeNull();
+    await waitFor(() => expect(within(row()).getByText("2 vCPU · 4 GiB")).toBeTruthy());
+    expect(within(row()).queryByText(/–/)).toBeNull();
   });
 });

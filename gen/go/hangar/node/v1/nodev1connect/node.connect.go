@@ -60,6 +60,9 @@ const (
 	// NodeServiceCPUPoolUsageProcedure is the fully-qualified name of the NodeService's CPUPoolUsage
 	// RPC.
 	NodeServiceCPUPoolUsageProcedure = "/hangar.node.v1.NodeService/CPUPoolUsage"
+	// NodeServiceMemoryPoolUsageProcedure is the fully-qualified name of the NodeService's
+	// MemoryPoolUsage RPC.
+	NodeServiceMemoryPoolUsageProcedure = "/hangar.node.v1.NodeService/MemoryPoolUsage"
 	// NodeServiceListFileShareDirProcedure is the fully-qualified name of the NodeService's
 	// ListFileShareDir RPC.
 	NodeServiceListFileShareDirProcedure = "/hangar.node.v1.NodeService/ListFileShareDir"
@@ -117,6 +120,12 @@ type NodeServiceClient interface {
 	// to. A pool the node neither samples nor holds answers nothing set.
 	// See docs/decisions/cpu-pool.md.
 	CPUPoolUsage(context.Context, *connect.Request[v1.CPUPoolUsageRequest]) (*connect.Response[v1.CPUPoolUsageResponse], error)
+	// MemoryPoolUsage says what each running machine of a memory pool on
+	// this node has of its memory, as the squeeze last read the pool, which
+	// it does every few seconds: no VM is asked anything for it. A pool the
+	// node has not squeezed answers nothing set. See
+	// docs/decisions/node-agent.md.
+	MemoryPoolUsage(context.Context, *connect.Request[v1.MemoryPoolUsageRequest]) (*connect.Response[v1.MemoryPoolUsageResponse], error)
 	// ListFileShareDir lists a directory of the share a FileShare's server
 	// on this node serves, as the server's ListDir does, and with its codes.
 	// A machine that is no share's server with a running VM on this node is
@@ -191,6 +200,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("CPUPoolUsage")),
 			connect.WithClientOptions(opts...),
 		),
+		memoryPoolUsage: connect.NewClient[v1.MemoryPoolUsageRequest, v1.MemoryPoolUsageResponse](
+			httpClient,
+			baseURL+NodeServiceMemoryPoolUsageProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("MemoryPoolUsage")),
+			connect.WithClientOptions(opts...),
+		),
 		listFileShareDir: connect.NewClient[v1.ListFileShareDirRequest, v1.ListFileShareDirResponse](
 			httpClient,
 			baseURL+NodeServiceListFileShareDirProcedure,
@@ -211,6 +226,7 @@ type nodeServiceClient struct {
 	getCustomImageUpload *connect.Client[v1.GetCustomImageUploadRequest, v1.GetCustomImageUploadResponse]
 	machineUsage         *connect.Client[v1.MachineUsageRequest, v1.MachineUsageResponse]
 	cPUPoolUsage         *connect.Client[v1.CPUPoolUsageRequest, v1.CPUPoolUsageResponse]
+	memoryPoolUsage      *connect.Client[v1.MemoryPoolUsageRequest, v1.MemoryPoolUsageResponse]
 	listFileShareDir     *connect.Client[v1.ListFileShareDirRequest, v1.ListFileShareDirResponse]
 }
 
@@ -257,6 +273,11 @@ func (c *nodeServiceClient) MachineUsage(ctx context.Context, req *connect.Reque
 // CPUPoolUsage calls hangar.node.v1.NodeService.CPUPoolUsage.
 func (c *nodeServiceClient) CPUPoolUsage(ctx context.Context, req *connect.Request[v1.CPUPoolUsageRequest]) (*connect.Response[v1.CPUPoolUsageResponse], error) {
 	return c.cPUPoolUsage.CallUnary(ctx, req)
+}
+
+// MemoryPoolUsage calls hangar.node.v1.NodeService.MemoryPoolUsage.
+func (c *nodeServiceClient) MemoryPoolUsage(ctx context.Context, req *connect.Request[v1.MemoryPoolUsageRequest]) (*connect.Response[v1.MemoryPoolUsageResponse], error) {
+	return c.memoryPoolUsage.CallUnary(ctx, req)
 }
 
 // ListFileShareDir calls hangar.node.v1.NodeService.ListFileShareDir.
@@ -316,6 +337,12 @@ type NodeServiceHandler interface {
 	// to. A pool the node neither samples nor holds answers nothing set.
 	// See docs/decisions/cpu-pool.md.
 	CPUPoolUsage(context.Context, *connect.Request[v1.CPUPoolUsageRequest]) (*connect.Response[v1.CPUPoolUsageResponse], error)
+	// MemoryPoolUsage says what each running machine of a memory pool on
+	// this node has of its memory, as the squeeze last read the pool, which
+	// it does every few seconds: no VM is asked anything for it. A pool the
+	// node has not squeezed answers nothing set. See
+	// docs/decisions/node-agent.md.
+	MemoryPoolUsage(context.Context, *connect.Request[v1.MemoryPoolUsageRequest]) (*connect.Response[v1.MemoryPoolUsageResponse], error)
 	// ListFileShareDir lists a directory of the share a FileShare's server
 	// on this node serves, as the server's ListDir does, and with its codes.
 	// A machine that is no share's server with a running VM on this node is
@@ -386,6 +413,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("CPUPoolUsage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceMemoryPoolUsageHandler := connect.NewUnaryHandler(
+		NodeServiceMemoryPoolUsageProcedure,
+		svc.MemoryPoolUsage,
+		connect.WithSchema(nodeServiceMethods.ByName("MemoryPoolUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	nodeServiceListFileShareDirHandler := connect.NewUnaryHandler(
 		NodeServiceListFileShareDirProcedure,
 		svc.ListFileShareDir,
@@ -412,6 +445,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceMachineUsageHandler.ServeHTTP(w, r)
 		case NodeServiceCPUPoolUsageProcedure:
 			nodeServiceCPUPoolUsageHandler.ServeHTTP(w, r)
+		case NodeServiceMemoryPoolUsageProcedure:
+			nodeServiceMemoryPoolUsageHandler.ServeHTTP(w, r)
 		case NodeServiceListFileShareDirProcedure:
 			nodeServiceListFileShareDirHandler.ServeHTTP(w, r)
 		default:
@@ -457,6 +492,10 @@ func (UnimplementedNodeServiceHandler) MachineUsage(context.Context, *connect.Re
 
 func (UnimplementedNodeServiceHandler) CPUPoolUsage(context.Context, *connect.Request[v1.CPUPoolUsageRequest]) (*connect.Response[v1.CPUPoolUsageResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.CPUPoolUsage is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) MemoryPoolUsage(context.Context, *connect.Request[v1.MemoryPoolUsageRequest]) (*connect.Response[v1.MemoryPoolUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.MemoryPoolUsage is not implemented"))
 }
 
 func (UnimplementedNodeServiceHandler) ListFileShareDir(context.Context, *connect.Request[v1.ListFileShareDirRequest]) (*connect.Response[v1.ListFileShareDirResponse], error) {

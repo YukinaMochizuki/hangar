@@ -724,6 +724,21 @@ sure of its reservation alone.
   balloons given up, and `hangar_node_vm_oom_group_kills_total` the VMs killed
   whole, `hangar.slice`'s `memory.events` count. A machine's usage says
   what its balloon holds (`machine-usage.md`).
+- **Who uses a pool is answered from the squeeze's last read.** The agent
+  keeps, per pool, when its last poll read it and what each member's guest
+  had then, its memory less its balloon, or nothing for one whose balloon
+  could not be read; what its guest used, its total less its available
+  memory from the balloon statistics the poll read, or nothing when the
+  guest reports none or its report is stale by the squeeze's own rule
+  (`squeeze.GuestInUse`); and when its VM was last killed whole, from the
+  VM list the poll takes anyway. `NodeService.MemoryPoolUsage` answers
+  that, and since when each member's balloon has been given up, so the
+  apiserver's `MemoryPoolUsage` (`memory-pool.md`) asks no VM anything and
+  adds no poll. A poll that fails keeps nothing, so the last read ages: it
+  is answered while it is at most three calm polls old (15 s by default),
+  with when it was read, and then not at all, as for a pool not polled
+  yet; the apiserver counts such a node unread. A pool the node no longer
+  runs is forgotten at the next poll.
 
 The balloon was measured on a testbed (CH v53, 2026-11): a 2 GiB
 container guest with 1.5 GiB of page cache gave it back to a balloon

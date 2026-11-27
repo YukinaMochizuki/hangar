@@ -10,6 +10,8 @@ import { ArrowRight, Plus } from "lucide-react";
 import { ChassisArt } from "@/components/chassis-art";
 import { CliSetupCard } from "@/components/cli-setup";
 import { PageBanner } from "@/components/notice";
+import { MemoryText } from "@/components/machine-memory";
+import { PoolCard } from "@/components/pool-card";
 import { EditLimitsButton } from "@/components/project-limits-dialog";
 import { computeTiles, OtherLimits, otherTiles, QuotaTiles } from "@/components/quota";
 import { usePoolTile } from "@/lib/memory-pool";
@@ -45,7 +47,7 @@ function MachineRow({ m, project }: { m: MachineView; project: string }) {
         <span className="hidden items-center gap-2 text-muted md:flex">
           {size && <SizeBadge size={size.label} />}
           <span className="tabular">
-            {formatNumber(m.cpu)} vCPU · {formatNumber(m.memoryGi)} GiB
+            {formatNumber(m.cpu)} vCPU · <MemoryText m={m} />
           </span>
         </span>
         <span className="hidden text-right text-[12px] text-subtle md:block">{m.kind === "Container" ? "Container" : "VM"}</span>
@@ -283,6 +285,7 @@ export function Overview() {
       </div>
       <div className="space-y-5 px-4 pb-10 md:px-8">
         <QuotaTiles tiles={computeTiles(p?.status?.limits, p?.status?.usage)} loading={q.isPending} pool={pool} cpuPool={cpuPool} />
+        <PoolCard tenant={p?.spec?.tenant ?? ""} project={project} enabled={!!pool} />
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0 space-y-5">
             <MachineTable project={project} />
