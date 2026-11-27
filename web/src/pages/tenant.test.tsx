@@ -287,6 +287,7 @@ describe("TenantOverview's memory with a pool", () => {
     const a = api({ pool: { percent: 200, ceiling: "11Gi" } });
     render(<TenantOverview />, { wrapper: withApi(a, { kind: "tenant", name: "acme" }) });
     const card = await screen.findByLabelText("Memory pool");
+    await waitFor(() => expect(within(card).getByText("api")).toBeTruthy());
     expect(within(card).getByText("api").closest("a")?.getAttribute("href")).toBe("/projects/acme-web/containers/api");
     // The tiles' row, then the card.
     expect(card.previousElementSibling?.className).toContain("lg:grid-cols-4");

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
-// The Overview's memory pool card: who holds the pool now, in order, marked,
+// The Overview's memory pool card: who uses the pool now, in order, marked,
 // muted where the caller reads no further; its card on hover, focus and tap;
-// and nothing at all until the first answer.
+// its place held while the first answer is pending; and an answer not of
+// now shown as such.
 
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
@@ -15,10 +16,10 @@ import {
 } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_capability_pb";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PoolCard } from "@/components/pool-card";
-import { poolRefetchMs } from "@/lib/memory-pool";
-import { fakeApi, never, withApi } from "@/test/harness";
+import { poolDropMs, poolRefetchMs } from "@/lib/memory-pool";
+import { fakeApi, withApi } from "@/test/harness";
 
 const navigated: string[] = [];
 vi.mock("@tanstack/react-router", async (orig) => ({
@@ -235,13 +236,35 @@ describe("the pool card", () => {
     expect(tip).not.toMatch(/in use|holds/);
   });
 
-  it("shows nothing while the first answer is pending, when it fails, for a tenant with no pool, or while not asked", async () => {
-    for (const answer of [() => never<MemoryPoolUsageResponse>(), () => Promise.reject(new ConnectError("no", Code.Unavailable)), () => create(MemoryPoolUsageResponseSchema, {})]) {
-      const a = api(answer);
+  it("holds its place while the first answer is pending, as tall as the card and with no words, and shows nothing when it fails, for a tenant with no pool, or while not asked", async () => {
+    let answer!: (r: MemoryPoolUsageResponse) => void;
+    const pending = new Promise<MemoryPoolUsageResponse>((resolve) => (answer = resolve));
+    render(<PoolCard tenant="acme" />, { wrapper: withApi(api(() => pending)) });
+    const held = await screen.findByLabelText("Memory pool");
+    expect(held.getAttribute("aria-busy")).toBe("true");
+    // Its lines are the card's own, unseen, and a blank track as tall as the strip's.
+    const lines = [...held.children] as HTMLElement[];
+    expect(lines).toHaveLength(3);
+    expect(lines[0].className).toContain("invisible");
+    expect(lines[0].textContent).toContain("reserved");
+    expect(screen.getByTestId("pool-track-placeholder").className).toContain("h-6");
+    expect(lines[2].className).toContain("invisible");
+    for (const text of [...held.querySelectorAll("*")].filter((el) => el.childNodes.length && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim())))
+      expect(text.closest(".invisible")).toBeTruthy();
+    const heldClass = held.className;
+    await act(async () => answer(acme()));
+    const card = await screen.findByLabelText("Memory pool");
+    await waitFor(() => expect(card.hasAttribute("aria-busy")).toBe(false));
+    // The same box, the same lines: the legend, the strip as tall, the scale.
+    expect(card.className).toBe(heldClass);
+    expect(screen.getByTestId("pool-track").className).toContain("h-6");
+    cleanup();
+
+    for (const fails of [() => Promise.reject(new ConnectError("no", Code.Unavailable)), () => create(MemoryPoolUsageResponseSchema, {})]) {
+      const a = api(fails);
       const { container } = render(<PoolCard tenant="acme" />, { wrapper: withApi(a) });
       await waitFor(() => expect(a.calls).toContain("MemoryPoolUsage"));
-      await act(async () => {});
-      expect(container.innerHTML).toBe("");
+      await waitFor(() => expect(container.innerHTML).toBe(""));
       cleanup();
     }
     const a = api(() => acme());
@@ -249,6 +272,56 @@ describe("the pool card", () => {
     await act(async () => {});
     expect(a.calls).toEqual([]);
     expect(container.innerHTML).toBe("");
+  });
+
+  it("dims the strip and says it is not current when its nodes' read is old, or a node was not read, and not otherwise", async () => {
+    const strip = () => screen.getByTestId("pool-track").parentElement!;
+    const cases: [string, MemoryPoolUsageResponse, boolean][] = [
+      ["a read of now", acme(), true],
+      ["a read a minute old", acme({ sampleTime: timestampFromDate(new Date(Date.now() - 60_000)) }), false],
+      ["a node unread", acme({ nodesUnread: 1 }), false],
+      ["machines and no read", acme({ sampleTime: undefined }), false],
+    ];
+    for (const [what, answer, current] of cases) {
+      render(<PoolCard tenant="acme" />, { wrapper: withApi(api(() => answer)) });
+      await waitFor(() => expect(segments()).toHaveLength(4));
+      expect(screen.queryByText(/not current/) !== null, what).toBe(!current);
+      expect(strip().className.includes("opacity-50"), what).toBe(!current);
+      cleanup();
+    }
+  });
+
+  it("shows its last answer as not current while asking again fails, and goes once it has failed for a while", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let failing = false;
+    const a = api(() => (failing ? Promise.reject(new ConnectError("no", Code.Unavailable)) : acme({ sampleTime: timestampFromDate(new Date()) })));
+    const { container } = render(<PoolCard tenant="acme" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(segments()).toHaveLength(4));
+    expect(screen.queryByText(/not current/)).toBeNull();
+    failing = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(poolRefetchMs + 100);
+    });
+    await waitFor(() => expect(screen.getByText(/not current/)).toBeTruthy());
+    expect(segments()).toHaveLength(4);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(poolDropMs);
+    });
+    await waitFor(() => expect(container.innerHTML).toBe(""));
+  });
+
+  it("pins a tapped card above the card's legend and strip, not over them", async () => {
+    render(<PoolCard tenant="acme" />, { wrapper: withApi(api(() => acme())) });
+    await waitFor(() => expect(segments()).toHaveLength(4));
+    fireEvent.pointerDown(segment("web"), { pointerType: "touch" });
+    fireEvent.click(segment("web"), { detail: 1 });
+    const tip = screen.getByRole("tooltip");
+    // Placed from the box that holds the legend too: on a narrow screen its
+    // bottom is past that box's top, above the legend.
+    expect(tip.className).toContain("max-sm:bottom-[calc(100%+16px)]");
+    expect(tip.className).toContain("max-sm:top-auto");
+    expect(tip.parentElement!.textContent).toContain("reserved");
+    expect(tip.parentElement!.contains(screen.getByTestId("pool-track"))).toBe(true);
   });
 
   it("asks again every 10 s", async () => {
@@ -262,5 +335,61 @@ describe("the pool card", () => {
       await vi.advanceTimersByTimeAsync(poolRefetchMs + 100);
     });
     expect(a.calls.length).toBeGreaterThan(before);
+  });
+
+  describe("on a narrow screen with many machines", () => {
+    const own = Array.from({ length: 15 }, (_, i) => machine("web", `m${String(i + 1).padStart(2, "0")}`, 2, 0.5, 1, { inUseBytes: gi(1.6 - i * 0.1) }));
+    const many = () => acme({ machines: own, other: { memoryBytes: 2n * GiB, reservedBytes: GiB / 2n, currentBytes: GiB, inUseBytes: GiB } });
+    /** A box's width as laid out: the track 300 px, the strip's own box 326, each segment 26 px a 28 px step apart. */
+    const matchMedia = window.matchMedia;
+    beforeEach(() => {
+      window.matchMedia = ((q: string) => ({ matches: true, media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+      Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+        configurable: true,
+        get(this: HTMLElement) {
+          if (this.dataset.testid === "pool-track") return 300;
+          if (this.querySelector(":scope > [data-current], :scope > div > [data-testid=pool-track]")) return 326;
+          return 0;
+        },
+      });
+      Object.defineProperty(HTMLElement.prototype, "offsetLeft", {
+        configurable: true,
+        get(this: HTMLElement) {
+          const all = [...document.querySelectorAll("[data-segment]")];
+          return Math.max(all.indexOf(this), 0) * 28 + 2;
+        },
+      });
+      Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, get: () => 26 });
+    });
+    afterEach(() => {
+      window.matchMedia = matchMedia;
+      for (const k of ["clientWidth", "offsetLeft", "offsetWidth"]) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k];
+    });
+
+    it("keeps what fits at 26 px each, the smallest as one +N piece before the other projects'", async () => {
+      render(<PoolCard tenant="acme" project="web" />, { wrapper: withApi(api(many)) });
+      // (300 - 2) / 28: ten fit; eight machines, +7, and the other projects.
+      await waitFor(() => expect(segments()).toHaveLength(10));
+      const keys = segments().map((s) => s.getAttribute("data-segment"));
+      expect(keys.slice(0, 8)).toEqual(own.slice(0, 8).map((m) => `web/Container/${m.name}`));
+      expect(keys.slice(8)).toEqual(["more", "other"]);
+      const more = segments()[8];
+      expect(more.textContent).toBe("+7");
+      fireEvent.pointerEnter(more, { pointerType: "mouse" });
+      expect(screen.getByRole("tooltip").textContent).toContain("7 more machines");
+      expect(screen.getByRole("tooltip").textContent).toContain("m09, m10");
+    });
+
+    it("places the card from its segment as drawn, held inside the strip", async () => {
+      render(<PoolCard tenant="acme" project="web" />, { wrapper: withApi(api(many)) });
+      await waitFor(() => expect(segments()).toHaveLength(10));
+      // The sixth segment's middle is 5 * 28 + 2 + 13 = 155: the card's left 155 - 130.
+      fireEvent.pointerEnter(segments()[5], { pointerType: "mouse" });
+      await waitFor(() => expect(screen.getByRole("tooltip").style.left).toBe("25px"));
+      // The last, other's, would run past the strip's 326 px: held at 326 - 260.
+      fireEvent.pointerLeave(segments()[5], { pointerType: "mouse" });
+      fireEvent.pointerEnter(segments()[9], { pointerType: "mouse" });
+      await waitFor(() => expect(screen.getByRole("tooltip").style.left).toBe("66px"));
+    });
   });
 });

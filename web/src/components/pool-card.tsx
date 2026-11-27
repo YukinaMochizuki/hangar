@@ -1,26 +1,51 @@
-// The Overview's memory pool card (docs/decisions/console-design.md, "Memory
-// pools"): who uses the tenant's pool now. Its scale is the pool, the plan's
-// memory; each running machine is a segment as long as what its guest uses,
-// up to its reservation solid and above it a lighter fill; what no guest
-// needs now is the bare track. On a project's Overview the other projects'
-// machines are one muted, unnamed segment. A machine stopped for memory, or
-// whose balloon does not follow, is tinted and marked. Hover or focus opens a
-// machine's card, a click leads to its page; a tap pins the card with its name
-// as the link.
+// The Overviews' memory pool card: who uses the tenant's pool now, as
+// docs/decisions/console-design.md ("Memory pools") says.
 
 import { Link } from "@tanstack/react-router";
 import { Ban, ChevronRight, TriangleAlert } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { FittingText } from "@/components/fitting-text";
 import { KilledIcon, StuckIcon } from "@/components/machine-memory";
 import { Card, StatusDot, phaseLabel } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { ago, machinePath } from "@/lib/machines";
-import { usePoolOccupancy, type PoolEntry, type PoolOccupancy } from "@/lib/memory-pool";
+import { usePoolRead, type PoolEntry, type PoolOccupancy } from "@/lib/memory-pool";
 import { formatNumber } from "@/lib/quantity";
 
-/** A segment: one machine, or other projects' machines together, muted and unnamed; its sizes in GiB. */
-type Segment = { key: string; e?: PoolEntry; reservedGi: number; lengthGi: number };
+/**
+ * A segment: one machine; the smallest of the caller's machines together
+ * where a narrow strip has no room for each (group); or other projects'
+ * machines together, muted and unnamed. Its sizes in GiB.
+ */
+type Segment = { key: string; e?: PoolEntry; group?: PoolEntry[]; reservedGi: number; lengthGi: number };
+
+/** The least width of a segment on a narrow screen, in px, and the gap between two. */
+const minSegmentPx = 26;
+const segmentGapPx = 2;
+
+/**
+ * The segments as a strip of trackPx holds them on a narrow screen, where
+ * each is at least minSegmentPx wide: past what fits, the smallest of the
+ * caller's machines, at the end of its own, become one "+N" piece before
+ * the other projects'. trackPx zero, unknown, groups nothing.
+ */
+export function fitSegments(segments: Segment[], trackPx: number): Segment[] {
+  if (trackPx <= 0) return segments;
+  // The track's padding is a gap wide on each side.
+  const fits = Math.max(Math.floor((trackPx - segmentGapPx) / (minSegmentPx + segmentGapPx)), 2);
+  if (segments.length <= fits) return segments;
+  const other = segments.filter((x) => !x.e);
+  const own = segments.filter((x) => x.e);
+  const keep = Math.max(fits - 1 - other.length, 0);
+  const grouped = own.slice(keep);
+  const group: Segment = {
+    key: "more",
+    group: grouped.map((x) => x.e!),
+    reservedGi: grouped.reduce((sum, x) => sum + x.reservedGi, 0),
+    lengthGi: grouped.reduce((sum, x) => sum + x.lengthGi, 0),
+  };
+  return [...own.slice(0, keep), group, ...other];
+}
 
 /** Below this much free, in GiB, the pool reads as full. */
 const fullBelowGi = 1 / 8;
@@ -145,6 +170,16 @@ function MemoryLine({ e }: { e: PoolEntry }) {
 /** A segment's card: the machine's name (a link when pinned), kind, project, state, memory and problem; or the other projects' total. */
 function SegmentCard({ s, pinned }: { s: Segment; pinned: boolean }) {
   const e = s.e;
+  if (s.group) {
+    return (
+      <div className="text-[12.5px]">
+        <div>
+          <span className="font-medium">{s.group.length} more machines</span> · {figures(`${gib(s.lengthGi)} in use`)}
+        </div>
+        <div className="mt-1 line-clamp-3 text-[11.5px] text-muted">{s.group.map((g) => g.name).join(", ")}</div>
+      </div>
+    );
+  }
   if (!e) {
     return (
       <div className="text-[12.5px]">
@@ -194,6 +229,7 @@ function SegmentCard({ s, pinned }: { s: Segment; pinned: boolean }) {
 
 /** What a segment is called to a screen reader: the machine and its state, or the other projects. */
 function segmentLabel(s: Segment): string {
+  if (s.group) return `${s.group.length} more machines, ${gib(s.lengthGi)} in use`;
   if (!s.e) return `Other projects, ${gib(s.lengthGi)} in use`;
   const state = s.e.killedAt ? ", stopped for memory" : s.e.stuckSince ? ", not sharing memory" : "";
   return `${s.e.name}${state}${s.e.inUseGi !== undefined ? `, ${gib(s.e.inUseGi)} in use` : ""}`;
@@ -202,6 +238,7 @@ function segmentLabel(s: Segment): string {
 /** The fills of a segment's reserved and shared parts: a marked one's take a little of its state's colour. */
 function fills(s: Segment): { reserved?: CSSProperties; shared?: CSSProperties; reservedClass: string; sharedClass: string } {
   const mark = markOf(s.e);
+  if (s.group) return { reservedClass: "bg-foreground/60", sharedClass: "bg-foreground/25" };
   if (!s.e) return { reservedClass: "bg-foreground/25", sharedClass: "bg-foreground/10" };
   if (!mark) return { reservedClass: "bg-foreground/75", sharedClass: "bg-foreground/30" };
   const c = markColour(mark);
@@ -213,21 +250,70 @@ function fills(s: Segment): { reserved?: CSSProperties; shared?: CSSProperties; 
   };
 }
 
-/** Where a segment's middle sits, as a share of the scale, for the card under it. */
-function middleOf(segments: Segment[], s: Segment, scaleGi: number): number {
-  let at = 0;
-  for (const x of segments) {
-    if (x === s) return Math.min((at + x.lengthGi / 2) / scaleGi, 1);
-    at += x.lengthGi;
-  }
-  return 0;
+/** Whether the screen is narrow (under Tailwind's sm), where segments keep a least width and the pinned card opens above. */
+function useNarrow(): boolean {
+  const query = "(max-width: 639px)";
+  const media = typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(query) : undefined;
+  const [narrow, setNarrow] = useState(media?.matches ?? false);
+  useEffect(() => {
+    if (!media) return;
+    const change = () => setNarrow(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, [media]);
+  return narrow;
 }
 
-/** The strip and its card, for a pool's occupancy; project set, that project's machines named and the rest muted. */
+/** The card's first line: "Memory", "not current" when the answer is not of now, and the legend. */
+function Legend({ current }: { current: boolean }) {
+  return (
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+      <span className="text-[12px] text-muted">
+        Memory
+        {!current && <span className="text-pending"> · not current</span>}
+      </span>
+      <span className="flex items-center gap-3 text-[11px] text-subtle">
+        <span className="flex items-center gap-1.5">
+          <Swatch kind="reserved" />
+          reserved
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Swatch kind="shared" />
+          shared
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Swatch kind="free" />
+          free
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The legend, the strip and its card, for a pool's occupancy; project set,
+ * that project's machines named and the rest muted. Not current, the strip
+ * is dimmed and the legend says so.
+ */
 export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; project?: string }) {
-  const segments = poolSegments(occupancy, project);
+  const narrow = useNarrow();
+  const track = useRef<HTMLDivElement>(null);
+  const [trackPx, setTrackPx] = useState(0);
+  useLayoutEffect(() => {
+    const el = track.current;
+    if (!el) return;
+    setTrackPx(el.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setTrackPx(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const all = poolSegments(occupancy, project);
+  const segments = narrow ? fitSegments(all, trackPx) : all;
   const [open, setOpen] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
+  // Where the open card goes, from its segment as drawn: left, and below the strip.
+  const [place, setPlace] = useState({ left: 0, top: 0 });
   // The pointer of the last press: a mouse's click leads on, a touch's pins the card.
   const pointer = useRef("mouse");
   const root = useRef<HTMLDivElement>(null);
@@ -245,11 +331,19 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
     return () => document.removeEventListener("pointerdown", close, true);
   }, [pinned]);
 
+  const openSegment = segments.find((s) => s.key === open);
+  useLayoutEffect(() => {
+    const r = root.current;
+    const el = open ? r?.querySelector<HTMLElement>(`[data-segment="${CSS.escape(open)}"]`) : null;
+    if (!r || !el || !track.current) return;
+    const middle = el.offsetLeft + el.offsetWidth / 2;
+    const left = Math.max(0, Math.min(middle - cardWidth / 2, r.clientWidth - cardWidth));
+    setPlace({ left, top: track.current.offsetTop + track.current.offsetHeight + 8 });
+  }, [open, segments.length, trackPx]);
+
   const used = segments.reduce((sum, s) => sum + s.lengthGi, 0);
   const freeGi = Math.max(0, occupancy.sizeGi - used);
   const full = freeGi < fullBelowGi;
-  const scaleGi = Math.max(occupancy.sizeGi, used) || 1;
-  const openSegment = segments.find((s) => s.key === open);
 
   const handlers = (s: Segment) => ({
     onPointerEnter: (ev: React.PointerEvent) => ev.pointerType === "mouse" && !pinned && setOpen(s.key),
@@ -271,62 +365,69 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
 
   return (
     <div ref={root} className="relative">
-      <div
-        data-testid="pool-track"
-        data-full={full || undefined}
-        className={cn("flex h-6 gap-[2px] overflow-hidden rounded-[3px] bg-surface-2 p-[2px]", full ? "ring-2 ring-foreground/80" : "ring-1 ring-border-strong")}
-      >
-        {segments.map((s) => {
-          const lit = open === null || open === s.key;
-          const reservedPart = s.lengthGi > 0 ? s.reservedGi / s.lengthGi : 1;
-          const f = fills(s);
-          const label = (onDark: boolean) => (s.e ? <SegmentLabel name={s.e.name} mark={markOf(s.e)} onDark={onDark} /> : null);
-          const className = cn(
-            "relative flex min-w-0 cursor-pointer overflow-hidden rounded-[2px] outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-accent max-sm:min-w-[26px]",
-            !lit && "opacity-35",
-          );
-          const body = (
-            <>
-              <span
-                className={cn("@container flex h-full shrink-0 items-center overflow-hidden px-1 text-[10.5px] text-surface", f.reservedClass)}
-                style={{ width: `${reservedPart * 100}%`, ...f.reserved }}
-              >
-                {reservedPart > 0.55 && label(true)}
-              </span>
-              {reservedPart < 1 && (
-                <span className={cn("@container flex h-full flex-1 items-center overflow-hidden px-1 text-[10.5px] text-foreground", f.sharedClass)} style={f.shared}>
-                  {reservedPart <= 0.55 && label(false)}
+      <Legend current={occupancy.current} />
+      <div className={cn(!occupancy.current && "opacity-50")} data-current={occupancy.current || undefined}>
+        <div
+          ref={track}
+          data-testid="pool-track"
+          data-full={full || undefined}
+          className={cn("flex h-6 gap-[2px] overflow-hidden rounded-[3px] bg-surface-2 p-[2px]", full ? "ring-2 ring-foreground/80" : "ring-1 ring-border-strong")}
+        >
+          {segments.map((s) => {
+            const lit = open === null || open === s.key;
+            const reservedPart = s.lengthGi > 0 ? s.reservedGi / s.lengthGi : 1;
+            const f = fills(s);
+            const label = (onDark: boolean) =>
+              s.e ? (
+                <SegmentLabel name={s.e.name} mark={markOf(s.e)} onDark={onDark} />
+              ) : s.group ? (
+                <span className="w-full truncate text-center leading-[14px]">+{s.group.length}</span>
+              ) : null;
+            const className = cn(
+              "relative flex min-w-0 cursor-pointer overflow-hidden rounded-[2px] outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-accent max-sm:min-w-[26px]",
+              !lit && "opacity-35",
+            );
+            const body = (
+              <>
+                <span
+                  className={cn("@container flex h-full shrink-0 items-center overflow-hidden px-1 text-[10.5px] text-surface", f.reservedClass)}
+                  style={{ width: `${reservedPart * 100}%`, ...f.reserved }}
+                >
+                  {reservedPart > 0.55 && label(true)}
                 </span>
-              )}
-            </>
-          );
-          const common = { "aria-label": segmentLabel(s), "data-segment": s.key, className, style: { flex: `${s.lengthGi} 1 0` }, ...handlers(s) };
-          return s.e ? (
-            <Link key={s.key} to={machinePath(s.e.kind)} params={{ project: s.e.project, name: s.e.name }} {...common}>
-              {body}
-            </Link>
-          ) : (
-            <button key={s.key} type="button" {...common}>
-              {body}
-            </button>
-          );
-        })}
-        {freeGi > 0 && <span className="min-w-0" style={{ flex: `${freeGi} 1 0` }} />}
-      </div>
-      <div className="mt-1 flex justify-between font-mono text-[10.5px] text-subtle tabular">
-        {/* What is in use, until it is all of it: then only the pool's size, in ink. */}
-        <span>{!full && gib(used)}</span>
-        <span className={cn(full && "font-medium text-foreground")}>{gib(occupancy.sizeGi)}</span>
+                {reservedPart < 1 && (
+                  <span className={cn("@container flex h-full flex-1 items-center overflow-hidden px-1 text-[10.5px] text-foreground", f.sharedClass)} style={f.shared}>
+                    {reservedPart <= 0.55 && label(false)}
+                  </span>
+                )}
+              </>
+            );
+            const common = { "aria-label": segmentLabel(s), "data-segment": s.key, className, style: { flex: `${s.lengthGi} 1 0` }, ...handlers(s) };
+            return s.e ? (
+              <Link key={s.key} to={machinePath(s.e.kind)} params={{ project: s.e.project, name: s.e.name }} {...common}>
+                {body}
+              </Link>
+            ) : (
+              <button key={s.key} type="button" {...common}>
+                {body}
+              </button>
+            );
+          })}
+          {freeGi > 0 && <span className="min-w-0" style={{ flex: `${freeGi} 1 0` }} />}
+        </div>
+        <div className="mt-1 flex justify-between font-mono text-[10.5px] text-subtle tabular">
+          {/* What is in use, until it is all of it: then only the pool's size, in ink. */}
+          <span>{!full && gib(used)}</span>
+          <span className={cn(full && "font-medium text-foreground")}>{gib(occupancy.sizeGi)}</span>
+        </div>
       </div>
       {openSegment && (
         <div
           role="tooltip"
-          // Under the strip; on a narrow screen above it, so the strip stays in sight.
-          className="absolute top-8 z-20 rounded-lg border bg-surface px-3 py-2.5 shadow-lg max-sm:bottom-8 max-sm:top-auto"
-          style={{
-            width: cardWidth,
-            left: `clamp(0px, calc(${middleOf(segments, openSegment, scaleGi) * 100}% - ${cardWidth / 2}px), calc(100% - ${cardWidth}px))`,
-          }}
+          // Under the strip; on a narrow screen wholly above the card's
+          // legend and strip, so both stay in sight under a finger.
+          className="absolute top-[var(--pool-card-top)] z-20 rounded-lg border bg-surface px-3 py-2.5 shadow-lg max-sm:top-auto max-sm:bottom-[calc(100%+16px)]"
+          style={{ width: cardWidth, left: place.left, ["--pool-card-top" as string]: `${place.top}px` }}
           onPointerEnter={(ev) => ev.pointerType === "mouse" && setOpen(openSegment.key)}
           onPointerLeave={(ev) => ev.pointerType === "mouse" && !pinned && setOpen(null)}
         >
@@ -339,33 +440,31 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
 
 /**
  * The card on a tenant's Overview, or a project's (project set), right under
- * the tiles: only for a tenant with a memory pool, asked of its nodes every
- * 10 s, and nothing at all while the first answer is pending or failed, so
- * nothing moves once it comes.
+ * the tiles, for a tenant the page knows has a memory pool (enabled). Until
+ * its first answer it holds its place as a blank card of the same height;
+ * it goes only when that answer fails, the tenant turns out to have no pool,
+ * or its asks keep failing (usePoolRead).
  */
 export function PoolCard({ tenant, project, enabled = true }: { tenant: string; project?: string; enabled?: boolean }) {
-  const occupancy = usePoolOccupancy(tenant, enabled);
-  if (!occupancy) return null;
+  const read = usePoolRead(tenant, enabled);
+  if (!read || read.state === "failed" || read.state === "none") return null;
+  if (read.state === "pending") {
+    return (
+      <Card className="px-4 pb-3 pt-3" aria-label="Memory pool" aria-busy data-loading>
+        {/* The same lines as the card's, unseen, so it is as tall. */}
+        <div aria-hidden className="invisible">
+          <Legend current />
+        </div>
+        <div aria-hidden data-testid="pool-track-placeholder" className="h-6 animate-pulse rounded-[3px] bg-surface-2 ring-1 ring-border-strong" />
+        <div aria-hidden className="invisible mt-1 font-mono text-[10.5px] tabular">
+          0 GiB
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card className="px-4 pb-3 pt-3" aria-label="Memory pool">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-        <span className="text-[12px] text-muted">Memory</span>
-        <span className="flex items-center gap-3 text-[11px] text-subtle">
-          <span className="flex items-center gap-1.5">
-            <Swatch kind="reserved" />
-            reserved
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Swatch kind="shared" />
-            shared
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Swatch kind="free" />
-            free
-          </span>
-        </span>
-      </div>
-      <PoolStrip occupancy={occupancy} project={project} />
+      <PoolStrip occupancy={read.occupancy} project={project} />
     </Card>
   );
 }

@@ -4,6 +4,7 @@
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { skipToken, useQuery } from "@connectrpc/connect-query";
+import { useEffect, useState } from "react";
 import type { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantCapabilityService, type MemoryPoolUsageResponse } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_capability_pb";
@@ -147,14 +148,29 @@ export type PoolEntry = {
  */
 export type PoolTotal = { memoryGi: number; reservedGi: number; nowGi: number; inUseGi: number };
 
-/** Who holds a tenant's pool now: its size, the machines the caller reads, and the rest summed. */
-export type PoolOccupancy = { sizeGi: number; entries: PoolEntry[]; other?: PoolTotal };
+/**
+ * Who uses a tenant's pool now: its size, the machines the caller reads, and
+ * the rest summed; current says the answer is of now: its nodes read the
+ * pool within poolStaleMs, each of them was read, and the last ask did not
+ * fail.
+ */
+export type PoolOccupancy = { sizeGi: number; entries: PoolEntry[]; other?: PoolTotal; current: boolean };
 
 const bytesGi = (b: bigint) => Number(b) / 1024 ** 3;
 
-/** The pool's occupancy from MemoryPoolUsage's answer at now; undefined for a tenant with no pool. */
+/** How old the nodes' read of a pool may be and still be shown as now. */
+export const poolStaleMs = 30_000;
+
+/**
+ * The pool's occupancy from MemoryPoolUsage's answer at now; undefined for
+ * a tenant with no pool. An answer with machines but no read, or a node
+ * unread, or a read older than poolStaleMs, is not current.
+ */
 export function poolOccupancy(r: MemoryPoolUsageResponse, now = Date.now()): PoolOccupancy | undefined {
   if (r.sizeBytes === undefined) return undefined;
+  const sampled = r.sampleTime ? timestampDate(r.sampleTime).getTime() : undefined;
+  const read = sampled === undefined ? r.machines.length === 0 : now - sampled <= poolStaleMs;
+  const current = read && r.nodesUnread === 0;
   const entries: PoolEntry[] = [];
   for (const m of r.machines) {
     if (m.kind !== "Container" && m.kind !== "VirtualMachine") continue;
@@ -177,23 +193,44 @@ export function poolOccupancy(r: MemoryPoolUsageResponse, now = Date.now()): Poo
     sizeGi: bytesGi(r.sizeBytes),
     entries,
     other: o ? { memoryGi: bytesGi(o.memoryBytes), reservedGi: bytesGi(o.reservedBytes), nowGi: bytesGi(o.currentBytes), inUseGi: bytesGi(o.inUseBytes) } : undefined,
+    current,
   };
 }
 
 /** How often the pool card asks again: the nodes read their pools every few seconds. */
 export const poolRefetchMs = 10_000;
 
+/** How long after its last answer a pool whose asks keep failing is still shown, as not current. */
+export const poolDropMs = 120_000;
+
 /**
- * Who holds the tenant's pool now, asked of its nodes every poolRefetchMs
- * while enabled; undefined while the first answer is pending, when it
- * failed, and for a tenant with no pool.
+ * The pool card's read of the tenant's pool, asked of its nodes every
+ * poolRefetchMs while enabled: pending until the first answer; failed when
+ * that fails, or when every ask has failed for poolDropMs since the last
+ * answer, which is shown till then as not current; none for a tenant with
+ * no pool; undefined while not enabled.
  */
-export function usePoolOccupancy(tenant: string, enabled: boolean): PoolOccupancy | undefined {
+export type PoolRead = { state: "pending" } | { state: "failed" } | { state: "none" } | { state: "read"; occupancy: PoolOccupancy };
+
+export function usePoolRead(tenant: string, enabled: boolean): PoolRead | undefined {
   const q = useQuery(TenantCapabilityService.method.memoryPoolUsage, enabled && tenant ? { tenant } : skipToken, {
     refetchInterval: poolRefetchMs,
     retry: false,
   });
-  return q.data ? poolOccupancy(q.data) : undefined;
+  // The time judged against, kept current between answers; never before
+  // the last answer or failure.
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), poolRefetchMs / 2);
+    return () => clearInterval(id);
+  }, []);
+  if (!enabled || !tenant) return undefined;
+  if (q.isPending) return { state: "pending" };
+  const now = Math.max(tick, q.dataUpdatedAt, q.errorUpdatedAt);
+  if (!q.data || (q.isError && now - q.dataUpdatedAt > poolDropMs)) return { state: "failed" };
+  const occupancy = poolOccupancy(q.data, now);
+  if (!occupancy) return { state: "none" };
+  return { state: "read", occupancy: q.isError ? { ...occupancy, current: false } : occupancy };
 }
 
 /**

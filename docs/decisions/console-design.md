@@ -662,10 +662,16 @@ language; the plan's percent is never shown.
 - **The Overviews' pool card shows who uses the pool now**
   (`web/src/components/pool-card.tsx`), right under the tiles, on the
   tenant's Overview and a project's, for a pooled tenant only, from
-  `TenantCapabilityService.MemoryPoolUsage` every 10 s; it is not drawn
-  until the first answer comes, nor when it fails, so nothing below it
-  moves. One strip scaled to the pool's size: the Dedicated machines, then
-  the Shared ones by what they use, largest first, each as long as what its
+  `TenantCapabilityService.MemoryPoolUsage` every 10 s. Once the page knows
+  the tenant is pooled, from the tile's own read, the card holds its place
+  as a blank card of the same height until the first answer, so what is
+  below it does not move when that comes; it goes, and what is below moves
+  up, only when that answer fails or the tenant turns out to have no pool.
+  An answer not of now, its nodes' read older than 30 s, a node unread, or
+  the last ask failed, dims the strip and adds "not current" after
+  "Memory"; asks failing for two minutes past the last answer take the
+  card away. One strip scaled to the pool's size: the Dedicated machines,
+  then the Shared ones by what they use, largest first, each as long as what its
   guest uses (what it holds when the guest does not say, its reservation
   when its node cannot tell either), up to its reservation solid and above
   it a lighter plain fill, then the bare track: memory no guest needs now.
@@ -686,9 +692,14 @@ language; the plan's percent is never shown.
   · holds 2.75 GiB · 1–4 GiB", shorter when it does not fit, "Size from
   what it holds" or "Size from its reservation" under a segment drawn so,
   and its problem), the other segments dimmed; a click opens the machine.
-  A tap pins the card above the strip with the name as the link, and a
-  press anywhere else closes it and still reaches what it pressed. On a
-  narrow screen every segment is at least 26 px wide.
+  A machine's card opens under the strip, from where its segment is drawn
+  and kept within the strip's width. A tap pins it with the name as the
+  link, and a press anywhere else closes it and still reaches what it
+  pressed. On a narrow screen (under 640 px) the card opens wholly above
+  the legend and the strip, so a finger's card hides neither, and every
+  segment is at least 26 px wide: past as many as fit, the smallest of the
+  caller's own become one "+N" piece, whose card names them, before the
+  other projects'.
 - **A Shared machine's memory reads "1–4 GiB" in lists**, its reservation
   to its limit, "–4 GiB" in the lighter grey, in the container and VM lists
   and the project Overview's table, where a "Shared" badge stood before
