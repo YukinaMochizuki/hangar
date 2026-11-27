@@ -163,11 +163,13 @@ test-web: deps
 	pnpm --dir web lint
 	pnpm --dir web test
 
-# The host's alerting rules and their tests, and the Prometheus and
-# Alertmanager configurations deploy/host writes, by the promtool and amtool
-# pinned with the host's binaries in deploy/host/versions.env.
+# The host's alerting rules and their tests, the Prometheus and Alertmanager
+# configurations deploy/host writes, by the promtool and amtool pinned with
+# the host's binaries in deploy/host/versions.env, and the Loki and Alloy
+# configurations and Grafana dashboards, by the Loki and Alloy pinned there.
 test-monitoring:
 	tools/check-monitoring.sh
+	tools/check-logs.sh
 
 dev:
 	go run ./cmd/hangar-apiserver --auth-mode=dev

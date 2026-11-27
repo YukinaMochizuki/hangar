@@ -9,7 +9,8 @@ upgrades in a fixed window, a hangar release (the binaries, the guest kernel
 and the initramfs), `hangar-apiserver` and `hangar-node` as systemd
 services, the front door, `hangar-edge`, once it has its settings, and the
 host's monitoring: Prometheus, Alertmanager sending to Telegram, and their
-exporters. It is safe to re-run.
+exporters, and the platform's logs: Loki, Alloy and Grafana. It is safe to
+re-run.
 
 ## Before the first run
 
@@ -336,8 +337,8 @@ with `--release DIR`. `--only <step>` runs a single step
     /64, from which every machine interface gets its public IPv6 address,
     `--image-cache-high 20Gi` (what the container images no machine uses
     may keep, `docs/decisions/node-agent.md`), `--reserved-disk` the sum
-    of both quotas, Prometheus's dataset's quota (`MON_TSDB_QUOTA` in
-    `deploy/host/lib.sh`) and those 20 GiB, the bases of those images being on
+    of both quotas, Prometheus's and Loki's datasets' quotas (`MON_TSDB_QUOTA`
+    and `LOGS_LOKI_QUOTA` in `deploy/host/lib.sh`) and those 20 GiB, the bases of those images being on
     the pool, `--reserved-memory HANGAR_RESERVED_MEMORY` (the ARC cap
     plus the host's own overhead), `--reserved-cpu HANGAR_RESERVED_CPU`
     only when the host env file sets it (CPUs no VM runs on, kept for the
@@ -1180,6 +1181,66 @@ amtool --alertmanager.url=http://127.0.0.1:9093 alert add alertname=HangarTestAl
 With `severity=warning` instead it waits for the day's window. `verify.sh`
 checks the path from a rule to Alertmanager (Alertmanager has `Watchdog`),
 not Telegram itself.
+
+## The platform's logs
+
+The `logs` step runs three more services, as the monitoring step runs its
+own: each a system user of its name, sandboxed, on loopback alone, pinned in
+`deploy/host/versions.env`, a changed unit, configuration or binary
+restarting it and nothing else (`docs/decisions/monitoring.md`):
+
+| Service | Listens on | Does |
+|---|---|---|
+| `hangar-loki` | `127.0.0.1:3100` (gRPC `9095`) | Keeps the logs 90 days on `hangar/loki` (`/var/lib/hangar/loki`, quota 20G, its user's, 0700); its compactor deletes older ones |
+| `hangar-alloy` | `127.0.0.1:12345` | Reads the journal of `hangar-apiserver`, `hangar-node` and `hangar-edge`, never a VM's unit, and sends it to Loki labelled with the `unit` and the `node` (Alloy adds `job`, Loki `service_name`), never with what a line says. Where it has read to is in `/var/lib/hangar-alloy` |
+| `hangar-grafana` | `127.0.0.1:3000` | Shows Loki and Prometheus, both provisioned as datasources, and the dashboards of `deploy/host/monitoring/grafana/` (*API activity*). Its database is `/var/lib/hangar-grafana`; Grafana itself is `/opt/hangar/grafana-<version>` |
+
+The configuration is in `/etc/hangar/logs/`. Before writing it the step has
+the installed `loki` (`-verify-config`) and `alloy validate` check it, and
+refuses what they refuse. node_exporter watches the three units, so one not
+active alerts as the others do.
+
+The apiserver writes one access line to the journal per Connect call, as it
+ends: `msg=rpc`, the `procedure`, the `code`, `duration_ms`, `stream`, the
+`principal` and `principal_type`, the `project` and its `tenant`, and the
+`client_ip`. A call on a project or a tenant itself (`ProjectService`,
+`TenantService`) names it by its name. A call refused for its credentials
+has no principal, and its tenant only if the request named one; the
+dashboard shows these callers as `none`. Sign-in's calls
+(`SessionService`) carry their own credentials, so their lines have no
+principal either; sign-in's audit lines say who. The other HTTP routes
+(exec, console, tunnels, image uploads) write their own audit lines
+instead, which Loki gets too. Loki's dataset past 90% of its quota alerts
+as a warning (`LokiQuotaAlmostFull`): Loki keeps by age alone, and once
+the quota is full it takes no more lines while its unit stays active.
+
+**Grafana's password.** The step makes it once, at
+`/etc/hangar/grafana-admin-password` (root's, 0600), and Grafana sets it
+for `admin` when it makes its database, its first start. A new file does
+not change it after that: change it signed in to Grafana (*Profile >
+Change password*), then write the same to the file, which `verify.sh`
+signs in with.
+
+**Looking at it.** Forward the port, sign in as `admin` with the password
+(`sudo cat /etc/hangar/grafana-admin-password` on the host), and open
+*Dashboards > API activity*, or *Explore* with the Loki datasource for any
+query:
+
+```sh
+ssh -N -L 3000:127.0.0.1:3000 <host>
+```
+
+The access lines are `{unit="hangar-apiserver"} |= "msg=rpc" | logfmt | msg="rpc"`; for
+example, a tenant's calls per procedure over the last day:
+
+```logql
+sum by (procedure) (count_over_time({unit="hangar-apiserver"} |= "msg=rpc" | logfmt | msg="rpc" | tenant="<tenant>" [1d]))
+```
+
+On the host, `journalctl -fu hangar-apiserver -g 'msg=rpc'` follows the same
+lines without Loki. `verify.sh` checks that Loki has `hangar-apiserver`'s
+lines of the last 15 minutes, and that Grafana has both datasources and the
+dashboards.
 
 ## When the network step fails
 

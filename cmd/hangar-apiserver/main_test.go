@@ -189,7 +189,9 @@ func TestNoOtherListenerIsRoot(t *testing.T) {
 			}
 		})
 	}
-	if strings.Contains(l.log.String(), "local:") {
+	// A user may be named local:..., as one case above is; the access lines
+	// name him principal=user:local:....
+	if got := l.log.String(); strings.Contains(got, "principal=local:") || strings.Contains(got, "principal_type=local") {
 		t.Errorf("a principal of type local outside the admin socket:\n%s", l.log.String())
 	}
 }

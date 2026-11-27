@@ -142,11 +142,11 @@ mon_nvme_devices() {
 
 # mon_watched_units prints the units node_exporter reports, each of which
 # must be active: the platform's, as the other steps install them on this
-# host, and the monitoring stack's. Never a VM's (hangar-vm-*), whose name
-# carries the machine's uid.
+# host, the monitoring stack's and the logs step's. Never a VM's
+# (hangar-vm-*), whose name carries the machine's uid.
 mon_watched_units() {
 	local u
-	for u in $(services_units) "$EDGE_UNIT" "$FIREWALL_UNIT" $(mon_units); do
+	for u in $(services_units) "$EDGE_UNIT" "$FIREWALL_UNIT" $(mon_units) $(logs_units); do
 		[ "$u" != "$EDGE_UNIT" ] || services_edge_on || continue
 		printf '%s.service\n' "$u"
 	done
@@ -904,3 +904,8 @@ monitoring_verify() {
 		skip "alerts to Telegram" "the host env file sets no HANGAR_ALERTS_TELEGRAM_CHAT_ID: alerts reach no one"
 	fi
 }
+
+# The logs step's names, for the units node_exporter reports. Sourced last,
+# and not when that step is the one sourcing this.
+# shellcheck source=deploy/host/steps/92-logs.sh
+[ -n "${LOGS_SOURCED:-}" ] || . "$(dirname "${BASH_SOURCE[0]}")/92-logs.sh"

@@ -18,6 +18,9 @@ ROLLBACK_UNIT=hangar-netplan-rollback
 # services step counts it in what root disks may not take from the pool.
 # shellcheck disable=SC2034
 MON_TSDB_QUOTA=20G
+# The quota of Loki's dataset (the logs step's), here for the same reason.
+# shellcheck disable=SC2034
+LOGS_LOKI_QUOTA=20G
 # The host's settings, which bootstrap.sh and verify.sh read unless --env
 # names another file: its uplink, addresses, disks, quotas and Node name
 # (deploy/host/host.env.example lists them). It is kept by the operator, not

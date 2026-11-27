@@ -1,0 +1,248 @@
+{
+  "uid": "api-activity",
+  "title": "API activity",
+  "description": "hangar-apiserver's access lines, one per Connect call: who called, on which tenant and project, and how it ended (docs/decisions/monitoring.md).",
+  "tags": [
+    "hangar"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "principal",
+        "label": "Caller",
+        "type": "custom",
+        "query": "user,serviceToken,none,node,edge,local,system",
+        "multi": true,
+        "includeAll": false,
+        "current": {
+          "text": [
+            "user",
+            "serviceToken",
+            "none"
+          ],
+          "value": [
+            "user",
+            "serviceToken",
+            "none"
+          ]
+        },
+        "options": [],
+        "description": "none: a call refused for its credentials"
+      },
+      {
+        "name": "tenant",
+        "label": "Tenant (regex)",
+        "type": "textbox",
+        "query": ".*",
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        }
+      },
+      {
+        "name": "project",
+        "label": "Project (regex)",
+        "type": "textbox",
+        "query": ".*",
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Calls by tenant",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 80
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tenant) (count_over_time({unit=\"hangar-apiserver\"} |= \"msg=rpc\" | logfmt | msg=\"rpc\" | label_format principal_type=`{{ default \"none\" .principal_type }}`, tenant=`{{ default \"(none)\" .tenant }}`, project=`{{ default \"(none)\" .project }}` | principal_type=~\"$principal\" | tenant=~\"$tenant\" | project=~\"$project\" [$__auto]))",
+          "legendFormat": "{{tenant}}"
+        }
+      ],
+      "interval": "1m"
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Calls by project",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 80
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (project) (count_over_time({unit=\"hangar-apiserver\"} |= \"msg=rpc\" | logfmt | msg=\"rpc\" | label_format principal_type=`{{ default \"none\" .principal_type }}`, tenant=`{{ default \"(none)\" .tenant }}`, project=`{{ default \"(none)\" .project }}` | principal_type=~\"$principal\" | tenant=~\"$tenant\" | project=~\"$project\" [$__auto]))",
+          "legendFormat": "{{project}}"
+        }
+      ],
+      "interval": "1m"
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Failed calls by project and code",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 80
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (project, code) (count_over_time({unit=\"hangar-apiserver\"} |= \"msg=rpc\" | logfmt | msg=\"rpc\" | label_format principal_type=`{{ default \"none\" .principal_type }}`, tenant=`{{ default \"(none)\" .tenant }}`, project=`{{ default \"(none)\" .project }}` | principal_type=~\"$principal\" | tenant=~\"$tenant\" | project=~\"$project\" | code!=\"ok\" [$__auto]))",
+          "legendFormat": "{{project}} {{code}}"
+        }
+      ],
+      "interval": "1m"
+    },
+    {
+      "id": 4,
+      "type": "bargauge",
+      "title": "Calls by procedure in the range",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (procedure) (count_over_time({unit=\"hangar-apiserver\"} |= \"msg=rpc\" | logfmt | msg=\"rpc\" | label_format principal_type=`{{ default \"none\" .principal_type }}`, tenant=`{{ default \"(none)\" .tenant }}`, project=`{{ default \"(none)\" .project }}` | principal_type=~\"$principal\" | tenant=~\"$tenant\" | project=~\"$project\" [$__auto]))",
+          "legendFormat": "{{procedure}}"
+        }
+      ],
+      "interval": "1m",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Recent calls",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 12
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": false,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{unit=\"hangar-apiserver\"} |= \"msg=rpc\" | logfmt | msg=\"rpc\" | label_format principal_type=`{{ default \"none\" .principal_type }}`, tenant=`{{ default \"(none)\" .tenant }}`, project=`{{ default \"(none)\" .project }}` | principal_type=~\"$principal\" | tenant=~\"$tenant\" | project=~\"$project\" | line_format \"{{.tenant}}/{{.project}}  {{.principal_type}} {{.principal}}  {{.procedure}}  {{.code}}  {{.duration_ms}}ms\""
+        }
+      ]
+    }
+  ]
+}
