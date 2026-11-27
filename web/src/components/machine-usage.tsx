@@ -15,7 +15,19 @@ export type Usage = {
   memoryKind: "guest" | "host";
   /** What its memory pool leaves the guest now, its memory less its balloon; unset when its node cannot tell. */
   sizeNowBytes?: number;
+  /**
+   * Its tenant's CPU pool, when it is in one: the plan's CPUs it shares,
+   * and the share, 0 to 1, of the last hour they held it back, when known.
+   */
+  cpuPool?: { cpus: number; slowed?: number };
 };
+
+/** The line under a pooled machine's CPU plot: what it shares, and how often that slowed it. */
+export function cpuPoolLine(pool: { cpus: number; slowed?: number }): string {
+  const shares = `Shares your plan's ${formatNumber(pool.cpus)} CPUs with your other machines`;
+  const pct = pool.slowed === undefined ? 0 : Math.round(pool.slowed * 100);
+  return pct >= 1 ? `${shares} · slowed ${pct}% in the last hour` : `${shares}.`;
+}
 
 /** The memory's name, by what it counts. */
 export function memoryTitle(kind: Usage["memoryKind"]): string {
@@ -56,6 +68,7 @@ export function UsageCard({ usage, now, shared }: { usage: Usage; now?: Date; sh
     <Frame>
       <Section title="CPU" value={<SeriesValue series={usage.cpu} />}>
         <SeriesPlot title="CPU" series={usage.cpu} range="1h" now={now} axis="inside" />
+        {usage.cpuPool && <div className="mt-1.5 text-[11.5px] text-subtle">{cpuPoolLine(usage.cpuPool)}</div>}
       </Section>
       <Section
         title={memory}

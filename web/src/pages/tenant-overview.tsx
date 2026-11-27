@@ -11,6 +11,7 @@ import { ProjectLimitsDialog, useMaySetLimits } from "@/components/project-limit
 import { limitDims, limitValue, ownLimitCount, type LimitKey } from "@/lib/project-limits";
 import { OtherLimits, computeTiles, otherTiles, QuotaTiles } from "@/components/quota";
 import { usePoolTile } from "@/lib/memory-pool";
+import { useCpuPoolTile } from "@/lib/cpu-pool";
 import { Topbar, useTenantName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
 import { Button, Card, CardHeader, CopyButton } from "@/components/ui";
@@ -130,6 +131,7 @@ export function TenantOverview() {
   const q = useQuery(TenantService.method.getTenant, { name: tenant }, { refetchInterval: 15_000, retry: false });
   const t = q.data?.tenant;
   const pool = usePoolTile(tenant, t?.status?.limits, t?.status?.usage);
+  const cpuPool = useCpuPoolTile(tenant, t?.status?.limits, t?.status?.usage);
   const missing = !!q.error && isNotFound(q.error);
   const denied = !!q.error && isPermissionDenied(q.error);
   const hidden = missing || denied;
@@ -164,7 +166,7 @@ export function TenantOverview() {
         ) : q.error ? (
           <ErrorNotice error={q.error} title="The tenant did not load" onRetry={() => void q.refetch()} className="p-0" />
         ) : (
-          <QuotaTiles tiles={computeTiles(t?.status?.limits, t?.status?.usage)} loading={q.isPending} pool={pool} />
+          <QuotaTiles tiles={computeTiles(t?.status?.limits, t?.status?.usage)} loading={q.isPending} pool={pool} cpuPool={cpuPool} />
         )}
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0">

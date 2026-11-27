@@ -13,6 +13,7 @@ import { PageBanner } from "@/components/notice";
 import { EditLimitsButton } from "@/components/project-limits-dialog";
 import { computeTiles, OtherLimits, otherTiles, QuotaTiles } from "@/components/quota";
 import { usePoolTile } from "@/lib/memory-pool";
+import { useCpuPoolTile } from "@/lib/cpu-pool";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { buttonVariants, Card, CardEmpty, CardHeader, CopyButton, phaseLabel, SizeBadge, StatusDot } from "@/components/ui";
@@ -239,6 +240,7 @@ export function Overview() {
   const q = useQuery(ProjectService.method.getProject, { name: project }, { refetchInterval: 10_000 });
   const p = q.data?.project;
   const pool = usePoolTile(p?.spec?.tenant ?? "", p?.status?.limits, p?.status?.usage);
+  const cpuPool = useCpuPoolTile(p?.spec?.tenant ?? "", p?.status?.limits, p?.status?.usage);
 
   // Either answer means this member sees no project of that name.
   if (q.error && (isNotFound(q.error) || isPermissionDenied(q.error))) {
@@ -280,7 +282,7 @@ export function Overview() {
         </div>
       </div>
       <div className="space-y-5 px-4 pb-10 md:px-8">
-        <QuotaTiles tiles={computeTiles(p?.status?.limits, p?.status?.usage)} loading={q.isPending} pool={pool} />
+        <QuotaTiles tiles={computeTiles(p?.status?.limits, p?.status?.usage)} loading={q.isPending} pool={pool} cpuPool={cpuPool} />
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0 space-y-5">
             <MachineTable project={project} />

@@ -42,6 +42,14 @@ export function otherTiles(limits: Limits | undefined, usage: Usage | undefined,
 export type PoolTile = { planGi: number; ceilingGi: number; capGi: number };
 
 /**
+ * The vCPU tile's figures for a tenant whose machines share its CPUs
+ * (lib/cpu-pool.ts cpuPoolFigures): the plan's CPUs, its machines' vCPUs,
+ * what those may come to, and how often in the last hour the pool held them
+ * back, in percent, when known.
+ */
+export type CpuPoolTile = { planCPU: number; vcpus: number; capCPU: number; slowedPercent?: number };
+
+/**
  * The first of texts that fits the width it is given, measured: the longest
  * is drawn first, and the next while it overflows; a change of width starts
  * over. The last is cut short when even it does not fit.
@@ -106,12 +114,54 @@ function MemoryPoolTile({ pool }: { pool: PoolTile }) {
   );
 }
 
-export function QuotaTiles({ tiles, loading, pool }: { tiles: Tile[]; loading: boolean; pool?: PoolTile }) {
+/**
+ * The vCPU tile of a tenant whose machines share its CPUs as a pool
+ * (docs/decisions/cpu-pool.md): its machines' vCPUs against the plan's CPUs,
+ * which they may pass. A note beside the number says by how much, and how
+ * often the pool slowed them in the last hour, in the shortest words that
+ * fit, so the tile is no taller than its neighbours; the whole sentence is
+ * its title. The bar's colour follows the real cap, as the memory tile's.
+ */
+function CpuPoolQuotaTile({ pool }: { pool: CpuPoolTile }) {
+  const over = pool.vcpus - pool.planCPU;
+  const ratio = pool.capCPU > 0 ? pool.vcpus / pool.capCPU : 0;
+  const tone = ratio >= 1 ? "bg-fail" : ratio >= 0.8 ? "bg-pending" : "bg-foreground/70";
+  const o = formatNumber(over);
+  const slowed = pool.slowedPercent !== undefined && pool.slowedPercent >= 1 ? `slowed ${Math.round(pool.slowedPercent)}%` : undefined;
+  const notes = over > 0
+    ? slowed
+      ? [`${o} over plan · shared · ${slowed}`, `${o} over plan · ${slowed}`, `+${o} · ${slowed}`, slowed]
+      : [`${o} over plan · shared`, `+${o} shared`, `+${o}`]
+    : slowed ? [slowed] : [];
+  const cpus = formatNumber(pool.planCPU);
+  const title = slowed
+    ? `Your machines used all ${cpus} CPUs of your plan for ${Math.round(pool.slowedPercent ?? 0)}% of the last hour, so they ran slower.`
+    : over > 0 ? `Your machines share the ${cpus} CPUs of your plan.` : undefined;
+  return (
+    <Card className="px-4 py-3.5" title={title}>
+      <div className="text-[12px] text-muted">vCPU</div>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className="font-mono text-[22px] font-medium tabular tracking-tight">{formatNumber(pool.vcpus)}</span>
+        <span className="whitespace-nowrap font-mono text-[13px] text-subtle tabular">/ {cpus}</span>
+        {notes.length > 0 && (
+          <FittingText texts={notes} className="ml-1 min-w-0 truncate whitespace-nowrap text-[11.5px] text-pending" />
+        )}
+      </div>
+      <div className="mt-3 h-1 overflow-hidden rounded-full bg-surface-2">
+        <div className={cn("h-full rounded-full", tone)} style={{ width: `${pool.planCPU > 0 ? Math.min(pool.vcpus / pool.planCPU, 1) * 100 : 0}%` }} />
+      </div>
+    </Card>
+  );
+}
+
+export function QuotaTiles({ tiles, loading, pool, cpuPool }: { tiles: Tile[]; loading: boolean; pool?: PoolTile; cpuPool?: CpuPoolTile }) {
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {tiles.map((q) =>
         q.key === "memory" && pool && !loading ? (
           <MemoryPoolTile key={q.key} pool={pool} />
+        ) : q.key === "cpu" && cpuPool && !loading ? (
+          <CpuPoolQuotaTile key={q.key} pool={cpuPool} />
         ) : (
         <Card key={q.key} className="px-4 py-3.5">
           <div className="text-[12px] text-muted">{q.label}</div>

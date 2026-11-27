@@ -12,9 +12,11 @@ export type Over = { key: string; label: string; need: number; left: number; lim
  * What a machine, or a change to one, takes of each project limit. memoryGi
  * is what counts against the memory limit, its reservation in a pool;
  * ceilingGi, in a pool, its memory, which the machines asked to run hold
- * together up to memory_limit_percent of the limit.
+ * together up to memory_limit_percent of the limit. cpuPercent is how far
+ * the vCPUs may go past the cpu limit: the plan's cpu_limit_percent in a CPU
+ * pool (lib/cpu-pool.ts), 100 if unset.
  */
-export type Need = { machines: number; cpu: number; memoryGi: number; diskGi: number; ceilingGi?: number };
+export type Need = { machines: number; cpu: number; memoryGi: number; diskGi: number; ceilingGi?: number; cpuPercent?: number };
 
 /** The project limits the need would go past, from Project.status; a need of nothing passes whatever the usage. */
 export function useOverQuota(project: string) {
@@ -24,7 +26,7 @@ export function useOverQuota(project: string) {
     if (!st) return [];
     const checks = [
       { key: "machines", label: "machines", used: st.usage?.machines ?? 0, limit: st.limits?.machines, need: n.machines, unit: "" },
-      { key: "cpu", label: "vCPU", used: quantityCPU(st.usage?.cpu || "0"), limit: quantityCPU(st.limits?.cpu), need: n.cpu, unit: " vCPU" },
+      { key: "cpu", label: "vCPU", used: quantityCPU(st.usage?.cpu || "0"), limit: (quantityCPU(st.limits?.cpu) * Math.max(n.cpuPercent ?? 100, 100)) / 100, need: n.cpu, unit: " vCPU" },
       { key: "memory", label: "memory", used: quantityGiB(st.usage?.memory || "0"), limit: quantityGiB(st.limits?.memory), need: n.memoryGi, unit: " GiB" },
       { key: "disk", label: "disk", used: quantityGiB(st.usage?.disk || "0"), limit: quantityGiB(st.limits?.disk), need: n.diskGi, unit: " GiB" },
     ];

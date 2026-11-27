@@ -85,7 +85,8 @@ import {
   type Size,
 } from "@/lib/machine-sizes";
 import { isStale } from "@/lib/network-actions";
-import { useOverQuota } from "@/lib/over-quota";
+import { useOverQuota, type Need } from "@/lib/over-quota";
+import { useProjectCpuPool } from "@/lib/cpu-pool";
 import { formatNumber, parseQuantity, quantityCPU, quantityGiB, wholeGiB } from "@/lib/quantity";
 
 export type CreateKind = "container" | "vm";
@@ -291,7 +292,11 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const networks = useQuery(NetworkService.method.listNetworks, { project, pageSize: 1000 });
   const securityGroups = useQuery(SecurityGroupService.method.listSecurityGroups, { project, pageSize: 1000 });
   const existing = useMachines(project, kind === "container" ? "Container" : "VirtualMachine");
-  const overQuota = useOverQuota(project);
+  // In a CPU pool, the vCPUs may go past the cpu limit by the plan's percent
+  // (docs/decisions/cpu-pool.md).
+  const cpuPool = useProjectCpuPool(project);
+  const overProject = useOverQuota(project);
+  const overQuota = (n: Need) => overProject({ ...n, cpuPercent: cpuPool.pooled ? cpuPool.percent : 100 });
   const machineSizes = useMachineSizes();
   // The sizes offered: those a machine may have under the shape rules.
   const offered = machineSizes.sizes.filter(withinRules);

@@ -42,6 +42,8 @@ export function toUsage(r: UsageResponse, kind: MachineKind): Usage {
     memory: { unit: "bytes", ...(r.memoryLimitBytes > 0n ? { capacity: Number(r.memoryLimitBytes) } : {}), ...series(mem) },
     // What its pool leaves its guest now: its memory less its balloon, when the node can tell.
     ...(r.balloonBytes !== undefined && r.memoryLimitBytes > 0n ? { sizeNowBytes: Number(r.memoryLimitBytes - r.balloonBytes) } : {}),
+    // Its CPU pool's CPUs and how often in the last hour they held it back, when it is in one (docs/decisions/cpu-pool.md).
+    ...(r.cpuPoolMilliCpu !== undefined ? { cpuPool: { cpus: Number(r.cpuPoolMilliCpu) / 1000, slowed: r.cpuPoolSlowed } } : {}),
   };
 }
 

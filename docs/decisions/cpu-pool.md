@@ -1,8 +1,8 @@
 # A tenant's machines may share its CPUs as a pool
 
 Status: accepted, 2026-11. Built: the apiserver's part, the node's
-(`node-agent.md`, "CPU pools"), and how often a pool slowed its machines;
-not yet the console's showing it.
+(`node-agent.md`, "CPU pools"), how often a pool slowed its machines, and
+the console's showing it.
 
 ## Context
 
