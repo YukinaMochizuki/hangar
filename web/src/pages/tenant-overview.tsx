@@ -169,7 +169,7 @@ export function TenantOverview() {
         ) : (
           <QuotaTiles tiles={computeTiles(t?.status?.limits, t?.status?.usage)} loading={q.isPending} pool={pool} cpuPool={cpuPool} />
         )}
-        <PoolCard tenant={tenant} enabled={!!pool && !hidden && !q.error} />
+        <PoolCard tenant={tenant} enabled={!!pool && !hidden && !q.error} cpu={cpuPool && !hidden && !q.error ? cpuPool : undefined} />
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0">
             <Projects tenant={tenant} pooled={!!pool} />

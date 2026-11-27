@@ -4,10 +4,12 @@
 import { Link } from "@tanstack/react-router";
 import { Ban, ChevronRight, TriangleAlert } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { CpuPoolRow, CpuPoolRowPlaceholder } from "@/components/cpu-pool-row";
 import { FittingText } from "@/components/fitting-text";
 import { KilledIcon, StuckIcon } from "@/components/machine-memory";
 import { Card, StatusDot, phaseLabel } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { useCpuPoolRead } from "@/lib/cpu-pool";
 import { ago, machinePath } from "@/lib/machines";
 import { usePoolRead, type PoolEntry, type PoolOccupancy } from "@/lib/memory-pool";
 import { formatNumber } from "@/lib/quantity";
@@ -293,9 +295,20 @@ function Legend({ current }: { current: boolean }) {
 /**
  * The legend, the strip and its card, for a pool's occupancy; project set,
  * that project's machines named and the rest muted. Not current, the strip
- * is dimmed and the legend says so.
+ * is dimmed and the legend says so. linked, the machine open in the CPU
+ * strip, lights here too; onOpen says which this one opens.
  */
-export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; project?: string }) {
+export function PoolStrip({
+  occupancy,
+  project,
+  linked,
+  onOpen,
+}: {
+  occupancy: PoolOccupancy;
+  project?: string;
+  linked?: string | null;
+  onOpen?: (key: string | null) => void;
+}) {
   const narrow = useNarrow();
   const track = useRef<HTMLDivElement>(null);
   const [trackPx, setTrackPx] = useState(0);
@@ -317,6 +330,7 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
   // The pointer of the last press: a mouse's click leads on, a touch's pins the card.
   const pointer = useRef("mouse");
   const root = useRef<HTMLDivElement>(null);
+  useEffect(() => onOpen?.(open), [open, onOpen]);
 
   // A pinned card closes on a press anywhere but the strip and the card,
   // which goes on to whatever it pressed.
@@ -332,6 +346,8 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
   }, [pinned]);
 
   const openSegment = segments.find((s) => s.key === open);
+  // What lights: the segment open here; else the machine open in the CPU strip, where it has a segment here.
+  const litKey = open ?? (linked && segments.some((s) => s.key === linked) ? linked : null);
   useLayoutEffect(() => {
     const r = root.current;
     const el = open ? r?.querySelector<HTMLElement>(`[data-segment="${CSS.escape(open)}"]`) : null;
@@ -374,7 +390,7 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
           className={cn("flex h-6 gap-[2px] overflow-hidden rounded-[3px] bg-surface-2 p-[2px]", full ? "ring-2 ring-foreground/80" : "ring-1 ring-border-strong")}
         >
           {segments.map((s) => {
-            const lit = open === null || open === s.key;
+            const lit = litKey === null || litKey === s.key;
             const reservedPart = s.lengthGi > 0 ? s.reservedGi / s.lengthGi : 1;
             const f = fills(s);
             const label = (onDark: boolean) =>
@@ -440,17 +456,41 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
 
 /**
  * The card on a tenant's Overview, or a project's (project set), right under
- * the tiles, for a tenant the page knows has a memory pool (enabled). Until
- * its first answer it holds its place as a blank card of the same height;
- * it goes only when that answer fails, the tenant turns out to have no pool,
- * or its asks keep failing (usePoolRead).
+ * the tiles, for a tenant the page knows has a memory pool (enabled), a CPU
+ * pool (cpu, with the plan's CPUs), or both: the memory strip, and under it
+ * the CPU row. Until its first answer each part holds its place, blank and
+ * as tall as it is calm; a part goes only when its answer fails, the tenant
+ * turns out to have no memory pool, or its asks keep failing (usePoolRead,
+ * useCpuPoolRead). The CPU row opening into its strip, while the pool slows
+ * its machines, is the one other change in the card's height.
  */
-export function PoolCard({ tenant, project, enabled = true }: { tenant: string; project?: string; enabled?: boolean }) {
+export function PoolCard({ tenant, project, enabled = true, cpu }: { tenant: string; project?: string; enabled?: boolean; cpu?: { planCPU: number } }) {
   const read = usePoolRead(tenant, enabled);
-  if (!read || read.state === "failed" || read.state === "none") return null;
-  if (read.state === "pending") {
+  const cpuRead = useCpuPoolRead(tenant, !!cpu);
+  // The machine open in either strip, which the other lights too.
+  const [memoryOpen, setMemoryOpen] = useState<string | null>(null);
+  const [cpuOpen, setCpuOpen] = useState<string | null>(null);
+  const memory = read && read.state !== "failed" && read.state !== "none" ? read : undefined;
+  const cpuShown = cpu && cpuRead && cpuRead.state !== "failed" ? cpuRead : undefined;
+  if (!memory && !cpuShown) return null;
+  const cpuPart =
+    cpuShown?.state === "read" ? (
+      <CpuPoolRow
+        o={cpuShown.occupancy}
+        throttled={cpuShown.throttled}
+        planCPU={cpu!.planCPU}
+        project={project}
+        linked={memoryOpen}
+        onOpen={setCpuOpen}
+        divided={!!memory}
+      />
+    ) : cpuShown ? (
+      <CpuPoolRowPlaceholder divided={!!memory} />
+    ) : null;
+  const label = memory ? "Memory pool" : "CPU pool";
+  if (memory?.state === "pending") {
     return (
-      <Card className="px-4 pb-3 pt-3" aria-label="Memory pool" aria-busy data-loading>
+      <Card className="px-4 pb-3 pt-3" aria-label={label} aria-busy data-loading>
         {/* The same lines as the card's, unseen, so it is as tall. */}
         <div aria-hidden className="invisible">
           <Legend current />
@@ -459,12 +499,14 @@ export function PoolCard({ tenant, project, enabled = true }: { tenant: string; 
         <div aria-hidden className="invisible mt-1 font-mono text-[10.5px] tabular">
           0 GiB
         </div>
+        {cpuPart}
       </Card>
     );
   }
   return (
-    <Card className="px-4 pb-3 pt-3" aria-label="Memory pool">
-      <PoolStrip occupancy={read.occupancy} project={project} />
+    <Card className="px-4 pb-3 pt-3" aria-label={label} aria-busy={(!memory && cpuShown?.state === "pending") || undefined}>
+      {memory && <PoolStrip occupancy={memory.occupancy} project={project} linked={cpuOpen} onOpen={setMemoryOpen} />}
+      {cpuPart}
     </Card>
   );
 }

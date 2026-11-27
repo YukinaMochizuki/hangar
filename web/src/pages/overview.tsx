@@ -285,7 +285,7 @@ export function Overview() {
       </div>
       <div className="space-y-5 px-4 pb-10 md:px-8">
         <QuotaTiles tiles={computeTiles(p?.status?.limits, p?.status?.usage)} loading={q.isPending} pool={pool} cpuPool={cpuPool} />
-        <PoolCard tenant={p?.spec?.tenant ?? ""} project={project} enabled={!!pool} />
+        <PoolCard tenant={p?.spec?.tenant ?? ""} project={project} enabled={!!pool} cpu={cpuPool} />
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0 space-y-5">
             <MachineTable project={project} />
