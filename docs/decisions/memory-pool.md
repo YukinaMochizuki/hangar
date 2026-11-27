@@ -130,8 +130,8 @@ GiB nobody measured.
   (a node with no read lately counts so), is of the nodes its named
   machines are on alone. A machine whose memory does not parse is left
   out and logged rather than failing everyone's answer, and a tenant that
-  does not exist is `NOT_FOUND` to a caller over every tenant, as for
-  `CPUPoolUsage`, which keeps the Tenant's get.
+  does not exist is `NOT_FOUND` to a caller over every tenant.
+  `CPUPoolUsage` is asked the same way (`cpu-pool.md`).
 
 ## Consequences
 

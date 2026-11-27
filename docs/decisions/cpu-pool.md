@@ -1,8 +1,8 @@
 # A tenant's machines may share its CPUs as a pool
 
 Status: accepted, 2026-11. Built: the apiserver's part, the node's
-(`node-agent.md`, "CPU pools"), how often a pool slowed its machines, and
-the console's showing it.
+(`node-agent.md`, "CPU pools"), how often a pool slowed its machines, what
+each of its machines uses now, and the console's showing them.
 
 ## Context
 
@@ -76,12 +76,29 @@ a CPU held back only slows a guest, it never kills a process.
   `MachineCapabilityService.Usage` answers a pooled machine's pool's
   share on its node and the CPUs the node holds the pool to, under the
   object's get. `TenantCapabilityService.CPUPoolUsage` answers the
-  tenant's, under the tenant's get, from each connected node its pool's
-  running machines are on: the largest share and CPUs of them, as the
-  pool is held on each node apart, and how many nodes it could not read.
-  It is a service of its own, not an RPC of `TenantService`, whose
-  methods are only the generated standard ones (`api-rpc-shape.md`). A
-  tenant with no CPU pool answers nothing, and asks no node.
+  tenant's from each connected node its pool's running machines are on:
+  the largest share and CPUs of them, as the pool is held on each node
+  apart, and each minute's share, the largest of the nodes that counted
+  it, the last 60. It is a service of its own, not an RPC of
+  `TenantService`, whose methods are only the generated standard ones
+  (`api-rpc-shape.md`). A tenant with no CPU pool answers nothing, and
+  asks no node.
+- **What each pooled machine uses now is read too, not polled for.**
+  `CPUPoolUsage` names each running machine in the pool (project, kind,
+  name, phase, vCPUs) with the CPU it used over its node's latest 10 s
+  usage sample times its vCPUs, which the node's usage sampler already
+  keeps (`machine-usage.md`); unset when the sample is more than three
+  polls old. The node answers the VMs running in the pool's slice. It is
+  asked as `MemoryPoolUsage` is (`memory-pool.md`): the get of
+  Containers or VirtualMachines in some project of the tenant, so a
+  member of one project alone sees the slowed share on its project's
+  Overview, which the Tenant's get, first asked, kept from it. A machine
+  whose object the caller may not get is summed into one `other` CPU,
+  with no name, kind or count, and when the nodes last sampled and how
+  many could not be read is of the nodes its named machines are on; the
+  pool's share and its minutes are of every node, as they say nothing of
+  any one machine. A tenant that does not exist is `NOT_FOUND` to a
+  caller over every tenant, `PERMISSION_DENIED` to any other.
 
 ## Consequences
 
