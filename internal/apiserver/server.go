@@ -350,6 +350,7 @@ func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 	mux.Handle(nodev1connect.NewTailscaleAuthKeyServiceHandler(tailscaleAuthKeys{s}, s.interceptors(chain)))
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
 	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, s.interceptors(chain)))
+	mux.Handle(tenancyv1alpha1connect.NewTenantCapabilityServiceHandler(tenantCapabilities{s}, s.interceptors(chain)))
 	mux.Handle(discoveryv1alpha1connect.NewDiscoveryServiceHandler(newDiscovery(s), s.interceptors(chain)))
 	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, s.interceptors(chain)))
 	mux.Handle(iamv1alpha1connect.NewMemberServiceHandler(members{s}, s.interceptors(chain)))

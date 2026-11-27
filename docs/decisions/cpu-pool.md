@@ -1,7 +1,8 @@
 # A tenant's machines may share its CPUs as a pool
 
-Status: accepted, 2026-11. Built: the apiserver's part, and the node's
-(`node-agent.md`, "CPU pools").
+Status: accepted, 2026-11. Built: the apiserver's part, the node's
+(`node-agent.md`, "CPU pools"), and how often a pool slowed its machines;
+not yet the console's showing it.
 
 ## Context
 
@@ -59,6 +60,28 @@ a CPU held back only slows a guest, it never kills a process.
   the one its memory pool uses when it has one, whose `cpu.max` is the
   pool's CPUs each period. The limit is set as a VM of the pool starts,
   and again from the machines' specs as they change, while they run.
+- **How often the pool slowed its machines is read, not stored.** The
+  console says it as "slowed 12% of the last hour", on the tenant's
+  vCPU quota and on a pooled machine's page. Every 10 seconds, beside the
+  machines' usage (`machine-usage.md`), the node reads each pool slice's
+  `cpu.stat`, `nr_periods` and `nr_throttled`, and keeps per pool one
+  point a minute of how many periods passed and how many of them the
+  limit cut short, at most 60, in memory alone. A sample more than two
+  polls after the one before, or with a counter gone back, as when the
+  slice was made again, counts nothing, so a gap is minutes with no
+  point. The slowed share is the throttled periods over all the periods
+  of the points kept, and has no value with no period, as for a pool
+  with no limit or none sampled yet. Not `throttled_usec`: it adds up
+  the wait of each CPU, so it reads past the time passed.
+  `MachineCapabilityService.Usage` answers a pooled machine's pool's
+  share on its node and the CPUs the node holds the pool to, under the
+  object's get. `TenantCapabilityService.CPUPoolUsage` answers the
+  tenant's, under the tenant's get, from each connected node its pool's
+  running machines are on: the largest share and CPUs of them, as the
+  pool is held on each node apart, and how many nodes it could not read.
+  It is a service of its own, not an RPC of `TenantService`, whose
+  methods are only the generated standard ones (`api-rpc-shape.md`). A
+  tenant with no CPU pool answers nothing, and asks no node.
 
 ## Consequences
 

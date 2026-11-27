@@ -56,6 +56,12 @@ service NodeService {
   // point a minute, and the last sample. A machine with no running VM on
   // this node is FAILED_PRECONDITION. See docs/decisions/machine-usage.md.
   rpc MachineUsage(MachineUsageRequest) returns (MachineUsageResponse);
+  // CPUPoolUsage says how often a CPU pool's limit held its VMs on this
+  // node back over the last hour, as the node samples its slice every ten
+  // seconds beside the machines' usage, and the CPUs the node holds it
+  // to. A pool the node neither samples nor holds answers nothing set.
+  // See docs/decisions/cpu-pool.md.
+  rpc CPUPoolUsage(CPUPoolUsageRequest) returns (CPUPoolUsageResponse);
   // ListFileShareDir lists a directory of the share a FileShare's server
   // on this node serves, as the server's ListDir does, and with its codes.
   // A machine that is no share's server with a running VM on this node is
@@ -114,6 +120,30 @@ message MachineUsageResponse {
   // its memory pool has taken back from its guest. Unset when the node
   // could not tell.
   optional uint64 balloon_bytes = 4;
+  // How often the pool the machine's VM runs in was slowed by its CPU
+  // limit over the last hour, as CPUPoolUsageResponse.slowed. Unset when
+  // the VM runs in no pool, or there is no value.
+  optional double cpu_pool_slowed = 5;
+  // The CPUs, in millicores, the node holds that pool to now; unset when
+  // the VM runs in no pool, or the node holds it to none.
+  optional int64 cpu_pool_milli_cpu = 6;
+}
+
+message CPUPoolUsageRequest {
+  // The pool's name, its tenant's.
+  string pool = 1;
+}
+
+message CPUPoolUsageResponse {
+  // Of the pool's CPU limit's periods in the minutes the node kept, at
+  // most the last 60, the share, from 0 to 1, in which the limit held its
+  // VMs back: they had used all of its CPUs and waited for the next
+  // period. Unset when no period was counted, as for a pool with no
+  // limit, or none sampled yet.
+  optional double slowed = 1;
+  // The CPUs, in millicores, the node holds the pool to now; unset when
+  // it holds it to none.
+  optional int64 milli_cpu = 2;
 }
 
 // UsagePoint is a machine's usage at a time, or over the minute from it.

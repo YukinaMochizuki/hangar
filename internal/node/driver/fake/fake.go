@@ -1673,7 +1673,7 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		VM: driver.VM{
 			MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now(), Run: spec.Run, Interfaces: spec.Interfaces,
 			RootSize: spec.Root.Size, DiskSizes: diskSizes(spec.Disks),
-			VCPUs: spec.VCPUs, Firmware: spec.Firmware, FileShareServer: spec.FileShareServer != nil,
+			VCPUs: spec.VCPUs, Firmware: spec.Firmware, FileShareServer: spec.FileShareServer != nil, Pool: spec.Pool(),
 		},
 		spec:  spec,
 		boots: boots,

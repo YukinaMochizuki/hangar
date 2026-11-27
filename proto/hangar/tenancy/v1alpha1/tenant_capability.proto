@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package hangar.tenancy.v1alpha1;
+
+// TenantCapabilityService answers what a tenant's machines do together,
+// read from the nodes they run on when asked, never stored. It is not a
+// resource's service, so it is written by hand rather than generated.
+service TenantCapabilityService {
+  // CPUPoolUsage says how often the tenant's CPU pool slowed its machines
+  // over the last hour, and the pool's CPUs, from each connected node its
+  // pool's running machines are on. It needs the tenant's get, as reading
+  // the Tenant does. A tenant with no CPU pool answers nothing set. See
+  // docs/decisions/cpu-pool.md.
+  rpc CPUPoolUsage(CPUPoolUsageRequest) returns (CPUPoolUsageResponse);
+}
+
+message CPUPoolUsageRequest {
+  string tenant = 1;
+}
+
+message CPUPoolUsageResponse {
+  // Of the pool's limit's periods over the last hour, the share, from 0
+  // to 1, in which the tenant's machines had used all of the pool's CPUs
+  // and waited: the largest of the nodes read, as the pool is held on
+  // each node apart. Unset when no node read has a value.
+  optional double slowed = 1;
+  // The pool's CPUs, in millicores, the most a node read holds it to;
+  // unset when none read holds it.
+  optional int64 milli_cpu = 2;
+  // How many nodes the pool's running machines are on, that could not be
+  // read, as one not connected.
+  int32 nodes_unread = 3;
+}

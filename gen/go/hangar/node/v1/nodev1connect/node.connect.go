@@ -57,6 +57,9 @@ const (
 	// NodeServiceMachineUsageProcedure is the fully-qualified name of the NodeService's MachineUsage
 	// RPC.
 	NodeServiceMachineUsageProcedure = "/hangar.node.v1.NodeService/MachineUsage"
+	// NodeServiceCPUPoolUsageProcedure is the fully-qualified name of the NodeService's CPUPoolUsage
+	// RPC.
+	NodeServiceCPUPoolUsageProcedure = "/hangar.node.v1.NodeService/CPUPoolUsage"
 	// NodeServiceListFileShareDirProcedure is the fully-qualified name of the NodeService's
 	// ListFileShareDir RPC.
 	NodeServiceListFileShareDirProcedure = "/hangar.node.v1.NodeService/ListFileShareDir"
@@ -108,6 +111,12 @@ type NodeServiceClient interface {
 	// point a minute, and the last sample. A machine with no running VM on
 	// this node is FAILED_PRECONDITION. See docs/decisions/machine-usage.md.
 	MachineUsage(context.Context, *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error)
+	// CPUPoolUsage says how often a CPU pool's limit held its VMs on this
+	// node back over the last hour, as the node samples its slice every ten
+	// seconds beside the machines' usage, and the CPUs the node holds it
+	// to. A pool the node neither samples nor holds answers nothing set.
+	// See docs/decisions/cpu-pool.md.
+	CPUPoolUsage(context.Context, *connect.Request[v1.CPUPoolUsageRequest]) (*connect.Response[v1.CPUPoolUsageResponse], error)
 	// ListFileShareDir lists a directory of the share a FileShare's server
 	// on this node serves, as the server's ListDir does, and with its codes.
 	// A machine that is no share's server with a running VM on this node is
@@ -176,6 +185,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("MachineUsage")),
 			connect.WithClientOptions(opts...),
 		),
+		cPUPoolUsage: connect.NewClient[v1.CPUPoolUsageRequest, v1.CPUPoolUsageResponse](
+			httpClient,
+			baseURL+NodeServiceCPUPoolUsageProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("CPUPoolUsage")),
+			connect.WithClientOptions(opts...),
+		),
 		listFileShareDir: connect.NewClient[v1.ListFileShareDirRequest, v1.ListFileShareDirResponse](
 			httpClient,
 			baseURL+NodeServiceListFileShareDirProcedure,
@@ -195,6 +210,7 @@ type nodeServiceClient struct {
 	uploadCustomImage    *connect.Client[v1.UploadCustomImageRequest, v1.UploadCustomImageResponse]
 	getCustomImageUpload *connect.Client[v1.GetCustomImageUploadRequest, v1.GetCustomImageUploadResponse]
 	machineUsage         *connect.Client[v1.MachineUsageRequest, v1.MachineUsageResponse]
+	cPUPoolUsage         *connect.Client[v1.CPUPoolUsageRequest, v1.CPUPoolUsageResponse]
 	listFileShareDir     *connect.Client[v1.ListFileShareDirRequest, v1.ListFileShareDirResponse]
 }
 
@@ -236,6 +252,11 @@ func (c *nodeServiceClient) GetCustomImageUpload(ctx context.Context, req *conne
 // MachineUsage calls hangar.node.v1.NodeService.MachineUsage.
 func (c *nodeServiceClient) MachineUsage(ctx context.Context, req *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error) {
 	return c.machineUsage.CallUnary(ctx, req)
+}
+
+// CPUPoolUsage calls hangar.node.v1.NodeService.CPUPoolUsage.
+func (c *nodeServiceClient) CPUPoolUsage(ctx context.Context, req *connect.Request[v1.CPUPoolUsageRequest]) (*connect.Response[v1.CPUPoolUsageResponse], error) {
+	return c.cPUPoolUsage.CallUnary(ctx, req)
 }
 
 // ListFileShareDir calls hangar.node.v1.NodeService.ListFileShareDir.
@@ -289,6 +310,12 @@ type NodeServiceHandler interface {
 	// point a minute, and the last sample. A machine with no running VM on
 	// this node is FAILED_PRECONDITION. See docs/decisions/machine-usage.md.
 	MachineUsage(context.Context, *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error)
+	// CPUPoolUsage says how often a CPU pool's limit held its VMs on this
+	// node back over the last hour, as the node samples its slice every ten
+	// seconds beside the machines' usage, and the CPUs the node holds it
+	// to. A pool the node neither samples nor holds answers nothing set.
+	// See docs/decisions/cpu-pool.md.
+	CPUPoolUsage(context.Context, *connect.Request[v1.CPUPoolUsageRequest]) (*connect.Response[v1.CPUPoolUsageResponse], error)
 	// ListFileShareDir lists a directory of the share a FileShare's server
 	// on this node serves, as the server's ListDir does, and with its codes.
 	// A machine that is no share's server with a running VM on this node is
@@ -353,6 +380,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("MachineUsage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceCPUPoolUsageHandler := connect.NewUnaryHandler(
+		NodeServiceCPUPoolUsageProcedure,
+		svc.CPUPoolUsage,
+		connect.WithSchema(nodeServiceMethods.ByName("CPUPoolUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	nodeServiceListFileShareDirHandler := connect.NewUnaryHandler(
 		NodeServiceListFileShareDirProcedure,
 		svc.ListFileShareDir,
@@ -377,6 +410,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceGetCustomImageUploadHandler.ServeHTTP(w, r)
 		case NodeServiceMachineUsageProcedure:
 			nodeServiceMachineUsageHandler.ServeHTTP(w, r)
+		case NodeServiceCPUPoolUsageProcedure:
+			nodeServiceCPUPoolUsageHandler.ServeHTTP(w, r)
 		case NodeServiceListFileShareDirProcedure:
 			nodeServiceListFileShareDirHandler.ServeHTTP(w, r)
 		default:
@@ -418,6 +453,10 @@ func (UnimplementedNodeServiceHandler) GetCustomImageUpload(context.Context, *co
 
 func (UnimplementedNodeServiceHandler) MachineUsage(context.Context, *connect.Request[v1.MachineUsageRequest]) (*connect.Response[v1.MachineUsageResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.MachineUsage is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) CPUPoolUsage(context.Context, *connect.Request[v1.CPUPoolUsageRequest]) (*connect.Response[v1.CPUPoolUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.CPUPoolUsage is not implemented"))
 }
 
 func (UnimplementedNodeServiceHandler) ListFileShareDir(context.Context, *connect.Request[v1.ListFileShareDirRequest]) (*connect.Response[v1.ListFileShareDirResponse], error) {

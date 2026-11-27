@@ -554,7 +554,9 @@ pool has, and on the node they use no more than those together.
   `nr_periods`, `nr_throttled` were cut short (`Hypervisor.CPUPoolStats`),
   which is how often its VMs waited. `throttled_usec` adds up the wait of
   each CPU it ran on, so it reads past the time passed. Its units' own
-  `cpu.stat` count nothing of what their parent's limit held back.
+  `cpu.stat` count nothing of what their parent's limit held back. The
+  agent samples both counts with the machines' usage and answers the
+  share over the last hour (`cpu-pool.md`, `machine-usage.md`).
 
 ## Memory pools
 

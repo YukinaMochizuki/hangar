@@ -21,7 +21,11 @@ each VM's unit, and, for what a guest uses of its memory, the guest itself.
   and the latest sample with a CPU value, which it answers only while it is
   at most three samples old. Nothing is stored, written to a status, or
   exported to Prometheus: a restart of the agent empties it, and a machine
-  that stops or leaves the node is forgotten. An hour of history is what
+  that stops or leaves the node is forgotten. On the same tick it reads
+  each CPU pool's slice's `cpu.stat`, `nr_periods` and `nr_throttled`,
+  and keeps per pool a point a minute of both deltas, at most 60, gaps
+  and counters gone back counting nothing, as for a machine; a pool the
+  host no longer reports is forgotten (`cpu-pool.md`). An hour of history is what
   the page shows; keeping it where it is measured needs no storage, no
   schema and no cleanup, and costs a few kilobytes a machine.
 - **CPU is a share of the machine's vCPUs, 0 to 1.** A sample's is the CPU
@@ -48,6 +52,11 @@ each VM's unit, and, for what a guest uses of its memory, the guest itself.
   (`memory-pool.md`). Its guest has its memory less that. It is zero for a
   machine never squeezed, and unset when the node cannot tell, as for a VM
   whose VMM serves no API.
+- **The answer says how often the machine's CPU pool slowed it**: for a
+  VM that started in a pool's slice, the share of the pool's periods over
+  the points kept that its limit cut short, and the CPUs the node holds
+  the pool to now (`cpu-pool.md`). Both are unset for a machine in no
+  pool; the share also when no period was counted.
 - **The apiserver reads it from the node, under the object's get.**
   `MachineCapabilityService.Usage` resolves kind and name to the machine
   as `Logs` does and asks its node over the tunnel (`node-tunnel.md`). It

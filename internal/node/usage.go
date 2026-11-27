@@ -130,17 +130,19 @@ type usageView struct {
 	latest *usageSample
 }
 
-// usages is the usage of every running machine the sampler saw.
+// usages is the usage of every running machine the sampler saw, and of
+// every CPU pool's slice.
 type usages struct {
 	mu       sync.Mutex
 	machines map[string]*machineUsage
+	pools    map[string]*poolUsage
 	// guestTimeout bounds asking a guest its memory: guestTimeout but in
 	// tests.
 	guestTimeout time.Duration
 }
 
 func newUsages() *usages {
-	return &usages{machines: map[string]*machineUsage{}, guestTimeout: guestTimeout}
+	return &usages{machines: map[string]*machineUsage{}, pools: map[string]*poolUsage{}, guestTimeout: guestTimeout}
 }
 
 // view is what is kept of the machine's usage, and whether anything is;
@@ -160,7 +162,8 @@ func (u *usages) view(uid string, staleBefore time.Time) (usageView, bool) {
 	return v, true
 }
 
-// usageLoop samples every running machine's usage every UsagePoll.
+// usageLoop samples every running machine's usage, and every CPU pool's
+// counters, every UsagePoll.
 func (a *Agent) usageLoop(ctx context.Context) {
 	ticker := a.cfg.Clock.NewTicker(a.cfg.UsagePoll)
 	defer ticker.Stop()
@@ -170,6 +173,7 @@ func (a *Agent) usageLoop(ctx context.Context) {
 			return
 		case <-ticker.Chan():
 		}
+		a.sampleCPUPools(ctx)
 		a.sampleUsage(ctx)
 	}
 }
@@ -301,6 +305,9 @@ func (s nodeService) MachineUsage(ctx context.Context, req *connect.Request[node
 		res.BalloonBytes = &b.Actual
 	} else {
 		s.a.cfg.Log.Debug("reading the machine's balloon", "machine_uid", uid, "error", err)
+	}
+	if vm.Pool != "" {
+		res.CpuPoolSlowed, res.CpuPoolMilliCpu = s.a.cpuPoolAnswer(vm.Pool)
 	}
 	return connect.NewResponse(res), nil
 }

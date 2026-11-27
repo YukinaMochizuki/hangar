@@ -422,7 +422,7 @@ func (h *Hypervisor) vm(uid string, unit *unitState) (driver.VM, bool, error) {
 	vm := driver.VM{
 		LastOOMKill: lastOOMKill(dir),
 		MachineUID:  uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces, RootSize: ln.Spec.Root.Size,
-		VCPUs: ln.Spec.VCPUs, Firmware: ln.Spec.Firmware, FileShareServer: ln.Spec.FileShareServer != nil,
+		VCPUs: ln.Spec.VCPUs, Firmware: ln.Spec.Firmware, FileShareServer: ln.Spec.FileShareServer != nil, Pool: ln.Spec.Pool(),
 	}
 	for _, v := range ln.Spec.Disks {
 		vm.DiskSizes = append(vm.DiskSizes, v.Size)

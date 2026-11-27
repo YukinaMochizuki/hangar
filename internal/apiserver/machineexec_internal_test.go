@@ -234,7 +234,13 @@ func (w *execWorld) connectNode(t *testing.T) {
 // connectNodeServing is connectNode with n1 served by h.
 func (w *execWorld) connectNodeServing(t *testing.T, h nodev1connect.NodeServiceHandler) {
 	t.Helper()
-	sock := listen(t, w.s, auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(os.Getuid())}, NodeName: "n1"}})
+	w.connectNodeAs(t, "n1", h)
+}
+
+// connectNodeAs connects node, serving h, through its tunnel.
+func (w *execWorld) connectNodeAs(t *testing.T, node string, h nodev1connect.NodeServiceHandler) {
+	t.Helper()
+	sock := listen(t, w.s, auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(os.Getuid())}, NodeName: node}})
 	mux := http.NewServeMux()
 	mux.Handle(nodev1connect.NewNodeServiceHandler(h))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -247,8 +253,8 @@ func (w *execWorld) connectNodeServing(t *testing.T, h nodev1connect.NodeService
 		}, Handler: mux}).Run(ctx)
 	}()
 	t.Cleanup(func() { cancel(); <-done })
-	testutil.EventuallyWithin(t, 5*time.Second, "n1's tunnel open", func() (bool, string) {
-		_, err := w.s.tunnels.Node("n1")
+	testutil.EventuallyWithin(t, 5*time.Second, node+"'s tunnel open", func() (bool, string) {
+		_, err := w.s.tunnels.Node(node)
 		return err == nil, fmt.Sprint(err)
 	})
 }

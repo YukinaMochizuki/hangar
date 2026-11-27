@@ -57,12 +57,16 @@ func (n usageNode) MachineUsage(_ context.Context, req *connect.Request[nodev1.M
 
 // newUsageWorld is an execWorld whose container's machine has 2 vCPUs and
 // 1Gi, with dave, who may get containers alone, and erin, who may use every
-// capability of machines but get no container.
-func newUsageWorld(t *testing.T) *execWorld {
+// capability of machines but get no container; configure, if any, then
+// changes its config.
+func newUsageWorld(t *testing.T, configure ...func(*Config)) *execWorld {
 	t.Helper()
 	w := newExecWorld(t, func(c *Config) {
 		c.ExtraRoles[getterRole] = authz.NewRole(authz.TenantLevel, authz.Permission(registry.Container, authz.Get))
 		c.ExtraRoles[capabilitiesRole] = authz.NewRole(authz.TenantLevel, authz.MachineLogs, authz.MachineExec, authz.MachineSSH, authz.MachinePortForward)
+		for _, f := range configure {
+			f(c)
+		}
 	})
 	system := auth.WithPrincipal(context.Background(), auth.SystemPrincipal)
 	tenant := &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: "acme"}}

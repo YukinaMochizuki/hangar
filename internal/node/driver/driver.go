@@ -1408,6 +1408,9 @@ type VM struct {
 	// Firmware and FileShareServer say what it runs, as its spec's do:
 	// neither is a container's.
 	Firmware, FileShareServer bool
+	// Pool is the pool whose slice it started in (VMSpec.Pool), "" for
+	// none.
+	Pool string
 	// OOMKilled says an exited VM was killed whole by the host's OOM
 	// killer, its pool being out of memory, rather than ending by itself.
 	OOMKilled bool
