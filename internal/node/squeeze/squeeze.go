@@ -106,6 +106,9 @@ type Result struct {
 	// Sizes are what each member's guest has now, its memory less what its
 	// balloon holds, whatever was set.
 	Sizes map[string]int64
+	// Unread are the members whose balloons could not be read: their
+	// Sizes are their whole memory, though their guests may have less.
+	Unread []string
 	// Unresponsive are the members whose balloons stopped following what
 	// they are asked at this poll (Squeezer.Unresponsive).
 	Unresponsive []string
@@ -139,6 +142,8 @@ type followed struct {
 	asked, last         int64
 	hasAsked            bool
 	unresponsive        bool
+	// unresponsiveAt is when it was found unresponsive.
+	unresponsiveAt time.Time
 	// booted says its guest was seen at the size it boots with: past it
 	// later, it was grown, and is booting no more.
 	booted bool
@@ -159,10 +164,22 @@ func (q *Squeezer) Unresponsive(uid string) bool {
 	return f != nil && f.unresponsive
 }
 
+// UnresponsiveSince is when the machine's balloon was found Unresponsive,
+// and false while it is not.
+func (q *Squeezer) UnresponsiveSince(uid string) (time.Time, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	f := q.balloons[uid]
+	if f == nil || !f.unresponsive {
+		return time.Time{}, false
+	}
+	return f.unresponsiveAt, true
+}
+
 // Poll reads a pool's members at now and sets their balloons as decide says (docs/decisions/node-agent.md "Memory pools").
 func (q *Squeezer) Poll(ctx context.Context, hv driver.Hypervisor, log *slog.Logger, now time.Time, sizeMiB int64, members []Member, stepMiB int64) (Result, error) {
 	states := make([]state, 0, len(members))
-	var stuck []string
+	var stuck, unread []string
 	for _, mb := range members {
 		used, err := hv.Usage(ctx, mb.UID)
 		if err != nil {
@@ -175,6 +192,7 @@ func (q *Squeezer) Poll(ctx context.Context, hv driver.Hypervisor, log *slog.Log
 			// A VM whose balloon cannot be read, as one whose VMM serves
 			// no API, cannot be squeezed either.
 			m.noBalloon = true
+			unread = append(unread, mb.UID)
 			log.Debug("reading a pool's machine's balloon", "machine_uid", mb.UID, "error", err)
 		default:
 			m.balloonMiB = min(int64(b.Actual>>20), m.MemoryMiB)
@@ -196,7 +214,7 @@ func (q *Squeezer) Poll(ctx context.Context, hv driver.Hypervisor, log *slog.Log
 		states = append(states, m)
 	}
 	r := decide(sizeMiB, states, stepMiB)
-	r.Unresponsive = stuck
+	r.Unresponsive, r.Unread = stuck, unread
 	for _, uid := range slices.Sorted(maps.Keys(r.Balloons)) {
 		if err := hv.SetBalloon(ctx, uid, uint64(r.Balloons[uid])<<20); err != nil {
 			log.Warn("setting a pool's machine's balloon", "machine_uid", uid, "error", err)
@@ -229,7 +247,7 @@ func (q *Squeezer) follow(uid string, started time.Time, actual int64, now time.
 	}
 	f.last = actual
 	if !f.stuckSince.IsZero() && now.Sub(f.stuckSince) >= StuckFor {
-		f.unresponsive = true
+		f.unresponsive, f.unresponsiveAt = true, now
 		return true, true
 	}
 	return false, false

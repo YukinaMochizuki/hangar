@@ -200,6 +200,8 @@ func (a *Agent) squeeze(ctx context.Context, pressure bool) bool {
 		}
 	}
 	a.squeezer.Forget(keep)
+	a.poolReads.forget(plans)
+	oom := lastOOMKills(vms)
 	step := int64(squeeze.StepMiB)
 	if pressure {
 		step = squeeze.PressureStepMiB
@@ -209,7 +211,7 @@ func (a *Agent) squeeze(ctx context.Context, pressure bool) bool {
 		if ctx.Err() != nil {
 			return hot
 		}
-		hot = a.squeezePool(ctx, plans[name], shares, step) || hot
+		hot = a.squeezePool(ctx, plans[name], shares, oom, step) || hot
 	}
 	return hot
 }
@@ -309,15 +311,18 @@ func (p *poolPlan) sliceLimit(sizes map[string]int64) int64 {
 	return max(limit, held, 1)
 }
 
-// squeezePool polls one pool, sets its slice's limit, and says whether it
-// is under pressure.
-func (a *Agent) squeezePool(ctx context.Context, p *poolPlan, shares map[string]memoryShare, step int64) bool {
+// squeezePool polls one pool, sets its slice's limit, keeps what it read
+// for MemoryPoolUsage, oom being the VMs' last OOM kills, and says whether
+// it is under pressure.
+func (a *Agent) squeezePool(ctx context.Context, p *poolPlan, shares map[string]memoryShare, oom map[string]time.Time, step int64) bool {
 	hv := a.cfg.Drivers.Hypervisor
-	r, err := a.squeezer.Poll(ctx, hv, a.cfg.Log, a.cfg.Clock.Now(), p.sizeMiB, p.members, step)
+	now := a.cfg.Clock.Now()
+	r, err := a.squeezer.Poll(ctx, hv, a.cfg.Log, now, p.sizeMiB, p.members, step)
 	if err != nil {
 		a.cfg.Log.Debug("reading a memory pool", "pool", p.name, "error", err)
 		return false
 	}
+	a.poolReads.keep(p.name, readOf(now, p, r, oom))
 	if err := hv.SetMemoryPool(ctx, p.name, p.sliceLimit(r.Sizes)); err != nil {
 		a.cfg.Log.Warn("setting the memory pool's limit", "pool", p.name, "error", err)
 	}

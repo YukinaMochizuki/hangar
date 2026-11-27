@@ -255,8 +255,10 @@ type Agent struct {
 	sharesRead  uint64
 	cpuPools    sync.Mutex
 	cpuPoolsSet uint64
-	// squeezer keeps what the squeeze keeps of the pools' guests.
+	// squeezer keeps what the squeeze keeps of the pools' guests, and
+	// poolReads what it last read of each pool.
 	squeezer      *squeeze.Squeezer
+	poolReads     *poolReads
 	rootGrowths   map[string]diskGrowth
 	volumeGrowths map[string]diskGrowth
 	// tailnets are the running containers that join a tailnet, by machine
@@ -438,6 +440,7 @@ func New(cfg Config) (*Agent, error) {
 		growWatches:      map[string]*growWatch{},
 		memoryShares:     map[string]memoryShare{},
 		squeezer:         squeeze.NewSqueezer(),
+		poolReads:        &poolReads{pools: map[string]poolRead{}},
 		rootGrowths:      map[string]diskGrowth{},
 		volumeGrowths:    map[string]diskGrowth{},
 		shareWaiters:     map[controller.Key]bool{},

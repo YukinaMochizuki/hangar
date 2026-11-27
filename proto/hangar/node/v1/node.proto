@@ -62,6 +62,12 @@ service NodeService {
   // to. A pool the node neither samples nor holds answers nothing set.
   // See docs/decisions/cpu-pool.md.
   rpc CPUPoolUsage(CPUPoolUsageRequest) returns (CPUPoolUsageResponse);
+  // MemoryPoolUsage says what each running machine of a memory pool on
+  // this node has of its memory, as the squeeze last read the pool, which
+  // it does every few seconds: no VM is asked anything for it. A pool the
+  // node has not squeezed answers nothing set. See
+  // docs/decisions/node-agent.md.
+  rpc MemoryPoolUsage(MemoryPoolUsageRequest) returns (MemoryPoolUsageResponse);
   // ListFileShareDir lists a directory of the share a FileShare's server
   // on this node serves, as the server's ListDir does, and with its codes.
   // A machine that is no share's server with a running VM on this node is
@@ -144,6 +150,33 @@ message CPUPoolUsageResponse {
   // The CPUs, in millicores, the node holds the pool to now; unset when
   // it holds it to none.
   optional int64 milli_cpu = 2;
+}
+
+message MemoryPoolUsageRequest {
+  // The pool's name, its tenant's.
+  string pool = 1;
+}
+
+message MemoryPoolUsageResponse {
+  // When the squeeze last read the pool; unset when it has not.
+  google.protobuf.Timestamp sample_time = 1;
+  // The pool's members on this node then, by machine uid.
+  repeated MemoryPoolMember members = 2;
+}
+
+// MemoryPoolMember is a running machine of a memory pool, as the squeeze
+// last read it.
+message MemoryPoolMember {
+  string machine_uid = 1;
+  // What its guest has of its memory, in bytes: its memory less what its
+  // balloon holds. Unset when its balloon could not be read.
+  optional uint64 size_bytes = 2;
+  // Since when its balloon has not followed what it is asked; unset while
+  // it does.
+  google.protobuf.Timestamp balloon_unresponsive_since = 3;
+  // When the host's OOM killer last killed its VM whole; unset when it
+  // never did.
+  google.protobuf.Timestamp last_oom_kill_time = 4;
 }
 
 // UsagePoint is a machine's usage at a time, or over the minute from it.

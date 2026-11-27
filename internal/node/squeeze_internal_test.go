@@ -21,12 +21,14 @@ import (
 const mib = 1 << 20
 
 // poolVM is a VM of poolHost: as it was launched, its balloon, what its
-// guest uses, and whether its balloon takes what it is asked.
+// guest uses, whether its balloon takes what it is asked, or cannot be
+// read, and when it was last killed whole.
 type poolVM struct {
 	launched           driver.PoolVM
 	inSlice            bool
 	balloonMiB, useMiB int64
-	stuck              bool
+	stuck, unreadable  bool
+	lastOOMKill        time.Time
 }
 
 // poolHost is a hypervisor running vms, started an hour before its
@@ -54,7 +56,7 @@ func (h *poolHost) PoolVMs(context.Context) ([]driver.PoolVM, error) {
 func (h *poolHost) VMs(context.Context) ([]driver.VM, error) {
 	var out []driver.VM
 	for uid, v := range h.vms {
-		out = append(out, driver.VM{MachineUID: uid, State: driver.VMRunning, Started: v.launched.Started})
+		out = append(out, driver.VM{MachineUID: uid, State: driver.VMRunning, Started: v.launched.Started, LastOOMKill: v.lastOOMKill})
 	}
 	return out, nil
 }
@@ -69,7 +71,7 @@ func (h *poolHost) Usage(_ context.Context, uid string) (driver.VMUsage, error) 
 
 func (h *poolHost) Balloon(_ context.Context, uid string) (driver.Balloon, error) {
 	v, ok := h.vms[uid]
-	if !ok {
+	if !ok || v.unreadable {
 		return driver.Balloon{}, errors.New("no VM")
 	}
 	total := v.launched.MemoryMiB - v.balloonMiB
@@ -120,6 +122,7 @@ func newPoolAgent(t *testing.T) (*Agent, *poolHost) {
 			Drivers: &Drivers{Hypervisor: h},
 		},
 		memoryShares: map[string]memoryShare{}, squeezer: squeeze.NewSqueezer(), metrics: newAgentMetrics(),
+		poolReads: &poolReads{pools: map[string]poolRead{}},
 	}
 	return a, h
 }
