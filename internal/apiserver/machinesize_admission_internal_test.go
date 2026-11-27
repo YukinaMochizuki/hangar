@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -156,6 +157,18 @@ func TestASizeKeepsToTheShapeRules(t *testing.T) {
 	if _, err := sizes.Apply(system, &computev1alpha1.MachineSize{Metadata: &metav1.ObjectMeta{Name: "nano"},
 		Spec: &computev1alpha1.MachineSizeSpec{DisplayName: "Nano", Cpu: "1", Memory: "256Mi", Disk: "2Gi"}}); err != nil {
 		t.Errorf("the smallest size: %v", err)
+	}
+	// A burstable size names 20 or 40, nothing else.
+	for _, b := range []int32{20, 40} {
+		if _, err := sizes.Apply(system, &computev1alpha1.MachineSize{Metadata: &metav1.ObjectMeta{Name: fmt.Sprintf("b2-%d", b)},
+			Spec: &computev1alpha1.MachineSizeSpec{DisplayName: "B2", Cpu: "2", Memory: "2Gi", Disk: "20Gi", CpuBaseline: b}}); err != nil {
+			t.Errorf("a %d%% size: %v", b, err)
+		}
+	}
+	_, err := sizes.Apply(system, &computev1alpha1.MachineSize{Metadata: &metav1.ObjectMeta{Name: "b3"},
+		Spec: &computev1alpha1.MachineSizeSpec{DisplayName: "B3", Cpu: "2", Memory: "2Gi", Disk: "20Gi", CpuBaseline: 30}})
+	if err == nil || !strings.Contains(err.Error(), "spec.cpu_baseline 30 is not 20 or 40") {
+		t.Errorf("a 30%% size: %v, want refused", err)
 	}
 }
 

@@ -19,7 +19,7 @@ import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/securi
 import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { customImageFloorGiB, customImageState, useCustomImages } from "@/lib/custom-images";
 import { imageFloorGiB } from "@/lib/storage";
-import { Box, Check, Clock, Globe, HardDrive, Lock, RotateCw, Server, SlidersHorizontal, Undo2, X } from "lucide-react";
+import { ArrowLeft, Box, Check, Clock, Globe, HardDrive, Lock, RotateCw, Server, SlidersHorizontal, Undo2, X } from "lucide-react";
 import { DiskLink } from "@/components/links";
 import { networksAfter, VolumePicker, volumeProblems, type ShareAdds, type VolumeRow } from "@/components/volume-picker";
 import { addNetworks, removeNetworks, sharePerms, shareName, shareUses, shareYaml, useFileShares, withNetworks } from "@/lib/file-shares";
@@ -32,6 +32,8 @@ import { DiskGrowFields, diskGrowOf, diskGrowSpec, type DiskGrow } from "@/compo
 import { Choice, FormManifest, FormPage, FormSection as Section, FormSummary } from "@/components/form-page";
 import { gibText, SizeSliders } from "@/components/size-sliders";
 import { MemoryShare, type Share } from "@/components/memory-share";
+import { useProjectBurstable } from "@/lib/cpu-credits";
+import { formatMoney, sizePrice } from "@/lib/billing";
 import { defaultReservedMiB, reservedProblem, useProjectPool } from "@/lib/memory-pool";
 import { useProjects } from "@/lib/projects";
 import { MachinePortForwards } from "@/components/machine-port-forwards";
@@ -198,6 +200,17 @@ export function CreateMachine({ kind, size }: { kind: CreateKind; size?: string 
   return <MachineForm kind={kind} size={size} />;
 }
 
+/** A size card's price an hour, for its vCPUs and memory while it runs; nothing when it has none. */
+function HourPrice({ price, currency }: { price?: string; currency?: string }) {
+  if (price === undefined) return null;
+  return (
+    <div className="mt-2 whitespace-nowrap font-mono text-[12px] tabular" title="vCPUs and memory, while it runs">
+      {formatMoney(price, currency)}
+      <span className="text-subtle"> / h</span>
+    </div>
+  );
+}
+
 /**
  * The new-machine form, or with `edit` the same form opened on an existing
  * object: every field prefilled from its spec, its kind, name and a VM's
@@ -285,6 +298,15 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   });
   const [share, setShare] = useState<Share>(initialReserved ? "shared" : "dedicated");
   const [reservedTyped, setReservedTyped] = useState<string | null>(initialReserved ? gibText(parseQuantity(initialReserved) / 2 ** 20) : null);
+  // Burstable sizes are a series of their own, offered to a PAY_AS_YOU_GO
+  // tenant alone (docs/decisions/cpu-credits.md); an edited burstable
+  // machine opens on them. null follows that until the person switches.
+  const burstable = useProjectBurstable(project);
+  const [initialBaseline] = useState(() => {
+    const b = (baseC ?? baseV)?.spec?.resources?.cpuBaseline ?? 0;
+    return b === 20 || b === 40 ? b : 100;
+  });
+  const [seriesChosen, setSeriesChosen] = useState<"standard" | "burstable" | null>(null);
 
   const images = useQuery(ImageService.method.listImages, { pageSize: 1000 }, { enabled: kind === "vm" });
   const customImages = useCustomImages(project);
@@ -298,8 +320,16 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const overProject = useOverQuota(project);
   const overQuota = (n: Need) => overProject({ ...n, cpuPercent: cpuPool.pooled ? cpuPool.percent : 100 });
   const machineSizes = useMachineSizes();
-  // The sizes offered: those a machine may have under the shape rules.
+  // The sizes offered: those a machine may have under the shape rules, in
+  // two series: standard, and burstable (a baseline below 100).
   const offered = machineSizes.sizes.filter(withinRules);
+  const standardSizes = offered.filter((z) => z.baseline === 100);
+  const burstSizes = offered.filter((z) => z.baseline !== 100);
+  // A tenant that left PAYG still edits the burstable machine it has.
+  const burstOffered = (burstable.payg && burstSizes.length > 0) || initialBaseline !== 100;
+  const startsBurst = initialBaseline !== 100 || (!edit && burstSizes.some((z) => z.name === initialSize));
+  const inBurst = burstOffered && (seriesChosen ?? (startsBurst ? "burstable" : "standard")) === "burstable";
+  const seriesSizes = inBurst ? burstSizes : standardSizes;
   const shares = useFileShares(project);
   const forwards = usePortForwards(project);
   const fwdQuota = usePortForwardQuota(project);
@@ -317,7 +347,9 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   // with its quantities as written, so it is kept unless another is chosen.
   const res = baseC?.spec?.resources ?? baseV?.spec?.resources;
   const defaults = baseC ? containerDefaults : vmDefaults;
-  const currentMatch = edit ? sizeOf({ cpu: quantityCPU(res?.cpu || defaults.cpu), memoryGi: quantityGiB(res?.memory || defaults.memory) }, offered) : undefined;
+  const currentMatch = edit
+    ? sizeOf({ cpu: quantityCPU(res?.cpu || defaults.cpu), memoryGi: quantityGiB(res?.memory || defaults.memory), baseline: initialBaseline }, offered)
+    : undefined;
   const current: Size | undefined = edit && {
     name: currentMatch?.name ?? "",
     label: currentMatch?.label ?? "Current",
@@ -325,16 +357,25 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
     cpu: quantityCPU(res?.cpu || defaults.cpu),
     memoryGi: quantityGiB(res?.memory || defaults.memory),
     diskGi: 0,
+    baseline: initialBaseline,
     resources: { cpu: res?.cpu ?? "", memory: res?.memory ?? "", disk: "" },
   };
-  const chosen = offered.find((z) => z.name === size);
-  // The size asked for, if the platform lists it, or else its first; an
+  // The edited machine's own size is shown in its own series alone.
+  const currentHere = !!current && (current.baseline !== 100) === inBurst;
+  const chosen = seriesSizes.find((z) => z.name === size);
+  // The size asked for, if the series lists it, or else its first; an
   // edit's own until another is chosen.
-  const picked: Size | undefined = edit ? (chosen && chosen.name !== currentMatch?.name ? chosen : current) : (chosen ?? offered[0]);
+  const picked: Size | undefined = edit
+    ? chosen && chosen.name !== currentMatch?.name
+      ? chosen
+      : currentHere
+        ? current
+        : seriesSizes[0]
+    : (chosen ?? seriesSizes[0]);
   const isCurrent = (z: Size) => !!edit && z.name === currentMatch?.name;
-  // With no size to pick, a new machine's shape is the person's own.
-  const noSizes = !machineSizes.loading && !machineSizes.error && offered.length === 0 && !current;
-  const customFields = custom ?? (noSizes ? { cpu: 1, memMiB: 1024 } : null);
+  // With no size to pick, a new machine's shape is the person's own; Custom is standard only.
+  const noSizes = !inBurst && !machineSizes.loading && !machineSizes.error && standardSizes.length === 0 && !currentHere;
+  const customFields = inBurst ? null : (custom ?? (noSizes ? { cpu: 1, memMiB: 1024 } : null));
   const customCPU = customFields?.cpu ?? NaN;
   const customMiB = customFields?.memMiB ?? NaN;
   const customProblem = customFields ? shapeProblem(customCPU, customMiB) : undefined;
@@ -347,10 +388,13 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
         memoryGi: customMiB / 1024,
         // The disk follows the size chosen before, as the sliders start from it.
         diskGi: picked?.diskGi ?? 0,
+        baseline: 100,
         resources: { cpu: String(customCPU), memory: memoryQuantity(customMiB), disk: "" },
       }
     : undefined;
   const s = customSize ?? picked;
+  // What is sent as resources.cpu_baseline: a burstable size's, else 0 (unset).
+  const cpuBaseline = s && s.baseline !== 100 ? s.baseline : 0;
   const memMiBOf = (z: Size) => (z.resources.memory ? parseQuantity(z.resources.memory) / 2 ** 20 : Math.round(z.memoryGi * 1024));
   const sMiB = s ? memMiBOf(s) : NaN;
   const shared = pool.pooled && share === "shared";
@@ -363,10 +407,18 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const ownShapes = [current, customFields && { cpu: customFields.cpu, memoryGi: customFields.memMiB / 1024 }].flatMap((x) =>
     x ? [{ memMiB: Math.round(x.memoryGi * 1024), cpu: x.cpu }] : [],
   );
-  const limits = sliderLimits(offered, ownShapes);
+  const limits = sliderLimits(standardSizes, ownShapes);
   const stops = memoryStops(limits.memMiB, ownShapes.map((o) => o.memMiB));
-  // The size cards: an edited machine's own shape first when no size is it.
-  const cards = [...(current && !currentMatch ? [current] : []), ...offered];
+  // The size cards of the series: an edited machine's own shape first when no size is it.
+  const cards = [...(current && currentHere && !currentMatch ? [current] : []), ...seriesSizes];
+  // A PAY_AS_YOU_GO tenant sees what a size costs an hour on its card; a FIXED one sees no price.
+  const priceOf = (z: Size) => (burstable.payg ? sizePrice(burstable.prices, z) : undefined);
+  // Switching series starts on its first size, or an edit's own in its series.
+  const switchSeries = (to: "standard" | "burstable") => {
+    setSeriesChosen(to);
+    setCustom(null);
+    setSize(undefined);
+  };
   // Custom starts from the shape chosen before it, on a stop and with vCPUs its memory allows.
   const pickCustom = () => {
     if (custom) return;
@@ -486,6 +538,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
     }
     // With a pool, the reservation is written whenever it differs from the stored one, so a resize keeps it as shown.
     if (pool.pooled && s && memoryReserved !== ((baseC ?? baseV)?.spec?.resources?.memoryReserved ?? "")) changed.memoryReserved = memoryReserved;
+    if (s && s.baseline !== initialBaseline) changed.cpuBaseline = cpuBaseline;
     obj = editedObject(edit.base, changed);
   } else {
     obj =
@@ -500,14 +553,14 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
               restartPolicy: proc.restartPolicy,
               interfaces,
               volumes: volumesOf(volumes),
-              resources: s && { ...s.resources, memoryReserved, disk: diskQuantity, diskGrow: grow.spec },
+              resources: s && { ...s.resources, memoryReserved, cpuBaseline, disk: diskQuantity, diskGrow: grow.spec },
             },
           })
         : create(VirtualMachineSchema, {
             metadata: { name, project },
             spec: {
               interfaces,
-              resources: s && { cpu: s.resources.cpu, memory: s.resources.memory, memoryReserved },
+              resources: s && { cpu: s.resources.cpu, memory: s.resources.memory, memoryReserved, cpuBaseline },
               rootDisk: {
                 source: { case: "fromImage", value: { image: { name: chosenImage, project: chosenCustom ? project : "" }, size: s ? diskQuantity : "" } },
               },
@@ -688,6 +741,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                   </span>
                 </div>
                 {shared && <div className="mt-0.5 text-[12.5px] text-muted tabular">Shared memory, {gibText(reservedMiB)} GiB reserved</div>}
+                {cpuBaseline > 0 && <div className="mt-0.5 text-[12.5px] text-muted tabular">Burstable, {cpuBaseline}% baseline</div>}
               </>
             ) : (
               <div className="text-[13px] text-muted">No size</div>
@@ -890,12 +944,17 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
           <ErrorNotice error={machineSizes.error} title="The machine sizes did not load" onRetry={machineSizes.refetch} className="max-w-xl p-0" />
         ) : (
           <>
-          {/* One row on a wide screen, whatever the number of sizes; Custom last. */}
+          {inBurst && (
+            <button type="button" onClick={() => switchSeries("standard")} className="mb-3 flex items-center gap-1 text-[12.5px] text-accent hover:underline">
+              <ArrowLeft className="size-3.5" /> Back to standard sizes
+            </button>
+          )}
+          {/* One row on a wide screen, whatever the number of sizes; Custom last, in the standard series alone. */}
           <div
             role="radiogroup"
-            aria-label="Size"
+            aria-label={inBurst ? "Burstable size" : "Size"}
             className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(var(--cards),minmax(0,1fr))]"
-            style={{ "--cards": cards.length + 1 } as CSSProperties}
+            style={{ "--cards": inBurst ? Math.max(cards.length, standardSizes.length + 1) : cards.length + 1 } as CSSProperties}
           >
             {cards.map((z) => {
               const tooBig = cardOver(z).length > 0;
@@ -924,12 +983,19 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                     <div>
                       {formatNumber(z.memoryGi)} <span className="text-muted">GiB memory</span>
                     </div>
+                    {z.baseline !== 100 && (
+                      <div>
+                        {z.baseline}% <span className="text-muted">baseline</span>
+                      </div>
+                    )}
                   </div>
+                  <HourPrice price={priceOf(z)} currency={burstable.currency} />
                   {own && <div className="mt-2 text-[11.5px] font-medium text-muted">{z === current ? "Current, no listed size" : "Current"}</div>}
                   {tooBig && <div className="mt-2 text-[11.5px] font-medium text-fail">Over quota</div>}
                 </Choice>
               );
             })}
+            {!inBurst && (
             <Choice key="(custom)" label="Size Custom" selected={!!customFields} onClick={pickCustom} className="p-4">
               <div className="flex min-h-[26px] items-center pr-5 font-mono text-[17px] font-semibold leading-tight tracking-tight">Custom</div>
               <div className="mt-3 space-y-1 font-mono text-[12.5px] tabular">
@@ -950,9 +1016,25 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                   {formatNumber(minMiBPerCPU / 1024)}–{formatNumber(maxMiBPerCPU / 1024)} GiB per vCPU
                 </div>
               </div>
+              {customSize && !customProblem && <HourPrice price={priceOf(customSize)} currency={burstable.currency} />}
               {customFields && over.length > 0 && <div className="mt-2 text-[11.5px] font-medium text-fail">Over quota</div>}
             </Choice>
+            )}
           </div>
+          {/* The way to the burstable series is kept low-key, so Standard stays the usual choice. */}
+          {burstOffered && !inBurst && (
+            <p className="mt-2.5 text-[12px] text-subtle">
+              Mostly idle?{" "}
+              <button type="button" onClick={() => switchSeries("burstable")} className="text-accent hover:underline">
+                A burstable machine costs less →
+              </button>
+            </p>
+          )}
+          {inBurst && (
+            <p className="mt-2.5 max-w-2xl text-[12.5px] text-muted">
+              A burstable machine earns credits while it uses less than its baseline, and spends them to use all its vCPUs; with no credits left, it is held to its baseline.
+            </p>
+          )}
           {customFields && (
             <div className="mt-3">
               <SizeSliders

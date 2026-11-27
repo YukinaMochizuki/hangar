@@ -40,6 +40,11 @@ message MachineSizeSpec {
   // smallest first, and by name where orders tie. The API lists sizes by
   // name, as every kind; only the console sorts by order.
   int32 order = 5;
+  // A burstable size's CPU baseline in percent, 20 or 40, which a machine
+  // made from it is given as resources.cpu_baseline; unset is a standard
+  // size of all its vCPUs. The console offers burstable sizes as a series
+  // of their own. See docs/decisions/cpu-credits.md.
+  int32 cpu_baseline = 6;
 }
 
 // MachineSizeStatus is the observed state of a machine size. Nothing reports

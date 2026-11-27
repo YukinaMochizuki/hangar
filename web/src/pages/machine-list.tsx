@@ -16,6 +16,7 @@ import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
 import { machinePermKey, machinePerms, useMachineCan } from "@/lib/permissions";
 import { formatNumber } from "@/lib/quantity";
 import { MemoryStateLine, MemoryText } from "@/components/machine-memory";
+import { BurstableBadge } from "@/components/cpu-baseline";
 
 type StatusFilter = "all" | "running" | "stopped" | "failed";
 
@@ -179,6 +180,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
                           <span className="text-muted tabular">
                             {formatNumber(m.cpu)} vCPU · <MemoryText m={m} />
                           </span>
+                          <BurstableBadge m={m} />
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px]">

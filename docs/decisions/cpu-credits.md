@@ -1,8 +1,9 @@
 # Burstable machines run on CPU credits, held to a baseline once they are spent
 
 Status: accepted, 2026-11. Built: the API, admission, the meter and prices,
-the node's ledger and limit (`node-agent.md`, "CPU credits"), and the
-machine's usage. Not built yet: the console.
+the node's ledger and limit (`node-agent.md`, "CPU credits"), the
+machine's usage, burstable machine sizes (`machine-sizes.md`), and the
+console (`console-design.md`, "Burstable machines").
 
 ## Context
 

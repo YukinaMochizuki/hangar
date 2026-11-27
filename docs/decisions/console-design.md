@@ -441,8 +441,8 @@ Settled with the owner on screenshots before the dialogs sent anything.
   their number, Custom last, their lines level across the row. A size the
   shape rules refuse, stored before them, is not offered, since a machine of it
   would be refused; lists still name machines by it. A list's size badge
-  is the listed size whose cpu and memory the machine has, and none when
-  no size matches.
+  is the listed size whose cpu, memory and CPU baseline the machine has,
+  and none when no size matches.
 - **Custom, after the sizes, is a shape of the person's own**, set on two
   rulers so that a shape the rules refuse (`shapeProblem`, the apiserver's
   rules) cannot be set (`web/src/components/size-sliders.tsx`). The card
@@ -754,6 +754,52 @@ language; the plan's percent is never shown.
   Settled with the owner, over "not giving memory back", which said what
   happens but not why. A kill that left the machine down already has its
   Failed banner, so it gets no second one.
+
+### Burstable machines
+
+Settled with the owner on screenshots (`cpu-credits.md` for what a
+burstable machine is). Burstable is a series of sizes of its own, kept
+apart from the standard sizes so the form leads to Standard; the words are
+plain, for people whose English is a second language.
+
+- **The burstable sizes are the administrator's**: the `MachineSize`s with
+  a `cpu_baseline` (`machine-sizes.md`); the rest are the standard sizes.
+  The console holds none of its own.
+- **The Size step shows the standard sizes first**, as before, Custom
+  last. For a PAY_AS_YOU_GO tenant with burstable sizes to offer, one
+  low-key line under the cards reads "Mostly idle? A burstable machine
+  costs less →"; it swaps the cards for the burstable ones, with
+  "← Back to standard sizes" above them and one sentence under them on
+  what burstable means: it earns credits while under its baseline, spends
+  them to use all its vCPUs, and is held to its baseline with none left.
+  A burstable card states its vCPUs, memory and baseline ("20% baseline").
+  Custom is standard only. A burstable size sends its baseline as
+  `resources.cpu_baseline`, and the Summary says "Burstable, 20%
+  baseline". A FIXED tenant sees no burstable size and no link, and the
+  form is as before (`web/src/pages/create-machine.tsx`).
+- **A PAY_AS_YOU_GO tenant sees each size's price an hour on its card**,
+  standard and burstable alike, and Custom's once its shape is one the
+  rules take: its vCPUs and memory while it runs, at the price list in
+  effect, a burstable size's vCPUs at their own price or, unset, at cpu's
+  times the baseline, as the meter rates them (`sizePrice` in
+  `web/src/lib/billing.ts`). The disk is billed apart and not counted. A
+  FIXED tenant pays its plan and sees no price.
+- **An edited burstable machine opens on the burstable sizes**, its own
+  marked Current, and a standard size from them lists "CPU: Burstable 20%
+  → Standard" as restarting nothing. A resize keeps the baseline unless
+  another series' size is chosen. A tenant that left PAYG still edits its
+  burstable machine in that series.
+- **Credits are on the machine's page alone**: one line under the CPU plot
+  of the Usage card, "Burstable 20% · 412 credits · about 4 h at full
+  speed", from the node's `Usage` (`cpu_baseline`, `cpu_credits`,
+  `cpu_held`), or in amber "Burstable 20% · out of credits, held to 20%".
+  It adds no card and keeps the card's height but for that line. Nothing
+  of credits is on the Overview or in lists (owner decision).
+- **A burstable machine is marked "Burstable 20%"** beside its size, in its
+  page's head and its list's row. A size badge matches a listed size by
+  its baseline too, so a burstable machine reads B2, not S.
+- **Billing names the burstable items** "vCPU, burstable 20%" and "vCPU,
+  burstable 40%" on statements and price lists.
 
 ### Disks and images
 

@@ -34,6 +34,8 @@ export type MachineView = {
   cpu: number;
   memoryGi: number;
   diskGi: number;
+  /** Its CPU baseline in percent: 20 or 40 when burstable, 100 otherwise (docs/decisions/cpu-credits.md). */
+  baseline: number;
   /** A container's image reference, a VM's image or root disk name. */
   image: string;
   imageDigest: string;
@@ -94,6 +96,11 @@ function ownerOf(m: Machine): { kind: string; name: string } | undefined {
   return ref ? { kind: ref.kind, name: ref.name } : undefined;
 }
 
+/** A baseline as the object writes it, as a percent: 20 or 40, else 100. */
+function baselineOf(b: number | undefined): number {
+  return b === 20 || b === 40 ? b : 100;
+}
+
 export function containerView(c: Container, m: Machine | undefined): MachineView {
   const res = m?.spec?.resources ?? c.spec?.resources;
   const stopped = c.spec?.runState === ContainerRunState.STOPPED;
@@ -105,6 +112,7 @@ export function containerView(c: Container, m: Machine | undefined): MachineView
     cpu: quantityCPU(res?.cpu),
     memoryGi: quantityGiB(res?.memory),
     diskGi: quantityGiB(res?.disk),
+    baseline: baselineOf(c.spec?.resources?.cpuBaseline),
     image: c.spec?.image ?? "",
     imageDigest: m?.status?.imageDigest ?? "",
     node: m?.spec?.node ?? "",
@@ -137,6 +145,7 @@ export function vmView(v: VirtualMachine, m: Machine | undefined): MachineView {
     cpu: quantityCPU(res?.cpu || v.spec?.resources?.cpu || "1"),
     memoryGi: quantityGiB(res?.memory || v.spec?.resources?.memory || "1Gi"),
     diskGi: quantityGiB(disk),
+    baseline: baselineOf(v.spec?.resources?.cpuBaseline),
     image,
     imageDigest: "",
     node: m?.spec?.node ?? "",

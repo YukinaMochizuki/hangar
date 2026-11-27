@@ -119,7 +119,12 @@ type MachineSizeSpec struct {
 	// Where the console shows the size among the others: zero or more,
 	// smallest first, and by name where orders tie. The API lists sizes by
 	// name, as every kind; only the console sorts by order.
-	Order         int32 `protobuf:"varint,5,opt,name=order,proto3" json:"order,omitempty"`
+	Order int32 `protobuf:"varint,5,opt,name=order,proto3" json:"order,omitempty"`
+	// A burstable size's CPU baseline in percent, 20 or 40, which a machine
+	// made from it is given as resources.cpu_baseline; unset is a standard
+	// size of all its vCPUs. The console offers burstable sizes as a series
+	// of their own. See docs/decisions/cpu-credits.md.
+	CpuBaseline   int32 `protobuf:"varint,6,opt,name=cpu_baseline,json=cpuBaseline,proto3" json:"cpu_baseline,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -185,6 +190,13 @@ func (x *MachineSizeSpec) GetDisk() string {
 func (x *MachineSizeSpec) GetOrder() int32 {
 	if x != nil {
 		return x.Order
+	}
+	return 0
+}
+
+func (x *MachineSizeSpec) GetCpuBaseline() int32 {
+	if x != nil {
+		return x.CpuBaseline
 	}
 	return 0
 }
@@ -888,13 +900,14 @@ const file_hangar_compute_v1alpha1_machine_size_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x12<\n" +
 	"\x04spec\x18\x04 \x01(\v2(.hangar.compute.v1alpha1.MachineSizeSpecR\x04spec\x12B\n" +
 	"\x06status\x18\x05 \x01(\v2*.hangar.compute.v1alpha1.MachineSizeStatusR\x06status:%\x8a\xb5\x18!\n" +
-	"\vMachineSize\x12\fmachinesizes\x1a\x02ms \x02\"\x88\x01\n" +
+	"\vMachineSize\x12\fmachinesizes\x1a\x02ms \x02\"\xab\x01\n" +
 	"\x0fMachineSizeSpec\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x10\n" +
 	"\x03cpu\x18\x02 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x03 \x01(\tR\x06memory\x12\x12\n" +
 	"\x04disk\x18\x04 \x01(\tR\x04disk\x12\x14\n" +
-	"\x05order\x18\x05 \x01(\x05R\x05order\"\x7f\n" +
+	"\x05order\x18\x05 \x01(\x05R\x05order\x12!\n" +
+	"\fcpu_baseline\x18\x06 \x01(\x05R\vcpuBaseline\"\x7f\n" +
 	"\x11MachineSizeStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +

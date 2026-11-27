@@ -51,8 +51,7 @@ can choose a shape within rules instead.
 - **A CPU baseline is no part of the shape.** Any shape may be burstable:
   `resources.cpu_baseline`, 20, 40 or 100, is checked apart from these
   rules, for every caller, and changes neither the vCPUs the rules count
-  nor what the quota counts (`cpu-credits.md`). A `MachineSize` has no
-  baseline.
+  nor what the quota counts (`cpu-credits.md`).
 - **The exemption follows the permission to define sizes.** A caller the
   authorizer allows `compute.machinesizes.apply` at the platform is not
   checked: `platform.root`, whether a person, root on the host or a service
@@ -66,6 +65,12 @@ can choose a shape within rules instead.
   cpu and memory from the chosen one and its disk field's starting value
   from the size's disk. A size is a template, not a reference: the machine
   records no size, and changing or deleting a size changes no machine.
+- **A size may be burstable**: an optional `cpu_baseline`, 20 or 40
+  (admission refuses any other), which a machine made from it is given as
+  `resources.cpu_baseline`. Unset is a standard size. The console offers
+  the burstable sizes as a series of their own, apart from the standard
+  ones, to PAY_AS_YOU_GO tenants only (`console-design.md`); Custom is
+  always standard.
 - **A size keeps to the rules a machine does**, as a preset of a shape a
   tenant may have: admission refuses a size whose cpu, memory and disk
   would be refused on a tenant's machine, besides a display name of 1 to

@@ -17,6 +17,11 @@ export type Size = {
   cpu: number;
   memoryGi: number;
   diskGi: number;
+  /**
+   * Its CPU baseline in percent: 20 or 40 for a burstable size, offered in a
+   * series of its own (docs/decisions/cpu-credits.md); 100 for a standard one.
+   */
+  baseline: number;
   /** The quantities as the size writes them, which a machine is sent. */
   resources: { cpu: string; memory: string; disk: string };
 };
@@ -37,6 +42,7 @@ export function sizeView(ms: MachineSize): Size {
     cpu: quantityCPU(spec?.cpu),
     memoryGi: quantityGiB(spec?.memory),
     diskGi: quantityGiB(spec?.disk),
+    baseline: spec?.cpuBaseline === 20 || spec?.cpuBaseline === 40 ? spec.cpuBaseline : 100,
     resources: { cpu: spec?.cpu ?? "", memory: spec?.memory ?? "", disk: spec?.disk ?? "" },
   };
 }
@@ -136,6 +142,6 @@ export function clampCPU(cpu: number, memMiB: number): number {
 }
 
 /** The listed size whose cpu and memory a machine has, if any. */
-export function sizeOf(m: { cpu: number; memoryGi: number }, sizes: Size[]): Size | undefined {
-  return sizes.find((s) => s.cpu === m.cpu && s.memoryGi === m.memoryGi);
+export function sizeOf(m: { cpu: number; memoryGi: number; baseline?: number }, sizes: Size[]): Size | undefined {
+  return sizes.find((s) => s.cpu === m.cpu && s.memoryGi === m.memoryGi && s.baseline === (m.baseline ?? 100));
 }

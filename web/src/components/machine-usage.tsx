@@ -5,6 +5,8 @@
 import type { ReactNode } from "react";
 import { SeriesPlot, SeriesValue, type ChartSeries } from "@/components/series-chart";
 import { Card, CardEmpty, CardHeader } from "@/components/ui";
+import { cn } from "@/lib/cn";
+import { creditsLine, type Credits } from "@/lib/cpu-credits";
 import { formatNumber } from "@/lib/quantity";
 
 /** What the card draws: the samples' series and which memory they are. */
@@ -20,6 +22,8 @@ export type Usage = {
    * and the share, 0 to 1, of the last hour they held it back, when known.
    */
   cpuPool?: { cpus: number; slowed?: number };
+  /** Its CPU credits, when it is burstable (docs/decisions/cpu-credits.md); its vCPUs come from the card's caller. */
+  credits?: Omit<Credits, "vcpus">;
 };
 
 /** The line under a pooled machine's CPU plot: what it shares, and how often that slowed it. */
@@ -60,7 +64,7 @@ function Section({ title, value, children }: { title: string; value?: ReactNode;
  * machine's (`shared`) memory also shows what its pool leaves it now, a
  * dashed line on the plot (docs/decisions/memory-pool.md).
  */
-export function UsageCard({ usage, now, shared }: { usage: Usage; now?: Date; shared?: boolean }) {
+export function UsageCard({ usage, now, shared, vcpus }: { usage: Usage; now?: Date; shared?: boolean; vcpus?: number }) {
   const memory = memoryTitle(usage.memoryKind);
   const sizeNow = shared ? usage.sizeNowBytes : undefined;
   const sizeNowGi = sizeNow === undefined ? undefined : formatNumber(sizeNow / 2 ** 30);
@@ -69,6 +73,12 @@ export function UsageCard({ usage, now, shared }: { usage: Usage; now?: Date; sh
       <Section title="CPU" value={<SeriesValue series={usage.cpu} />}>
         <SeriesPlot title="CPU" series={usage.cpu} range="1h" now={now} axis="inside" />
         {usage.cpuPool && <div className="mt-1.5 text-[11.5px] text-subtle">{cpuPoolLine(usage.cpuPool)}</div>}
+        {/* One line, in amber while the node holds it to its baseline. */}
+        {usage.credits && vcpus !== undefined && (
+          <div className={cn("mt-1.5 truncate text-[11.5px]", usage.credits.held ? "text-pending" : "text-subtle")}>
+            {creditsLine({ ...usage.credits, vcpus })}
+          </div>
+        )}
       </Section>
       <Section
         title={memory}

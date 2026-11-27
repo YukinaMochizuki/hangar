@@ -70,6 +70,16 @@ describe("prefilling the form from an object", () => {
 });
 
 describe("editedObject", () => {
+  it("keeps a burstable machine's baseline through a resize, which rewrites its resources", () => {
+    const burstable = (o: Container | VirtualMachine) => {
+      o.spec!.resources!.cpuBaseline = 20;
+      return o;
+    };
+    expect((editedObject(burstable(web()), { cpu: "2" }) as Container).spec?.resources?.cpuBaseline).toBe(20);
+    expect((editedObject(burstable(db()), { cpu: "4", memory: "8Gi" }) as VirtualMachine).spec?.resources?.cpuBaseline).toBe(20);
+    expect((editedObject(burstable(web()), { cpuBaseline: 0 }) as Container).spec?.resources?.cpuBaseline).toBe(0);
+  });
+
   it("keeps what the form does not show: labels, version, run state, ports, pull secrets, volume options", () => {
     const o = editedObject(web(), { image: "nginx:2", volumes: [{ source: "cache", kind: "Disk", target: "/data", readOnly: true }] }) as Container;
     expect(o.metadata?.resourceVersion).toBe(21n);

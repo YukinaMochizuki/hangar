@@ -57,3 +57,15 @@ describe("a list's machine whose start waits for room", () => {
     expect(names()).toContain("old");
   });
 });
+
+describe("a list's burstable machine", () => {
+  it("is marked Burstable with its baseline beside its size, and a standard one is not", async () => {
+    const batch = { metadata: { name: "batch", project: "demo" }, spec: { image: "nginx", resources: { cpu: "2", memory: "2Gi", cpuBaseline: 40 } } };
+    render(<MachineList kind="Container" />, { wrapper: withApi(paletteApi({ listContainers: () => ({ items: [...lists.listContainers().items, batch] }) })) });
+    const table = await screen.findByRole("table");
+    await within(table).findByText("batch");
+    const row = (name: string) => within(table).getByText(name).closest("tr") as HTMLElement;
+    expect(within(row("batch")).getByText("Burstable 40%")).toBeTruthy();
+    expect(within(row("web")).queryByText(/Burstable/)).toBeNull();
+  });
+});
