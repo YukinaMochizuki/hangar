@@ -10,10 +10,16 @@ import "hangar/compute/v1alpha1/machine.proto";
 // resource's service, so it is written by hand rather than generated.
 service TenantCapabilityService {
   // CPUPoolUsage says how often the tenant's CPU pool slowed its machines
-  // over the last hour, and the pool's CPUs, from each connected node its
-  // pool's running machines are on. It needs the tenant's get, as reading
-  // the Tenant does. A tenant with no CPU pool answers nothing set. See
-  // docs/decisions/cpu-pool.md.
+  // over the last hour, minute by minute, the pool's CPUs, and what each
+  // running machine in it uses of its CPUs now, from each connected node
+  // the pool's running machines are on. It is asked as MemoryPoolUsage
+  // is: the get of Containers or VirtualMachines in some project of the
+  // tenant, and the machines of a project whose Containers and
+  // VirtualMachines the caller may not get are summed into other,
+  // unnamed. Such a caller learns the pool's CPUs, how often it slowed,
+  // and that sum, nothing more. A tenant with no CPU pool answers nothing
+  // set; a tenant that does not exist is NOT_FOUND to a caller over every
+  // tenant. See docs/decisions/cpu-pool.md.
   rpc CPUPoolUsage(CPUPoolUsageRequest) returns (CPUPoolUsageResponse);
   // MemoryPoolUsage says who holds the tenant's memory pool now: each
   // running machine in it, with what its guest has, from each connected
@@ -42,9 +48,61 @@ message CPUPoolUsageResponse {
   // The pool's CPUs, in millicores, the most a node read holds it to;
   // unset when none read holds it.
   optional int64 milli_cpu = 2;
-  // How many nodes the pool's running machines are on, that could not be
-  // read, as one not connected.
+  // How many of the nodes the machines in `machines` are on could not be
+  // read, as one not connected, or have no CPU sample of the pool's
+  // machines lately. The nodes only other's machines are on are not
+  // counted.
   int32 nodes_unread = 3;
+  // The minutes of the last hour slowed counts, oldest first, at most
+  // 60: for each, the largest share of the nodes read that counted it.
+  // A minute no node read counted, as one with no sample, is not here.
+  repeated CPUPoolMinute minutes = 4;
+  // Of the nodes the machines in `machines` are on, when the oldest
+  // latest CPU sample of their machines was taken; unset when none has
+  // one lately. The nodes only other's machines are on are not counted.
+  google.protobuf.Timestamp sample_time = 5;
+  // The running machines in the pool the caller may read, by what they
+  // use now, largest first (unknown last), then by project and name.
+  // FileShare servers are in no pool, so never here.
+  repeated CPUPoolMachine machines = 6;
+  // The running machines in the pool the caller may not read, summed;
+  // unset when there are none.
+  CPUPoolTotal other = 7;
+  // Whether the tenant's machines share its CPUs as a pool: its plan's
+  // percent above 100 with a cpu limit, and its BillingAccount not
+  // PAY_AS_YOU_GO. False, nothing else is set.
+  bool pooled = 8;
+}
+
+// CPUPoolMinute is one minute of a CPU pool.
+message CPUPoolMinute {
+  // When the minute began.
+  google.protobuf.Timestamp time = 1;
+  // Of the pool's limit's periods in it, the share, from 0 to 1, in which
+  // the limit held its machines back.
+  double slowed = 2;
+}
+
+// CPUPoolMachine is a running machine in a CPU pool.
+message CPUPoolMachine {
+  string project = 1;
+  // The kind of the object it runs, Container or VirtualMachine, and that
+  // object's name.
+  string kind = 2;
+  string name = 3;
+  hangar.compute.v1alpha1.MachinePhase phase = 4;
+  int32 vcpus = 5;
+  // The CPU it used over its node's latest 10 s sample of it, in
+  // millicores: how busy its vCPUs were times their count. Unset when its
+  // node has no such sample lately, or could not be read.
+  optional int64 cpu_now_milli = 6;
+}
+
+// CPUPoolTotal sums machines of a CPU pool.
+message CPUPoolTotal {
+  // What they used over their latest samples, in millicores; a machine
+  // with none counts nothing.
+  int64 cpu_now_milli = 1;
 }
 
 message MemoryPoolUsageRequest {

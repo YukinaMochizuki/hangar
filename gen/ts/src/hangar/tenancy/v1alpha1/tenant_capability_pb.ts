@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/tenancy/v1alpha1/tenant_capability.proto.
  */
 export const file_hangar_tenancy_v1alpha1_tenant_capability: GenFile = /*@__PURE__*/
-  fileDesc("Ci9oYW5nYXIvdGVuYW5jeS92MWFscGhhMS90ZW5hbnRfY2FwYWJpbGl0eS5wcm90bxIXaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEiJQoTQ1BVUG9vbFVzYWdlUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkicgoUQ1BVUG9vbFVzYWdlUmVzcG9uc2USEwoGc2xvd2VkGAEgASgBSACIAQESFgoJbWlsbGlfY3B1GAIgASgDSAGIAQESFAoMbm9kZXNfdW5yZWFkGAMgASgFQgkKB19zbG93ZWRCDAoKX21pbGxpX2NwdSIoChZNZW1vcnlQb29sVXNhZ2VSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCSL/AQoXTWVtb3J5UG9vbFVzYWdlUmVzcG9uc2USFwoKc2l6ZV9ieXRlcxgBIAEoA0gAiAEBEi8KC3NhbXBsZV90aW1lGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxub2Rlc191bnJlYWQYAyABKAUSPAoIbWFjaGluZXMYBCADKAsyKi5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5NZW1vcnlQb29sTWFjaGluZRI3CgVvdGhlchgFIAEoCzIoLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLk1lbW9yeVBvb2xUb3RhbEINCgtfc2l6ZV9ieXRlcyL2AgoRTWVtb3J5UG9vbE1hY2hpbmUSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAIgASgJEgwKBG5hbWUYAyABKAkSNAoFcGhhc2UYBCABKA4yJS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lUGhhc2USFAoMbWVtb3J5X2J5dGVzGAUgASgDEhYKDnJlc2VydmVkX2J5dGVzGAYgASgDEhoKDWN1cnJlbnRfYnl0ZXMYByABKANIAIgBARIZCgxpbl91c2VfYnl0ZXMYCiABKANIAYgBARI2ChJsYXN0X29vbV9raWxsX3RpbWUYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEj4KGmJhbGxvb25fdW5yZXNwb25zaXZlX3NpbmNlGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIQCg5fY3VycmVudF9ieXRlc0IPCg1faW5fdXNlX2J5dGVzImwKD01lbW9yeVBvb2xUb3RhbBIUCgxtZW1vcnlfYnl0ZXMYASABKAMSFgoOcmVzZXJ2ZWRfYnl0ZXMYAiABKAMSFQoNY3VycmVudF9ieXRlcxgDIAEoAxIUCgxpbl91c2VfYnl0ZXMYBCABKAMy/AEKF1RlbmFudENhcGFiaWxpdHlTZXJ2aWNlEmsKDENQVVBvb2xVc2FnZRIsLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkNQVVBvb2xVc2FnZVJlcXVlc3QaLS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5DUFVQb29sVXNhZ2VSZXNwb25zZRJ0Cg9NZW1vcnlQb29sVXNhZ2USLy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5NZW1vcnlQb29sVXNhZ2VSZXF1ZXN0GjAuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTWVtb3J5UG9vbFVzYWdlUmVzcG9uc2VChAIKG2NvbS5oYW5nYXIudGVuYW5jeS52MWFscGhhMUIVVGVuYW50Q2FwYWJpbGl0eVByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL3RlbmFuY3kvdjFhbHBoYTE7dGVuYW5jeXYxYWxwaGExogIDSFRYqgIXSGFuZ2FyLlRlbmFuY3kuVjFhbHBoYTHKAhdIYW5nYXJcVGVuYW5jeVxWMWFscGhhMeICI0hhbmdhclxUZW5hbmN5XFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpUZW5hbmN5OjpWMWFscGhhMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_machine]);
+  fileDesc("Ci9oYW5nYXIvdGVuYW5jeS92MWFscGhhMS90ZW5hbnRfY2FwYWJpbGl0eS5wcm90bxIXaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEiJQoTQ1BVUG9vbFVzYWdlUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAki3QIKFENQVVBvb2xVc2FnZVJlc3BvbnNlEhMKBnNsb3dlZBgBIAEoAUgAiAEBEhYKCW1pbGxpX2NwdRgCIAEoA0gBiAEBEhQKDG5vZGVzX3VucmVhZBgDIAEoBRI3CgdtaW51dGVzGAQgAygLMiYuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuQ1BVUG9vbE1pbnV0ZRIvCgtzYW1wbGVfdGltZRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASOQoIbWFjaGluZXMYBiADKAsyJy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5DUFVQb29sTWFjaGluZRI0CgVvdGhlchgHIAEoCzIlLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkNQVVBvb2xUb3RhbBIOCgZwb29sZWQYCCABKAhCCQoHX3Nsb3dlZEIMCgpfbWlsbGlfY3B1IkkKDUNQVVBvb2xNaW51dGUSKAoEdGltZRgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGc2xvd2VkGAIgASgBIrABCg5DUFVQb29sTWFjaGluZRIPCgdwcm9qZWN0GAEgASgJEgwKBGtpbmQYAiABKAkSDAoEbmFtZRgDIAEoCRI0CgVwaGFzZRgEIAEoDjIlLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVQaGFzZRINCgV2Y3B1cxgFIAEoBRIaCg1jcHVfbm93X21pbGxpGAYgASgDSACIAQFCEAoOX2NwdV9ub3dfbWlsbGkiJQoMQ1BVUG9vbFRvdGFsEhUKDWNwdV9ub3dfbWlsbGkYASABKAMiKAoWTWVtb3J5UG9vbFVzYWdlUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAki/wEKF01lbW9yeVBvb2xVc2FnZVJlc3BvbnNlEhcKCnNpemVfYnl0ZXMYASABKANIAIgBARIvCgtzYW1wbGVfdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMbm9kZXNfdW5yZWFkGAMgASgFEjwKCG1hY2hpbmVzGAQgAygLMiouaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTWVtb3J5UG9vbE1hY2hpbmUSNwoFb3RoZXIYBSABKAsyKC5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5NZW1vcnlQb29sVG90YWxCDQoLX3NpemVfYnl0ZXMi9gIKEU1lbW9yeVBvb2xNYWNoaW5lEg8KB3Byb2plY3QYASABKAkSDAoEa2luZBgCIAEoCRIMCgRuYW1lGAMgASgJEjQKBXBoYXNlGAQgASgOMiUuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZVBoYXNlEhQKDG1lbW9yeV9ieXRlcxgFIAEoAxIWCg5yZXNlcnZlZF9ieXRlcxgGIAEoAxIaCg1jdXJyZW50X2J5dGVzGAcgASgDSACIAQESGQoMaW5fdXNlX2J5dGVzGAogASgDSAGIAQESNgoSbGFzdF9vb21fa2lsbF90aW1lGAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI+ChpiYWxsb29uX3VucmVzcG9uc2l2ZV9zaW5jZRgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCEAoOX2N1cnJlbnRfYnl0ZXNCDwoNX2luX3VzZV9ieXRlcyJsCg9NZW1vcnlQb29sVG90YWwSFAoMbWVtb3J5X2J5dGVzGAEgASgDEhYKDnJlc2VydmVkX2J5dGVzGAIgASgDEhUKDWN1cnJlbnRfYnl0ZXMYAyABKAMSFAoMaW5fdXNlX2J5dGVzGAQgASgDMvwBChdUZW5hbnRDYXBhYmlsaXR5U2VydmljZRJrCgxDUFVQb29sVXNhZ2USLC5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5DUFVQb29sVXNhZ2VSZXF1ZXN0Gi0uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuQ1BVUG9vbFVzYWdlUmVzcG9uc2USdAoPTWVtb3J5UG9vbFVzYWdlEi8uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTWVtb3J5UG9vbFVzYWdlUmVxdWVzdBowLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLk1lbW9yeVBvb2xVc2FnZVJlc3BvbnNlQoQCChtjb20uaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTFCFVRlbmFudENhcGFiaWxpdHlQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci90ZW5hbmN5L3YxYWxwaGExO3RlbmFuY3l2MWFscGhhMaICA0hUWKoCF0hhbmdhci5UZW5hbmN5LlYxYWxwaGExygIXSGFuZ2FyXFRlbmFuY3lcVjFhbHBoYTHiAiNIYW5nYXJcVGVuYW5jeVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6VGVuYW5jeTo6VjFhbHBoYTFiBnByb3RvMw", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_machine]);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.CPUPoolUsageRequest
@@ -56,12 +56,58 @@ export type CPUPoolUsageResponse = Message<"hangar.tenancy.v1alpha1.CPUPoolUsage
   milliCpu?: bigint | undefined;
 
   /**
-   * How many nodes the pool's running machines are on, that could not be
-   * read, as one not connected.
+   * How many of the nodes the machines in `machines` are on could not be
+   * read, as one not connected, or have no CPU sample of the pool's
+   * machines lately. The nodes only other's machines are on are not
+   * counted.
    *
    * @generated from field: int32 nodes_unread = 3;
    */
   nodesUnread: number;
+
+  /**
+   * The minutes of the last hour slowed counts, oldest first, at most
+   * 60: for each, the largest share of the nodes read that counted it.
+   * A minute no node read counted, as one with no sample, is not here.
+   *
+   * @generated from field: repeated hangar.tenancy.v1alpha1.CPUPoolMinute minutes = 4;
+   */
+  minutes: CPUPoolMinute[];
+
+  /**
+   * Of the nodes the machines in `machines` are on, when the oldest
+   * latest CPU sample of their machines was taken; unset when none has
+   * one lately. The nodes only other's machines are on are not counted.
+   *
+   * @generated from field: google.protobuf.Timestamp sample_time = 5;
+   */
+  sampleTime?: Timestamp | undefined;
+
+  /**
+   * The running machines in the pool the caller may read, by what they
+   * use now, largest first (unknown last), then by project and name.
+   * FileShare servers are in no pool, so never here.
+   *
+   * @generated from field: repeated hangar.tenancy.v1alpha1.CPUPoolMachine machines = 6;
+   */
+  machines: CPUPoolMachine[];
+
+  /**
+   * The running machines in the pool the caller may not read, summed;
+   * unset when there are none.
+   *
+   * @generated from field: hangar.tenancy.v1alpha1.CPUPoolTotal other = 7;
+   */
+  other?: CPUPoolTotal | undefined;
+
+  /**
+   * Whether the tenant's machines share its CPUs as a pool: its plan's
+   * percent above 100 with a cpu limit, and its BillingAccount not
+   * PAY_AS_YOU_GO. False, nothing else is set.
+   *
+   * @generated from field: bool pooled = 8;
+   */
+  pooled: boolean;
 };
 
 /**
@@ -70,6 +116,108 @@ export type CPUPoolUsageResponse = Message<"hangar.tenancy.v1alpha1.CPUPoolUsage
  */
 export const CPUPoolUsageResponseSchema: GenMessage<CPUPoolUsageResponse> = /*@__PURE__*/
   messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 1);
+
+/**
+ * CPUPoolMinute is one minute of a CPU pool.
+ *
+ * @generated from message hangar.tenancy.v1alpha1.CPUPoolMinute
+ */
+export type CPUPoolMinute = Message<"hangar.tenancy.v1alpha1.CPUPoolMinute"> & {
+  /**
+   * When the minute began.
+   *
+   * @generated from field: google.protobuf.Timestamp time = 1;
+   */
+  time?: Timestamp | undefined;
+
+  /**
+   * Of the pool's limit's periods in it, the share, from 0 to 1, in which
+   * the limit held its machines back.
+   *
+   * @generated from field: double slowed = 2;
+   */
+  slowed: number;
+};
+
+/**
+ * Describes the message hangar.tenancy.v1alpha1.CPUPoolMinute.
+ * Use `create(CPUPoolMinuteSchema)` to create a new message.
+ */
+export const CPUPoolMinuteSchema: GenMessage<CPUPoolMinute> = /*@__PURE__*/
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 2);
+
+/**
+ * CPUPoolMachine is a running machine in a CPU pool.
+ *
+ * @generated from message hangar.tenancy.v1alpha1.CPUPoolMachine
+ */
+export type CPUPoolMachine = Message<"hangar.tenancy.v1alpha1.CPUPoolMachine"> & {
+  /**
+   * @generated from field: string project = 1;
+   */
+  project: string;
+
+  /**
+   * The kind of the object it runs, Container or VirtualMachine, and that
+   * object's name.
+   *
+   * @generated from field: string kind = 2;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string name = 3;
+   */
+  name: string;
+
+  /**
+   * @generated from field: hangar.compute.v1alpha1.MachinePhase phase = 4;
+   */
+  phase: MachinePhase;
+
+  /**
+   * @generated from field: int32 vcpus = 5;
+   */
+  vcpus: number;
+
+  /**
+   * The CPU it used over its node's latest 10 s sample of it, in
+   * millicores: how busy its vCPUs were times their count. Unset when its
+   * node has no such sample lately, or could not be read.
+   *
+   * @generated from field: optional int64 cpu_now_milli = 6;
+   */
+  cpuNowMilli?: bigint | undefined;
+};
+
+/**
+ * Describes the message hangar.tenancy.v1alpha1.CPUPoolMachine.
+ * Use `create(CPUPoolMachineSchema)` to create a new message.
+ */
+export const CPUPoolMachineSchema: GenMessage<CPUPoolMachine> = /*@__PURE__*/
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 3);
+
+/**
+ * CPUPoolTotal sums machines of a CPU pool.
+ *
+ * @generated from message hangar.tenancy.v1alpha1.CPUPoolTotal
+ */
+export type CPUPoolTotal = Message<"hangar.tenancy.v1alpha1.CPUPoolTotal"> & {
+  /**
+   * What they used over their latest samples, in millicores; a machine
+   * with none counts nothing.
+   *
+   * @generated from field: int64 cpu_now_milli = 1;
+   */
+  cpuNowMilli: bigint;
+};
+
+/**
+ * Describes the message hangar.tenancy.v1alpha1.CPUPoolTotal.
+ * Use `create(CPUPoolTotalSchema)` to create a new message.
+ */
+export const CPUPoolTotalSchema: GenMessage<CPUPoolTotal> = /*@__PURE__*/
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 4);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.MemoryPoolUsageRequest
@@ -86,7 +234,7 @@ export type MemoryPoolUsageRequest = Message<"hangar.tenancy.v1alpha1.MemoryPool
  * Use `create(MemoryPoolUsageRequestSchema)` to create a new message.
  */
 export const MemoryPoolUsageRequestSchema: GenMessage<MemoryPoolUsageRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 2);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 5);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.MemoryPoolUsageResponse
@@ -142,7 +290,7 @@ export type MemoryPoolUsageResponse = Message<"hangar.tenancy.v1alpha1.MemoryPoo
  * Use `create(MemoryPoolUsageResponseSchema)` to create a new message.
  */
 export const MemoryPoolUsageResponseSchema: GenMessage<MemoryPoolUsageResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 3);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 6);
 
 /**
  * MemoryPoolMachine is a running machine in a memory pool.
@@ -226,7 +374,7 @@ export type MemoryPoolMachine = Message<"hangar.tenancy.v1alpha1.MemoryPoolMachi
  * Use `create(MemoryPoolMachineSchema)` to create a new message.
  */
 export const MemoryPoolMachineSchema: GenMessage<MemoryPoolMachine> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 4);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 7);
 
 /**
  * MemoryPoolTotal sums machines of a memory pool, in bytes.
@@ -266,7 +414,7 @@ export type MemoryPoolTotal = Message<"hangar.tenancy.v1alpha1.MemoryPoolTotal">
  * Use `create(MemoryPoolTotalSchema)` to create a new message.
  */
 export const MemoryPoolTotalSchema: GenMessage<MemoryPoolTotal> = /*@__PURE__*/
-  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 5);
+  messageDesc(file_hangar_tenancy_v1alpha1_tenant_capability, 8);
 
 /**
  * TenantCapabilityService answers what a tenant's machines do together,
@@ -278,10 +426,16 @@ export const MemoryPoolTotalSchema: GenMessage<MemoryPoolTotal> = /*@__PURE__*/
 export const TenantCapabilityService: GenService<{
   /**
    * CPUPoolUsage says how often the tenant's CPU pool slowed its machines
-   * over the last hour, and the pool's CPUs, from each connected node its
-   * pool's running machines are on. It needs the tenant's get, as reading
-   * the Tenant does. A tenant with no CPU pool answers nothing set. See
-   * docs/decisions/cpu-pool.md.
+   * over the last hour, minute by minute, the pool's CPUs, and what each
+   * running machine in it uses of its CPUs now, from each connected node
+   * the pool's running machines are on. It is asked as MemoryPoolUsage
+   * is: the get of Containers or VirtualMachines in some project of the
+   * tenant, and the machines of a project whose Containers and
+   * VirtualMachines the caller may not get are summed into other,
+   * unnamed. Such a caller learns the pool's CPUs, how often it slowed,
+   * and that sum, nothing more. A tenant with no CPU pool answers nothing
+   * set; a tenant that does not exist is NOT_FOUND to a caller over every
+   * tenant. See docs/decisions/cpu-pool.md.
    *
    * @generated from rpc hangar.tenancy.v1alpha1.TenantCapabilityService.CPUPoolUsage
    */

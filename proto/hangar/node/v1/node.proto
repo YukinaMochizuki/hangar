@@ -59,8 +59,9 @@ service NodeService {
   // CPUPoolUsage says how often a CPU pool's limit held its VMs on this
   // node back over the last hour, as the node samples its slice every ten
   // seconds beside the machines' usage, and the CPUs the node holds it
-  // to. A pool the node neither samples nor holds answers nothing set.
-  // See docs/decisions/cpu-pool.md.
+  // to; and what each VM running in the pool's slice uses of its CPUs now,
+  // as that sampler last read it. A pool the node neither samples nor holds
+  // answers nothing set. See docs/decisions/cpu-pool.md.
   rpc CPUPoolUsage(CPUPoolUsageRequest) returns (CPUPoolUsageResponse);
   // MemoryPoolUsage says what each running machine of a memory pool on
   // this node has of its memory, as the squeeze last read the pool, which
@@ -149,6 +150,34 @@ message CPUPoolUsageResponse {
   optional double slowed = 1;
   // The CPUs, in millicores, the node holds the pool to now; unset when
   // it holds it to none.
+  optional int64 milli_cpu = 2;
+  // The minutes slowed counts, oldest first: those in which any period
+  // passed.
+  repeated CPUPoolMinute minutes = 3;
+  // Of the members with a CPU sample, when the oldest latest one was
+  // taken; unset when none has one lately.
+  google.protobuf.Timestamp sample_time = 4;
+  // The machines whose VMs run in the pool's slice on this node, the
+  // sampler has seen, by machine uid.
+  repeated CPUPoolMember members = 5;
+}
+
+// CPUPoolMinute is one minute of a CPU pool on a node.
+message CPUPoolMinute {
+  // When the minute began.
+  google.protobuf.Timestamp time = 1;
+  // Of the limit's periods in it, the share, from 0 to 1, in which the
+  // limit held the pool's VMs back.
+  double slowed = 2;
+}
+
+// CPUPoolMember is a VM running in a CPU pool's slice, as the usage
+// sampler last read it.
+message CPUPoolMember {
+  string machine_uid = 1;
+  // The CPU it used over its latest sample, in millicores: how busy its
+  // vCPUs were times their count. Unset when it has no sample lately, as
+  // MachineUsageResponse.latest.
   optional int64 milli_cpu = 2;
 }
 

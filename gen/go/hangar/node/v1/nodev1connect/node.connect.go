@@ -117,8 +117,9 @@ type NodeServiceClient interface {
 	// CPUPoolUsage says how often a CPU pool's limit held its VMs on this
 	// node back over the last hour, as the node samples its slice every ten
 	// seconds beside the machines' usage, and the CPUs the node holds it
-	// to. A pool the node neither samples nor holds answers nothing set.
-	// See docs/decisions/cpu-pool.md.
+	// to; and what each VM running in the pool's slice uses of its CPUs now,
+	// as that sampler last read it. A pool the node neither samples nor holds
+	// answers nothing set. See docs/decisions/cpu-pool.md.
 	CPUPoolUsage(context.Context, *connect.Request[v1.CPUPoolUsageRequest]) (*connect.Response[v1.CPUPoolUsageResponse], error)
 	// MemoryPoolUsage says what each running machine of a memory pool on
 	// this node has of its memory, as the squeeze last read the pool, which
@@ -334,8 +335,9 @@ type NodeServiceHandler interface {
 	// CPUPoolUsage says how often a CPU pool's limit held its VMs on this
 	// node back over the last hour, as the node samples its slice every ten
 	// seconds beside the machines' usage, and the CPUs the node holds it
-	// to. A pool the node neither samples nor holds answers nothing set.
-	// See docs/decisions/cpu-pool.md.
+	// to; and what each VM running in the pool's slice uses of its CPUs now,
+	// as that sampler last read it. A pool the node neither samples nor holds
+	// answers nothing set. See docs/decisions/cpu-pool.md.
 	CPUPoolUsage(context.Context, *connect.Request[v1.CPUPoolUsageRequest]) (*connect.Response[v1.CPUPoolUsageResponse], error)
 	// MemoryPoolUsage says what each running machine of a memory pool on
 	// this node has of its memory, as the squeeze last read the pool, which

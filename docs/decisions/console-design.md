@@ -700,6 +700,39 @@ language; the plan's percent is never shown.
   segment is at least 26 px wide: past as many as fit, the smallest of the
   caller's own become one "+N" piece, whose card names them, before the
   other projects'.
+- **The pool card shows a CPU pool under the memory strip, collapsed while
+  calm** (`web/src/components/cpu-pool-row.tsx`), for a tenant in a CPU
+  pool (`cpu-pool.md`), from `TenantCapabilityService.CPUPoolUsage` every
+  10 s; the owner chose this from three mock screens (2026-11-27): a live
+  strip always, a slowed line alone, or the line opening into the strip.
+  Calm, it is one row under a rule: "CPU", then a sparkline of the hour's
+  slowed share by minute, 60 bars on a grey baseline, amber where the pool
+  slowed its machines, then "slowed 12%" for the hour from 1%. Once the
+  pool has slowed its machines in a minute ending within the last 5
+  minutes, the row opens into a live strip, the sparkline and the share
+  staying in its head, amber: scaled to the plan's CPUs, each running
+  machine as long as the CPU it used over its latest 10 s sample, largest
+  first, in one mid-grey tone (CPU keeps nothing reserved), idle CPUs the
+  bare track; under 1/8 CPU idle the edge turns ink and the scale says
+  only the plan's CPUs, bold, as memory's. It stays open until 5 minutes
+  after the last slowed minute any answer showed, so an answer missing it,
+  or each poll, does not close and open it; the nodes keep a minute once
+  it is over, so it opens a minute or two after the pool begins to slow
+  its machines. Opening is the one change of the card's height after its
+  first answer. Hover, focus, click and tap are as on the memory strip,
+  on a narrow screen the card opening above the row's head and strip; a
+  machine's card reads "1.6 CPUs now · 2 vCPU", and the machine open in
+  either strip lights in the other. On a project's Overview the other
+  projects' machines are one muted piece; a machine with no sample lately
+  has no piece. Only a machine is lit across the strips: the "other
+  projects" and "+N" pieces hold different machines in each. A stale
+  answer (as memory's) dims the row and adds "not current" after "CPU".
+  Until its first answer the row is held as a blank calm row; it goes if
+  that fails, or when the answer says the tenant is not pooled (its
+  `pooled`), as for a viewer of a tenant paying as it goes who may not
+  read its BillingAccount. A tenant in a CPU pool and no memory pool has
+  the card with the CPU row only (the owner's decision, 2026-11-27). The
+  vCPU tile keeps its "slowed" note.
 - **A Shared machine's memory reads "1–4 GiB" in lists**, its reservation
   to its limit, "–4 GiB" in the lighter grey, in the container and VM lists
   and the project Overview's table, where a "Shared" badge stood before

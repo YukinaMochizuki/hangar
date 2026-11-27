@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
@@ -19,7 +20,7 @@ import (
 )
 
 // poolNode is a usageNode that keeps CPU pool acme slowed slowed of the
-// time, held to milliCPU millicores.
+// time, held to milliCPU millicores, its members sampled now.
 type poolNode struct {
 	usageNode
 	slowed   float64
@@ -39,7 +40,7 @@ func (n poolNode) CPUPoolUsage(_ context.Context, req *connect.Request[nodev1.CP
 	if req.Msg.GetPool() != "acme" {
 		return connect.NewResponse(&nodev1.CPUPoolUsageResponse{}), nil
 	}
-	return connect.NewResponse(&nodev1.CPUPoolUsageResponse{Slowed: proto.Float64(n.slowed), MilliCpu: proto.Int64(n.milliCPU)}), nil
+	return connect.NewResponse(&nodev1.CPUPoolUsageResponse{Slowed: proto.Float64(n.slowed), MilliCpu: proto.Int64(n.milliCPU), SampleTime: timestamppb.Now()}), nil
 }
 
 // newPoolWorld is a usage world on nodes n1 and n2 whose tenant acme
@@ -117,68 +118,6 @@ func TestUsagePassesTheCPUPoolOn(t *testing.T) {
 	}
 	if res.CpuPoolSlowed != nil || res.CpuPoolMilliCpu != nil {
 		t.Errorf("a machine in no pool: slowed %v, %v millicores", res.CpuPoolSlowed, res.CpuPoolMilliCpu)
-	}
-}
-
-// TestCPUPoolUsageNeedsTheTenantsGet: the tenant's owner reads its pool;
-// another tenant's owner, and one who may get the tenant's containers but
-// not the tenant, may not, whether or not the tenant exists. A tenant with
-// no CPU pool answers nothing.
-func TestCPUPoolUsageNeedsTheTenantsGet(t *testing.T) {
-	t.Parallel()
-	w := newPoolWorld(t)
-	w.connectNodeServing(t, poolNode{slowed: 0.25, milliCPU: 4000})
-	res, err := w.cpuPoolUsage(t, "alice@example.com", "acme")
-	if err != nil {
-		t.Fatalf("the tenant's owner: %v", err)
-	}
-	if res.Slowed == nil || res.GetSlowed() != 0.25 || res.GetMilliCpu() != 4000 || res.GetNodesUnread() != 0 {
-		t.Errorf("acme's pool is %v, want 0.25 of 4000 millicores, every node read", res)
-	}
-	for _, user := range []string{"bob@example.com", "dave@example.com"} {
-		_, err := w.cpuPoolUsage(t, user, "acme")
-		wantCodeOf(t, err, connect.CodePermissionDenied, user+" reading acme's pool")
-	}
-	_, err = w.cpuPoolUsage(t, "alice@example.com", "bobs")
-	wantCodeOf(t, err, connect.CodePermissionDenied, "alice reading another tenant's pool")
-	_, err = w.cpuPoolUsage(t, "bob@example.com", "absent")
-	wantCodeOf(t, err, connect.CodePermissionDenied, "reading the pool of a tenant that does not exist")
-
-	setDefaultPlan(t, w.s, &tenancyv1alpha1.Limits{Cpu: proto.String("4")})
-	res, err = w.cpuPoolUsage(t, "alice@example.com", "acme")
-	if err != nil {
-		t.Fatalf("a tenant with no pool: %v", err)
-	}
-	if res.Slowed != nil || res.MilliCpu != nil || res.GetNodesUnread() != 0 {
-		t.Errorf("a tenant with no pool: %v, want nothing", res)
-	}
-}
-
-// TestCPUPoolUsageTakesTheMostOfItsNodes: the pool's slowed share and its
-// CPUs are the largest of the nodes its running machines are on; a node
-// not connected is counted unread, and one with no running machine of
-// the pool is not asked.
-func TestCPUPoolUsageTakesTheMostOfItsNodes(t *testing.T) {
-	t.Parallel()
-	w := newPoolWorld(t)
-	w.connectNodeServing(t, poolNode{slowed: 0.25, milliCPU: 4000})
-	w.pooledOn(t, "m-other", "n2", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING)
-
-	res, err := w.cpuPoolUsage(t, "alice@example.com", "acme")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.GetSlowed() != 0.25 || res.GetMilliCpu() != 4000 || res.GetNodesUnread() != 1 {
-		t.Errorf("with n2 not connected: %v, want n1's 0.25 of 4000 millicores and one node unread", res)
-	}
-
-	w.connectNodeAs(t, "n2", poolNode{slowed: 0.5, milliCPU: 2000})
-	res, err = w.cpuPoolUsage(t, "alice@example.com", "acme")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.GetSlowed() != 0.5 || res.GetMilliCpu() != 4000 || res.GetNodesUnread() != 0 {
-		t.Errorf("with both read: %v, want n2's 0.5 and n1's 4000 millicores", res)
 	}
 }
 

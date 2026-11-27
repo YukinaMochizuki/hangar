@@ -556,7 +556,10 @@ pool has, and on the node they use no more than those together.
   each CPU it ran on, so it reads past the time passed. Its units' own
   `cpu.stat` count nothing of what their parent's limit held back. The
   agent samples both counts with the machines' usage and answers the
-  share over the last hour (`cpu-pool.md`, `machine-usage.md`).
+  share over the last hour, and each minute's (`cpu-pool.md`,
+  `machine-usage.md`). With them it answers, for each VM it sampled in the
+  pool's slice, the CPU of its latest usage sample times its vCPUs, from
+  what the usage sampler keeps, asking no VM anything.
 
 ## Memory pools
 

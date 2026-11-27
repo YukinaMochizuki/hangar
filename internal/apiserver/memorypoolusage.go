@@ -146,11 +146,14 @@ func (s *Server) readsPoolMachines(p auth.Principal, tenant string) bool {
 	return false
 }
 
-// poolMachine is a running machine in a memory pool, as its Machine says.
+// poolMachine is a running machine in a memory pool or a CPU pool, as its
+// Machine says: its memory and reservation in a memory pool's, its vCPUs
+// in a CPU pool's.
 type poolMachine struct {
 	uid, node, project, kind, name string
 	phase                          computev1alpha1.MachinePhase
 	memory, reserved               int64
+	vcpus                          int32
 }
 
 // readable says whether p may get the object the machine runs; a machine
