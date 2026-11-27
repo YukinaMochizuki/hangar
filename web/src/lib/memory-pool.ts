@@ -132,14 +132,20 @@ export type PoolEntry = {
   reservedGi: number;
   /** What its guest has now; undefined when its node could not tell. */
   nowGi?: number;
+  /** What its guest uses of that; undefined when it reports nothing, or not lately. */
+  inUseGi?: number;
   /** When its node killed it for the pool's memory, within recentKillMs. */
   killedAt?: Date;
   /** Since when its balloon has not followed what its node asks. */
   stuckSince?: Date;
 };
 
-/** Machines in the pool summed, in GiB: those of projects the caller does not read. */
-export type PoolTotal = { memoryGi: number; reservedGi: number; nowGi: number };
+/**
+ * Machines in the pool summed, in GiB: those of projects the caller does not
+ * read. inUseGi counts one whose guest does not say at what it has, or its
+ * reservation.
+ */
+export type PoolTotal = { memoryGi: number; reservedGi: number; nowGi: number; inUseGi: number };
 
 /** Who holds a tenant's pool now: its size, the machines the caller reads, and the rest summed. */
 export type PoolOccupancy = { sizeGi: number; entries: PoolEntry[]; other?: PoolTotal };
@@ -161,6 +167,7 @@ export function poolOccupancy(r: MemoryPoolUsageResponse, now = Date.now()): Poo
       memoryGi: bytesGi(m.memoryBytes),
       reservedGi: bytesGi(m.reservedBytes),
       nowGi: m.currentBytes === undefined ? undefined : bytesGi(m.currentBytes),
+      inUseGi: m.inUseBytes === undefined ? undefined : bytesGi(m.inUseBytes),
       killedAt: killedAt && now - killedAt.getTime() < recentKillMs ? killedAt : undefined,
       stuckSince: m.balloonUnresponsiveSince ? timestampDate(m.balloonUnresponsiveSince) : undefined,
     });
@@ -169,7 +176,7 @@ export function poolOccupancy(r: MemoryPoolUsageResponse, now = Date.now()): Poo
   return {
     sizeGi: bytesGi(r.sizeBytes),
     entries,
-    other: o ? { memoryGi: bytesGi(o.memoryBytes), reservedGi: bytesGi(o.reservedBytes), nowGi: bytesGi(o.currentBytes) } : undefined,
+    other: o ? { memoryGi: bytesGi(o.memoryBytes), reservedGi: bytesGi(o.reservedBytes), nowGi: bytesGi(o.currentBytes), inUseGi: bytesGi(o.inUseBytes) } : undefined,
   };
 }
 

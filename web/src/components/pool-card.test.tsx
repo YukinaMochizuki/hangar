@@ -66,16 +66,22 @@ function machine(project: string, name: string, memory: number, reserved: number
   };
 }
 
-/** Acme's 8 GiB pool: db Dedicated 1, web 2.75 of 1–4, worker stopped for memory 0.5 of 0.5–2, batch not sharing 1 of 1–2, all in web but batch, in jobs. */
+/**
+ * Acme's 8 GiB pool, in GiB: db Dedicated 1 using 0.6; web 1–4 holding
+ * 2.75, using 1.4; worker 0.5–2 holding 1.2, using 0.4, stopped for memory;
+ * batch 1–2 holding 1, its guest saying nothing of its use, not sharing
+ * memory. All in web but batch, in jobs. By what they hold, worker would
+ * come before batch.
+ */
 const acme = (more: object = {}) =>
   create(MemoryPoolUsageResponseSchema, {
     sizeBytes: 8n * GiB,
     sampleTime: timestampFromDate(new Date()),
     machines: [
-      machine("web", "worker", 2, 0.5, 0.5, { lastOomKillTime: hoursAgo(0.4) }),
-      machine("web", "web", 4, 1, 2.75),
+      machine("web", "worker", 2, 0.5, 1.2, { inUseBytes: gi(0.4), lastOomKillTime: hoursAgo(0.4) }),
+      machine("web", "web", 4, 1, 2.75, { inUseBytes: gi(1.4) }),
       machine("jobs", "batch", 2, 1, 1, { balloonUnresponsiveSince: hoursAgo(0.2) }),
-      machine("web", "db", 1, 1, 1),
+      machine("web", "db", 1, 1, 1, { inUseBytes: gi(0.6) }),
     ],
     ...more,
   });
@@ -90,16 +96,23 @@ const segments = () => [...document.querySelectorAll("[data-segment]")] as HTMLE
 const segment = (name: string) => segments().find((s) => s.getAttribute("aria-label")?.startsWith(name))!;
 
 describe("the pool card", () => {
-  it("draws the tenant's machines Dedicated first, then Shared ones largest first, each as long as it has now, with a legend and no percent", async () => {
+  it("draws the tenant's machines Dedicated first, then Shared ones by what they use, largest first, each as long as that, with a legend and no percent", async () => {
     render(<PoolCard tenant="acme" />, { wrapper: withApi(api(() => acme())) });
     await waitFor(() => expect(segments()).toHaveLength(4));
     expect(segments().map((s) => s.getAttribute("data-segment"))).toEqual(["web/Container/db", "web/Container/web", "jobs/Container/batch", "web/Container/worker"]);
-    expect(segment("web").style.flex).toBe("2.75 1 0px");
+    // 1.4 GiB, as whole MiB.
+    expect(parseFloat(segment("web").style.flex)).toBeCloseTo(1.4, 2);
+    // Up to its reservation solid, above it the lighter fill.
+    const [reservedPart, sharedPart] = [...segment("web").children] as HTMLElement[];
+    expect(parseFloat(reservedPart.style.width)).toBeCloseTo(100 / 1.4, 0);
+    expect(sharedPart).toBeTruthy();
+    // db uses less than its reservation: all of it solid.
+    expect(segment("db").children).toHaveLength(1);
     expect(segment("web").getAttribute("href")).toBe("/projects/web/containers/web");
     const card = screen.getByLabelText("Memory pool");
     for (const word of ["reserved", "shared", "free"]) expect(within(card).getByText(word)).toBeTruthy();
-    // 5.25 of 8 GiB held: the scale says both.
-    expect(within(card).getByText("5.25 GiB")).toBeTruthy();
+    // 3.4 of 8 GiB in use, though they hold 5.95: the rest is free.
+    expect(within(card).getByText("3.4 GiB")).toBeTruthy();
     expect(within(card).getByText("8 GiB")).toBeTruthy();
     expect(screen.getByTestId("pool-track").hasAttribute("data-full")).toBe(false);
     expect(card.textContent).not.toContain("%");
@@ -109,7 +122,7 @@ describe("the pool card", () => {
     render(<PoolCard tenant="acme" />, { wrapper: withApi(api(() => acme())) });
     await waitFor(() => expect(segments()).toHaveLength(4));
     expect(segment("worker").querySelector('[data-mark="killed"]')).toBeTruthy();
-    expect(segment("worker").getAttribute("aria-label")).toBe("worker, stopped for memory, 0.5 GiB now");
+    expect(segment("worker").getAttribute("aria-label")).toBe("worker, stopped for memory, 0.4 GiB in use");
     expect(segment("batch").querySelector('[data-mark="stuck"]')).toBeTruthy();
     expect(segment("web").querySelector("[data-mark]")).toBeNull();
     cleanup();
@@ -120,17 +133,17 @@ describe("the pool card", () => {
   });
 
   it("on a project's Overview, names its machines and folds the rest, and what the API summed, into one muted piece", async () => {
-    const answer = acme({ other: { memoryBytes: 4n * GiB, reservedBytes: 1n * GiB, currentBytes: gi(1.5) } });
+    const answer = acme({ other: { memoryBytes: 4n * GiB, reservedBytes: 1n * GiB, currentBytes: gi(3), inUseBytes: gi(1.5) } });
     render(<PoolCard tenant="acme" project="web" />, { wrapper: withApi(api(() => answer)) });
     await waitFor(() => expect(segments()).toHaveLength(4));
     const other = segments()[3];
     expect(other.getAttribute("data-segment")).toBe("other");
     expect(other.tagName).toBe("BUTTON");
-    // batch's 1 GiB and the 1.5 GiB of projects the caller does not read.
+    // batch's 1 GiB, from what it holds, and the 1.5 GiB in use of projects the caller does not read.
     expect(other.style.flex).toBe("2.5 1 0px");
     expect(other.textContent).toBe("");
     fireEvent.pointerEnter(other, { pointerType: "mouse" });
-    expect(screen.getByRole("tooltip").textContent).toBe("Other projects · 2.5 GiB now");
+    expect(screen.getByRole("tooltip").textContent).toBe("Other projects · 2.5 GiB in use");
   });
 
   it("opens a machine's card on hover and on focus, dims the others, and a click goes to the machine", async () => {
@@ -142,9 +155,8 @@ describe("the pool card", () => {
     expect(within(tip).getAllByText("web")).toHaveLength(2);
     expect(within(tip).getByText("Container")).toBeTruthy();
     expect(within(tip).getByText("Running")).toBeTruthy();
-    expect(tip.textContent).toContain("2.75 GiB now");
-    expect(tip.textContent).toContain("1 GiB reserved + 1.75 GiB shared");
-    expect(tip.textContent).toContain("up to 4 GiB");
+    expect(tip.textContent).toContain("1.4 GiB in use · holds 2.75 GiB · 1–4 GiB");
+    expect(tip.textContent).not.toContain("Size from");
     expect(segment("db").className).toContain("opacity-35");
     expect(segment("web").className).not.toContain("opacity-35");
     fireEvent.pointerDown(segment("web"), { pointerType: "mouse" });
@@ -173,6 +185,9 @@ describe("the pool card", () => {
     expect(navigated).toEqual([]);
     const tip = screen.getByRole("tooltip");
     expect(tip.textContent).toContain("Not sharing memory");
+    // Its guest says nothing of its use: its segment is what it holds, and its card says so.
+    expect(tip.textContent).toContain("holds 1 GiB · 1–2 GiB");
+    expect(tip.textContent).toContain("Size from what it holds");
     fireEvent.click(within(tip).getByRole("link"));
     expect(navigated).toEqual(["/projects/jobs/containers/batch"]);
 
@@ -193,8 +208,14 @@ describe("the pool card", () => {
     expect(navigated).toEqual(["/projects/web/containers/web"]);
   });
 
-  it("inks the track's edge and shows only the pool's size once it is full", async () => {
-    const full = acme({ machines: [machine("web", "big", 8, 2, 7.95)] });
+  it("inks the track's edge and shows only the pool's size once what is in use fills it, not what is held", async () => {
+    const held = acme({ machines: [machine("web", "big", 8, 2, 7.95, { inUseBytes: gi(3) })] });
+    render(<PoolCard tenant="acme" />, { wrapper: withApi(api(() => held)) });
+    await waitFor(() => expect(segments()).toHaveLength(1));
+    expect(screen.getByTestId("pool-track").hasAttribute("data-full")).toBe(false);
+    expect(screen.getByText("3 GiB")).toBeTruthy();
+    cleanup();
+    const full = acme({ machines: [machine("web", "big", 8, 2, 7.95, { inUseBytes: gi(7.95) })] });
     render(<PoolCard tenant="acme" />, { wrapper: withApi(api(() => full)) });
     await waitFor(() => expect(screen.getByTestId("pool-track").hasAttribute("data-full")).toBe(true));
     const size = screen.getByText("8 GiB");
@@ -202,13 +223,16 @@ describe("the pool card", () => {
     expect(screen.queryByText("7.95 GiB")).toBeNull();
   });
 
-  it("draws a machine its node could not tell at its reservation, and says nothing of now", async () => {
+  it("draws a machine its node could not tell at its reservation, and its card says so", async () => {
     const unread = acme({ machines: [machine("web", "web", 4, 1)] });
     render(<PoolCard tenant="acme" />, { wrapper: withApi(api(() => unread)) });
     await waitFor(() => expect(segments()).toHaveLength(1));
     expect(segment("web").style.flex).toBe("1 1 0px");
     fireEvent.pointerEnter(segment("web"), { pointerType: "mouse" });
-    expect(screen.getByRole("tooltip").textContent).not.toContain("now");
+    const tip = screen.getByRole("tooltip").textContent;
+    expect(tip).toContain("1–4 GiB");
+    expect(tip).toContain("Size from its reservation");
+    expect(tip).not.toMatch(/in use|holds/);
   });
 
   it("shows nothing while the first answer is pending, when it fails, for a tenant with no pool, or while not asked", async () => {

@@ -32,10 +32,13 @@ type poolRead struct {
 }
 
 // memberRead is a member as a poll read it: what its guest has, if its
-// balloon was read, and when its VM was last killed whole, zero for never.
+// balloon was read; what its guest uses, if it reported it lately; and
+// when its VM was last killed whole, zero for never.
 type memberRead struct {
 	sizeMiB     int64
 	known       bool
+	inUseMiB    int64
+	inUseKnown  bool
 	lastOOMKill time.Time
 }
 
@@ -49,7 +52,8 @@ func readOf(at time.Time, p *poolPlan, r squeeze.Result, oom map[string]time.Tim
 	read := poolRead{at: at, members: map[string]memberRead{}}
 	for _, m := range p.members {
 		size, ok := r.Sizes[m.UID]
-		read.members[m.UID] = memberRead{sizeMiB: size, known: ok && !unread[m.UID], lastOOMKill: oom[m.UID]}
+		inUse, used := r.InUse[m.UID]
+		read.members[m.UID] = memberRead{sizeMiB: size, known: ok && !unread[m.UID], inUseMiB: inUse, inUseKnown: used, lastOOMKill: oom[m.UID]}
 	}
 	return read
 }
@@ -108,6 +112,10 @@ func (a *Agent) memoryPoolAnswer(pool string) *nodev1.MemoryPoolUsageResponse {
 		if m.known {
 			b := uint64(max(m.sizeMiB, 0)) << 20
 			member.SizeBytes = &b
+		}
+		if m.inUseKnown {
+			u := uint64(max(m.inUseMiB, 0)) << 20
+			member.InUseBytes = &u
 		}
 		if since, stuck := a.squeezer.UnresponsiveSince(uid); stuck {
 			member.BalloonUnresponsiveSince = timestamppb.New(since)

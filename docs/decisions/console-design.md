@@ -659,31 +659,36 @@ language; the plan's percent is never shown.
   under its CPU plot "Shares your plan's 4 CPUs with your other machines",
   with "· slowed 12% in the last hour" from 1%. The create and edit forms
   hold vCPUs to the plan's CPUs times its percent in a CPU pool.
-- **The Overviews' pool card shows who holds the pool now**
+- **The Overviews' pool card shows who uses the pool now**
   (`web/src/components/pool-card.tsx`), right under the tiles, on the
   tenant's Overview and a project's, for a pooled tenant only, from
   `TenantCapabilityService.MemoryPoolUsage` every 10 s; it is not drawn
   until the first answer comes, nor when it fails, so nothing below it
   moves. One strip scaled to the pool's size: the Dedicated machines, then
-  the Shared ones by what they have now, largest first, each as long as
-  that (its reservation when its node cannot tell), its reserved part solid
-  and the part above a lighter plain fill, then the bare track for what is
-  free. On a project's Overview the other projects' machines, with what the
-  API summed of those the caller may not read, are one muted, unnamed
-  piece. Nearly full (under 1/8 GiB free), the track's edge turns ink and
-  the scale says only the pool's size, in bold. The legend reads "reserved
-  · shared · free"; no percent. A machine stopped for memory within the
-  day has a faint red tint and a stop glyph before its name, one whose
-  balloon does not follow a faint amber tint and a warning glyph (the
-  owner's choice of three markings on mock screens); too narrow for its
-  name, a segment shows the glyph alone, centred, and the same glyphs lead
-  the list rows' state lines. Hover or focus opens a machine's card (name,
-  kind, project, state, "2.75 GiB now", "1 GiB reserved + 1.75 GiB shared",
-  shorter when it does not fit, "up to 4 GiB", and its problem), the other
-  segments dimmed; a click opens the machine. A tap pins the card above the
-  strip with the name as the link, and a press anywhere else closes it and
-  still reaches what it pressed. On a narrow screen every segment is at
-  least 26 px wide.
+  the Shared ones by what they use, largest first, each as long as what its
+  guest uses (what it holds when the guest does not say, its reservation
+  when its node cannot tell either), up to its reservation solid and above
+  it a lighter plain fill, then the bare track: memory no guest needs now.
+  Drawn first by what each guest held, the strip read full whenever the
+  machines' limits added up past the pool, since the squeeze hands spare
+  room out; the owner chose what they use instead (2026-11-27). On a
+  project's Overview the other projects' machines, with what the API
+  summed of those the caller may not read, are one muted, unnamed piece.
+  When what is in use nearly fills the pool (under 1/8 GiB free), the
+  track's edge turns ink and the scale says only the pool's size, in bold.
+  The legend reads "reserved · shared · free"; no percent. A machine
+  stopped for memory within the day has a faint red tint and a stop glyph
+  before its name, one whose balloon does not follow a faint amber tint
+  and a warning glyph (the owner's choice of three markings on mock
+  screens); too narrow for its name, a segment shows the glyph alone,
+  centred, and the same glyphs lead the list rows' state lines. Hover or
+  focus opens a machine's card (name, kind, project, state, "1.4 GiB in use
+  · holds 2.75 GiB · 1–4 GiB", shorter when it does not fit, "Size from
+  what it holds" or "Size from its reservation" under a segment drawn so,
+  and its problem), the other segments dimmed; a click opens the machine.
+  A tap pins the card above the strip with the name as the link, and a
+  press anywhere else closes it and still reaches what it pressed. On a
+  narrow screen every segment is at least 26 px wide.
 - **A Shared machine's memory reads "1–4 GiB" in lists**, its reservation
   to its limit, "–4 GiB" in the lighter grey, in the container and VM lists
   and the project Overview's table, where a "Shared" badge stood before

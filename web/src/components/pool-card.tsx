@@ -1,8 +1,8 @@
 // The Overview's memory pool card (docs/decisions/console-design.md, "Memory
-// pools"): who holds the tenant's pool now. Its scale is the pool, the plan's
-// memory; each running machine is a segment as long as what its guest has
-// now, its reservation solid and what it has above it a lighter fill; what no
-// one holds is the bare track. On a project's Overview the other projects'
+// pools"): who uses the tenant's pool now. Its scale is the pool, the plan's
+// memory; each running machine is a segment as long as what its guest uses,
+// up to its reservation solid and above it a lighter fill; what no guest
+// needs now is the bare track. On a project's Overview the other projects'
 // machines are one muted, unnamed segment. A machine stopped for memory, or
 // whose balloon does not follow, is tinted and marked. Hover or focus opens a
 // machine's card, a click leads to its page; a tap pins the card with its name
@@ -20,22 +20,26 @@ import { usePoolOccupancy, type PoolEntry, type PoolOccupancy } from "@/lib/memo
 import { formatNumber } from "@/lib/quantity";
 
 /** A segment: one machine, or other projects' machines together, muted and unnamed; its sizes in GiB. */
-type Segment = { key: string; e?: PoolEntry; reservedGi: number; nowGi: number };
+type Segment = { key: string; e?: PoolEntry; reservedGi: number; lengthGi: number };
 
 /** Below this much free, in GiB, the pool reads as full. */
 const fullBelowGi = 1 / 8;
 
 /** The width of a machine's card, in px. */
-const cardWidth = 236;
+const cardWidth = 260;
 
 const gib = (v: number) => `${formatNumber(+v.toFixed(2))} GiB`;
 
-/** What a machine's segment is as long as: what its guest has now, its reservation when its node could not tell. */
-const lengthOf = (e: PoolEntry) => e.nowGi ?? e.reservedGi;
+/**
+ * What a machine's segment is as long as: what its guest uses; what it has
+ * when its guest does not say; its reservation when its node cannot tell
+ * either.
+ */
+const lengthOf = (e: PoolEntry) => e.inUseGi ?? e.nowGi ?? e.reservedGi;
 
 const dedicated = (e: PoolEntry) => e.reservedGi >= e.memoryGi;
 
-/** Dedicated machines first, then Shared ones by what they have now, largest first. */
+/** Dedicated machines first, then Shared ones by what they use, largest first. */
 function byPoolOrder(a: PoolEntry, b: PoolEntry): number {
   return Number(!dedicated(a)) - Number(!dedicated(b)) || lengthOf(b) - lengthOf(a);
 }
@@ -46,15 +50,15 @@ function byPoolOrder(a: PoolEntry, b: PoolEntry): number {
  */
 export function poolSegments(o: PoolOccupancy, project?: string): Segment[] {
   const own = (project ? o.entries.filter((e) => e.project === project) : o.entries).slice().sort(byPoolOrder);
-  const segments: Segment[] = own.map((e) => ({ key: `${e.project}/${e.kind}/${e.name}`, e, reservedGi: Math.min(e.reservedGi, lengthOf(e)), nowGi: lengthOf(e) }));
+  const segments: Segment[] = own.map((e) => ({ key: `${e.project}/${e.kind}/${e.name}`, e, reservedGi: Math.min(e.reservedGi, lengthOf(e)), lengthGi: lengthOf(e) }));
   const rest = project ? o.entries.filter((e) => e.project !== project) : [];
-  let reservedGi = o.other ? Math.min(o.other.reservedGi, o.other.nowGi) : 0;
-  let nowGi = o.other?.nowGi ?? 0;
+  let reservedGi = o.other ? Math.min(o.other.reservedGi, o.other.inUseGi) : 0;
+  let lengthGi = o.other?.inUseGi ?? 0;
   for (const e of rest) {
     reservedGi += Math.min(e.reservedGi, lengthOf(e));
-    nowGi += lengthOf(e);
+    lengthGi += lengthOf(e);
   }
-  if (nowGi > 0) segments.push({ key: "other", reservedGi, nowGi });
+  if (lengthGi > 0) segments.push({ key: "other", reservedGi, lengthGi });
   return segments;
 }
 
@@ -103,28 +107,37 @@ function figures(text: string): ReactNode {
   );
 }
 
-/** What a machine's card says of its memory, below its name. */
-function MemoryLines({ e }: { e: PoolEntry }) {
-  if (dedicated(e)) {
-    return (
-      <>
-        {e.nowGi !== undefined && <div>{figures(`${gib(e.nowGi)} now`)}</div>}
-        <div className="mt-0.5 text-[11.5px] text-muted">{figures(`${gib(e.memoryGi)} reserved`)}</div>
-      </>
-    );
+/**
+ * What a machine's card says of its memory, below its name: what its guest
+ * uses, what it holds and its range, in the longest words that fit; and,
+ * when its segment is drawn from what it holds or from its reservation, so.
+ */
+function MemoryLine({ e }: { e: PoolEntry }) {
+  const range = dedicated(e) ? `${gib(e.memoryGi)} Dedicated` : `${formatNumber(+e.reservedGi.toFixed(2))}–${gib(e.memoryGi)}`;
+  // A Dedicated machine holds all of its memory: its range says so.
+  const holds = e.nowGi !== undefined && !dedicated(e) ? `holds ${gib(e.nowGi)}` : undefined;
+  const n = (v: number) => formatNumber(+v.toFixed(2));
+  let texts: string[];
+  let from: string | undefined;
+  if (e.inUseGi !== undefined) {
+    const use = `${gib(e.inUseGi)} in use`;
+    // Shorter, the units go but the range's, then the range, then what it holds.
+    texts = holds
+      ? [`${use} · ${holds} · ${range}`, `${n(e.inUseGi)} in use · holds ${n(e.nowGi ?? 0)} · ${range}`, `${use} · ${holds}`, use]
+      : [`${use} · ${range}`, use];
+  } else if (e.nowGi !== undefined) {
+    texts = holds ? [`${holds} · ${range}`, holds] : [range];
+    from = "Size from what it holds";
+  } else {
+    texts = [range];
+    from = "Size from its reservation";
   }
-  const above = e.nowGi !== undefined ? e.nowGi - e.reservedGi : 0;
-  const split =
-    above > 0
-      ? [`${gib(e.reservedGi)} reserved + ${gib(above)} shared`, `${formatNumber(+e.reservedGi.toFixed(2))} + ${gib(above)} shared`]
-      : [`${gib(e.reservedGi)} reserved`];
   return (
     <>
-      {e.nowGi !== undefined && <div>{figures(`${gib(e.nowGi)} now`)}</div>}
-      <div className="mt-0.5 flex text-[11.5px] text-muted">
-        <FittingText texts={split} render={figures} className="min-w-0 truncate whitespace-nowrap" />
+      <div className="flex">
+        <FittingText texts={texts} render={figures} className="min-w-0 truncate whitespace-nowrap" />
       </div>
-      <div className="text-[11.5px] text-subtle">{figures(`up to ${gib(e.memoryGi)}`)}</div>
+      {from && <div className="mt-0.5 text-[11.5px] text-subtle">{from}</div>}
     </>
   );
 }
@@ -135,7 +148,7 @@ function SegmentCard({ s, pinned }: { s: Segment; pinned: boolean }) {
   if (!e) {
     return (
       <div className="text-[12.5px]">
-        <span className="font-medium text-muted">Other projects</span> · {figures(`${gib(s.nowGi)} now`)}
+        <span className="font-medium text-muted">Other projects</span> · {figures(`${gib(s.lengthGi)} in use`)}
       </div>
     );
   }
@@ -161,7 +174,7 @@ function SegmentCard({ s, pinned }: { s: Segment; pinned: boolean }) {
         </span>
       </div>
       <div className="mt-2 border-t pt-2 tabular">
-        <MemoryLines e={e} />
+        <MemoryLine e={e} />
       </div>
       {e.killedAt && (
         <div className="mt-1.5 flex items-center gap-1 text-[12px] text-fail">
@@ -181,9 +194,9 @@ function SegmentCard({ s, pinned }: { s: Segment; pinned: boolean }) {
 
 /** What a segment is called to a screen reader: the machine and its state, or the other projects. */
 function segmentLabel(s: Segment): string {
-  if (!s.e) return `Other projects, ${gib(s.nowGi)} now`;
+  if (!s.e) return `Other projects, ${gib(s.lengthGi)} in use`;
   const state = s.e.killedAt ? ", stopped for memory" : s.e.stuckSince ? ", not sharing memory" : "";
-  return `${s.e.name}${state}${s.e.nowGi !== undefined ? `, ${gib(s.e.nowGi)} now` : ""}`;
+  return `${s.e.name}${state}${s.e.inUseGi !== undefined ? `, ${gib(s.e.inUseGi)} in use` : ""}`;
 }
 
 /** The fills of a segment's reserved and shared parts: a marked one's take a little of its state's colour. */
@@ -204,8 +217,8 @@ function fills(s: Segment): { reserved?: CSSProperties; shared?: CSSProperties; 
 function middleOf(segments: Segment[], s: Segment, scaleGi: number): number {
   let at = 0;
   for (const x of segments) {
-    if (x === s) return Math.min((at + x.nowGi / 2) / scaleGi, 1);
-    at += x.nowGi;
+    if (x === s) return Math.min((at + x.lengthGi / 2) / scaleGi, 1);
+    at += x.lengthGi;
   }
   return 0;
 }
@@ -232,10 +245,10 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
     return () => document.removeEventListener("pointerdown", close, true);
   }, [pinned]);
 
-  const held = segments.reduce((sum, s) => sum + s.nowGi, 0);
-  const freeGi = Math.max(0, occupancy.sizeGi - held);
+  const used = segments.reduce((sum, s) => sum + s.lengthGi, 0);
+  const freeGi = Math.max(0, occupancy.sizeGi - used);
   const full = freeGi < fullBelowGi;
-  const scaleGi = Math.max(occupancy.sizeGi, held) || 1;
+  const scaleGi = Math.max(occupancy.sizeGi, used) || 1;
   const openSegment = segments.find((s) => s.key === open);
 
   const handlers = (s: Segment) => ({
@@ -265,7 +278,7 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
       >
         {segments.map((s) => {
           const lit = open === null || open === s.key;
-          const reservedPart = s.nowGi > 0 ? s.reservedGi / s.nowGi : 1;
+          const reservedPart = s.lengthGi > 0 ? s.reservedGi / s.lengthGi : 1;
           const f = fills(s);
           const label = (onDark: boolean) => (s.e ? <SegmentLabel name={s.e.name} mark={markOf(s.e)} onDark={onDark} /> : null);
           const className = cn(
@@ -287,7 +300,7 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
               )}
             </>
           );
-          const common = { "aria-label": segmentLabel(s), "data-segment": s.key, className, style: { flex: `${s.nowGi} 1 0` }, ...handlers(s) };
+          const common = { "aria-label": segmentLabel(s), "data-segment": s.key, className, style: { flex: `${s.lengthGi} 1 0` }, ...handlers(s) };
           return s.e ? (
             <Link key={s.key} to={machinePath(s.e.kind)} params={{ project: s.e.project, name: s.e.name }} {...common}>
               {body}
@@ -301,8 +314,8 @@ export function PoolStrip({ occupancy, project }: { occupancy: PoolOccupancy; pr
         {freeGi > 0 && <span className="min-w-0" style={{ flex: `${freeGi} 1 0` }} />}
       </div>
       <div className="mt-1 flex justify-between font-mono text-[10.5px] text-subtle tabular">
-        {/* What is held, until it is all of it: then only the pool's size, in ink. */}
-        <span>{!full && gib(held)}</span>
+        {/* What is in use, until it is all of it: then only the pool's size, in ink. */}
+        <span>{!full && gib(used)}</span>
         <span className={cn(full && "font-medium text-foreground")}>{gib(occupancy.sizeGi)}</span>
       </div>
       {openSegment && (

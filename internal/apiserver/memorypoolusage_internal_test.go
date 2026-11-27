@@ -144,14 +144,15 @@ var (
 	poolKilled  = time.Date(2026, 11, 27, 9, 0, 0, 0, time.UTC)
 )
 
-// connectBoth serves n1, read a second after n2, with api at 1Gi, vm1 at
-// 2.75Gi killed at poolKilled, and old, though stopped; and n2 with pg's
-// balloon unread and unresponsive since poolSampled.
+// connectBoth serves n1, read a second after n2, with api at 1Gi using
+// 768Mi, vm1 at 2.75Gi using 256Mi, killed at poolKilled, and old, though
+// stopped; and n2 with pg's balloon unread and unresponsive since
+// poolSampled.
 func (w *memoryPoolWorld) connectBoth(t *testing.T) {
 	t.Helper()
 	w.connectNodeAs(t, "n1", memoryPoolNode{sampled: poolSampled.Add(time.Second), members: []*nodev1.MemoryPoolMember{
-		{MachineUid: w.uids["api"], SizeBytes: proto.Uint64(uint64(gib))},
-		{MachineUid: w.uids["vm1"], SizeBytes: proto.Uint64(uint64(gib * 11 / 4)), LastOomKillTime: timestamppb.New(poolKilled)},
+		{MachineUid: w.uids["api"], SizeBytes: proto.Uint64(uint64(gib)), InUseBytes: proto.Uint64(uint64(gib * 3 / 4))},
+		{MachineUid: w.uids["vm1"], SizeBytes: proto.Uint64(uint64(gib * 11 / 4)), InUseBytes: proto.Uint64(uint64(gib / 4)), LastOomKillTime: timestamppb.New(poolKilled)},
 		{MachineUid: w.uids["old"], SizeBytes: proto.Uint64(uint64(gib))},
 	}})
 	w.connectNodeAs(t, "n2", memoryPoolNode{sampled: poolSampled, members: []*nodev1.MemoryPoolMember{
@@ -168,8 +169,10 @@ func poolNames(res *tenancyv1alpha1.MemoryPoolUsageResponse) []string {
 }
 
 // TestMemoryPoolUsageNamesAllToTheTenantsOwner: the tenant's owner sees
-// every running machine in the pool, Dedicated first, then largest now
-// first, each as its node read it, and nothing summed; the oldest of the
+// every running machine in the pool, Dedicated first, then by what it
+// uses, largest first, one whose guest does not say by what it has, or
+// its reservation: pg's 512Mi before vm1's 256Mi in use, though vm1 has
+// 2.75Gi. Each is as its node read it, nothing summed; the oldest of the
 // nodes' reads is when it was sampled.
 func TestMemoryPoolUsageNamesAllToTheTenantsOwner(t *testing.T) {
 	t.Parallel()
@@ -183,19 +186,19 @@ func TestMemoryPoolUsageNamesAllToTheTenantsOwner(t *testing.T) {
 		t.Errorf("the pool: %d bytes, sampled %v, %d unread, other %v; want 8Gi, %v, none, none",
 			res.GetSizeBytes(), res.GetSampleTime().AsTime(), res.GetNodesUnread(), res.GetOther(), poolSampled)
 	}
-	if got := poolNames(res); len(got) != 3 || got[0] != "web/api" || got[1] != "web/vm1" || got[2] != "db/pg" {
-		t.Fatalf("machines %v, want web/api, web/vm1, db/pg", got)
+	if got := poolNames(res); len(got) != 3 || got[0] != "web/api" || got[1] != "db/pg" || got[2] != "web/vm1" {
+		t.Fatalf("machines %v, want web/api, db/pg, web/vm1", got)
 	}
-	api, vm1, pg := res.GetMachines()[0], res.GetMachines()[1], res.GetMachines()[2]
-	if api.GetKind() != "Container" || api.GetMemoryBytes() != gib || api.GetReservedBytes() != gib || api.GetCurrentBytes() != gib ||
+	api, pg, vm1 := res.GetMachines()[0], res.GetMachines()[1], res.GetMachines()[2]
+	if api.GetKind() != "Container" || api.GetMemoryBytes() != gib || api.GetReservedBytes() != gib || api.GetCurrentBytes() != gib || api.GetInUseBytes() != gib*3/4 ||
 		api.GetPhase() != computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING {
 		t.Errorf("api: %v, want a running Dedicated Container at 1Gi", api)
 	}
-	if vm1.GetKind() != "VirtualMachine" || vm1.GetMemoryBytes() != 4*gib || vm1.GetReservedBytes() != gib || vm1.GetCurrentBytes() != gib*11/4 ||
+	if vm1.GetKind() != "VirtualMachine" || vm1.GetMemoryBytes() != 4*gib || vm1.GetReservedBytes() != gib || vm1.GetCurrentBytes() != gib*11/4 || vm1.GetInUseBytes() != gib/4 ||
 		!vm1.GetLastOomKillTime().AsTime().Equal(poolKilled) || vm1.GetBalloonUnresponsiveSince() != nil {
 		t.Errorf("vm1: %v, want a VirtualMachine of 4Gi at 1Gi, 2.75Gi now, killed at %v", vm1, poolKilled)
 	}
-	if pg.CurrentBytes != nil || pg.GetReservedBytes() != gib/2 || !pg.GetBalloonUnresponsiveSince().AsTime().Equal(poolSampled) {
+	if pg.CurrentBytes != nil || pg.InUseBytes != nil || pg.GetReservedBytes() != gib/2 || !pg.GetBalloonUnresponsiveSince().AsTime().Equal(poolSampled) {
 		t.Errorf("pg: %v, want no size now, 512Mi reserved, unresponsive since %v", pg, poolSampled)
 	}
 }
@@ -217,8 +220,20 @@ func TestMemoryPoolUsageFoldsWhatTheCallerMayNotRead(t *testing.T) {
 		t.Errorf("machines %v, want web's alone", got)
 	}
 	o := res.GetOther()
-	if o.GetMemoryBytes() != 2*gib || o.GetReservedBytes() != gib/2 || o.GetCurrentBytes() != gib/2 || res.GetSizeBytes() != 8*gib {
-		t.Errorf("other %v, size %d; want pg's 2Gi at 512Mi, 512Mi now, of 8Gi", o, res.GetSizeBytes())
+	if o.GetMemoryBytes() != 2*gib || o.GetReservedBytes() != gib/2 || o.GetCurrentBytes() != gib/2 || o.GetInUseBytes() != gib/2 || res.GetSizeBytes() != 8*gib {
+		t.Errorf("other %v, size %d; want pg's 2Gi at 512Mi, 512Mi now and in use, of 8Gi", o, res.GetSizeBytes())
+	}
+
+	// pg read: other sums what its guest has and what it uses.
+	w.connectNodeAs(t, "n2", memoryPoolNode{sampled: poolSampled, members: []*nodev1.MemoryPoolMember{
+		{MachineUid: w.uids["pg"], SizeBytes: proto.Uint64(uint64(gib * 3 / 2)), InUseBytes: proto.Uint64(uint64(gib * 3 / 4))},
+	}})
+	res, err = w.memoryPoolUsage(t, "frank@example.com", "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o := res.GetOther(); o.GetCurrentBytes() != gib*3/2 || o.GetInUseBytes() != gib*3/4 {
+		t.Errorf("other %v, want pg's 1.5Gi now, 768Mi in use", o)
 	}
 
 	for _, user := range []string{"bob@example.com", "erin@example.com"} {

@@ -60,8 +60,9 @@ message MemoryPoolUsageResponse {
   // read, as one not connected.
   int32 nodes_unread = 3;
   // The running machines in the pool the caller may read, Dedicated
-  // first, then by current size, largest first, then by project and
-  // name. FileShare servers are in no pool, so never here.
+  // first, then by what they use, largest first (what they have when
+  // that is unknown, then their reservation), then by project and name.
+  // FileShare servers are in no pool, so never here.
   repeated MemoryPoolMachine machines = 4;
   // The running machines in the pool the caller may not read, summed;
   // unset when there are none.
@@ -84,6 +85,10 @@ message MemoryPoolMachine {
   // its balloon holds, as its node last read it. Unset when its node
   // could not tell.
   optional int64 current_bytes = 7;
+  // What its guest uses of what it has, in bytes: its total less its
+  // available memory, as the guest last reported it to its node. Unset
+  // when the guest reports nothing, or not lately.
+  optional int64 in_use_bytes = 10;
   // When the host last killed its VM whole for its pool's memory; unset
   // when it never did.
   google.protobuf.Timestamp last_oom_kill_time = 8;
@@ -99,4 +104,7 @@ message MemoryPoolTotal {
   // What their guests have now; a machine whose node could not tell
   // counts at its reservation.
   int64 current_bytes = 3;
+  // What their guests use; a machine whose guest does not say counts at
+  // what it has, or at its reservation when that is unknown too.
+  int64 in_use_bytes = 4;
 }

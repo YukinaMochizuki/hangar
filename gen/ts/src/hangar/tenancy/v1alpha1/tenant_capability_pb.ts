@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/tenancy/v1alpha1/tenant_capability.proto.
  */
 export const file_hangar_tenancy_v1alpha1_tenant_capability: GenFile = /*@__PURE__*/
-  fileDesc("Ci9oYW5nYXIvdGVuYW5jeS92MWFscGhhMS90ZW5hbnRfY2FwYWJpbGl0eS5wcm90bxIXaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEiJQoTQ1BVUG9vbFVzYWdlUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkicgoUQ1BVUG9vbFVzYWdlUmVzcG9uc2USEwoGc2xvd2VkGAEgASgBSACIAQESFgoJbWlsbGlfY3B1GAIgASgDSAGIAQESFAoMbm9kZXNfdW5yZWFkGAMgASgFQgkKB19zbG93ZWRCDAoKX21pbGxpX2NwdSIoChZNZW1vcnlQb29sVXNhZ2VSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCSL/AQoXTWVtb3J5UG9vbFVzYWdlUmVzcG9uc2USFwoKc2l6ZV9ieXRlcxgBIAEoA0gAiAEBEi8KC3NhbXBsZV90aW1lGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxub2Rlc191bnJlYWQYAyABKAUSPAoIbWFjaGluZXMYBCADKAsyKi5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5NZW1vcnlQb29sTWFjaGluZRI3CgVvdGhlchgFIAEoCzIoLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLk1lbW9yeVBvb2xUb3RhbEINCgtfc2l6ZV9ieXRlcyLKAgoRTWVtb3J5UG9vbE1hY2hpbmUSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAIgASgJEgwKBG5hbWUYAyABKAkSNAoFcGhhc2UYBCABKA4yJS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lUGhhc2USFAoMbWVtb3J5X2J5dGVzGAUgASgDEhYKDnJlc2VydmVkX2J5dGVzGAYgASgDEhoKDWN1cnJlbnRfYnl0ZXMYByABKANIAIgBARI2ChJsYXN0X29vbV9raWxsX3RpbWUYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEj4KGmJhbGxvb25fdW5yZXNwb25zaXZlX3NpbmNlGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIQCg5fY3VycmVudF9ieXRlcyJWCg9NZW1vcnlQb29sVG90YWwSFAoMbWVtb3J5X2J5dGVzGAEgASgDEhYKDnJlc2VydmVkX2J5dGVzGAIgASgDEhUKDWN1cnJlbnRfYnl0ZXMYAyABKAMy/AEKF1RlbmFudENhcGFiaWxpdHlTZXJ2aWNlEmsKDENQVVBvb2xVc2FnZRIsLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkNQVVBvb2xVc2FnZVJlcXVlc3QaLS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5DUFVQb29sVXNhZ2VSZXNwb25zZRJ0Cg9NZW1vcnlQb29sVXNhZ2USLy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5NZW1vcnlQb29sVXNhZ2VSZXF1ZXN0GjAuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTWVtb3J5UG9vbFVzYWdlUmVzcG9uc2VChAIKG2NvbS5oYW5nYXIudGVuYW5jeS52MWFscGhhMUIVVGVuYW50Q2FwYWJpbGl0eVByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL3RlbmFuY3kvdjFhbHBoYTE7dGVuYW5jeXYxYWxwaGExogIDSFRYqgIXSGFuZ2FyLlRlbmFuY3kuVjFhbHBoYTHKAhdIYW5nYXJcVGVuYW5jeVxWMWFscGhhMeICI0hhbmdhclxUZW5hbmN5XFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpUZW5hbmN5OjpWMWFscGhhMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_machine]);
+  fileDesc("Ci9oYW5nYXIvdGVuYW5jeS92MWFscGhhMS90ZW5hbnRfY2FwYWJpbGl0eS5wcm90bxIXaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEiJQoTQ1BVUG9vbFVzYWdlUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkicgoUQ1BVUG9vbFVzYWdlUmVzcG9uc2USEwoGc2xvd2VkGAEgASgBSACIAQESFgoJbWlsbGlfY3B1GAIgASgDSAGIAQESFAoMbm9kZXNfdW5yZWFkGAMgASgFQgkKB19zbG93ZWRCDAoKX21pbGxpX2NwdSIoChZNZW1vcnlQb29sVXNhZ2VSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCSL/AQoXTWVtb3J5UG9vbFVzYWdlUmVzcG9uc2USFwoKc2l6ZV9ieXRlcxgBIAEoA0gAiAEBEi8KC3NhbXBsZV90aW1lGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIUCgxub2Rlc191bnJlYWQYAyABKAUSPAoIbWFjaGluZXMYBCADKAsyKi5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5NZW1vcnlQb29sTWFjaGluZRI3CgVvdGhlchgFIAEoCzIoLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLk1lbW9yeVBvb2xUb3RhbEINCgtfc2l6ZV9ieXRlcyL2AgoRTWVtb3J5UG9vbE1hY2hpbmUSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAIgASgJEgwKBG5hbWUYAyABKAkSNAoFcGhhc2UYBCABKA4yJS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lUGhhc2USFAoMbWVtb3J5X2J5dGVzGAUgASgDEhYKDnJlc2VydmVkX2J5dGVzGAYgASgDEhoKDWN1cnJlbnRfYnl0ZXMYByABKANIAIgBARIZCgxpbl91c2VfYnl0ZXMYCiABKANIAYgBARI2ChJsYXN0X29vbV9raWxsX3RpbWUYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEj4KGmJhbGxvb25fdW5yZXNwb25zaXZlX3NpbmNlGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIQCg5fY3VycmVudF9ieXRlc0IPCg1faW5fdXNlX2J5dGVzImwKD01lbW9yeVBvb2xUb3RhbBIUCgxtZW1vcnlfYnl0ZXMYASABKAMSFgoOcmVzZXJ2ZWRfYnl0ZXMYAiABKAMSFQoNY3VycmVudF9ieXRlcxgDIAEoAxIUCgxpbl91c2VfYnl0ZXMYBCABKAMy/AEKF1RlbmFudENhcGFiaWxpdHlTZXJ2aWNlEmsKDENQVVBvb2xVc2FnZRIsLmhhbmdhci50ZW5hbmN5LnYxYWxwaGExLkNQVVBvb2xVc2FnZVJlcXVlc3QaLS5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5DUFVQb29sVXNhZ2VSZXNwb25zZRJ0Cg9NZW1vcnlQb29sVXNhZ2USLy5oYW5nYXIudGVuYW5jeS52MWFscGhhMS5NZW1vcnlQb29sVXNhZ2VSZXF1ZXN0GjAuaGFuZ2FyLnRlbmFuY3kudjFhbHBoYTEuTWVtb3J5UG9vbFVzYWdlUmVzcG9uc2VChAIKG2NvbS5oYW5nYXIudGVuYW5jeS52MWFscGhhMUIVVGVuYW50Q2FwYWJpbGl0eVByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL3RlbmFuY3kvdjFhbHBoYTE7dGVuYW5jeXYxYWxwaGExogIDSFRYqgIXSGFuZ2FyLlRlbmFuY3kuVjFhbHBoYTHKAhdIYW5nYXJcVGVuYW5jeVxWMWFscGhhMeICI0hhbmdhclxUZW5hbmN5XFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpUZW5hbmN5OjpWMWFscGhhMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_machine]);
 
 /**
  * @generated from message hangar.tenancy.v1alpha1.CPUPoolUsageRequest
@@ -118,8 +118,9 @@ export type MemoryPoolUsageResponse = Message<"hangar.tenancy.v1alpha1.MemoryPoo
 
   /**
    * The running machines in the pool the caller may read, Dedicated
-   * first, then by current size, largest first, then by project and
-   * name. FileShare servers are in no pool, so never here.
+   * first, then by what they use, largest first (what they have when
+   * that is unknown, then their reservation), then by project and name.
+   * FileShare servers are in no pool, so never here.
    *
    * @generated from field: repeated hangar.tenancy.v1alpha1.MemoryPoolMachine machines = 4;
    */
@@ -193,6 +194,15 @@ export type MemoryPoolMachine = Message<"hangar.tenancy.v1alpha1.MemoryPoolMachi
   currentBytes?: bigint | undefined;
 
   /**
+   * What its guest uses of what it has, in bytes: its total less its
+   * available memory, as the guest last reported it to its node. Unset
+   * when the guest reports nothing, or not lately.
+   *
+   * @generated from field: optional int64 in_use_bytes = 10;
+   */
+  inUseBytes?: bigint | undefined;
+
+  /**
    * When the host last killed its VM whole for its pool's memory; unset
    * when it never did.
    *
@@ -239,6 +249,14 @@ export type MemoryPoolTotal = Message<"hangar.tenancy.v1alpha1.MemoryPoolTotal">
    * @generated from field: int64 current_bytes = 3;
    */
   currentBytes: bigint;
+
+  /**
+   * What their guests use; a machine whose guest does not say counts at
+   * what it has, or at its reservation when that is unknown too.
+   *
+   * @generated from field: int64 in_use_bytes = 4;
+   */
+  inUseBytes: bigint;
 };
 
 /**

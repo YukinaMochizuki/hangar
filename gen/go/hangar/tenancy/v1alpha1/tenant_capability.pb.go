@@ -191,8 +191,9 @@ type MemoryPoolUsageResponse struct {
 	// read, as one not connected.
 	NodesUnread int32 `protobuf:"varint,3,opt,name=nodes_unread,json=nodesUnread,proto3" json:"nodes_unread,omitempty"`
 	// The running machines in the pool the caller may read, Dedicated
-	// first, then by current size, largest first, then by project and
-	// name. FileShare servers are in no pool, so never here.
+	// first, then by what they use, largest first (what they have when
+	// that is unknown, then their reservation), then by project and name.
+	// FileShare servers are in no pool, so never here.
 	Machines []*MemoryPoolMachine `protobuf:"bytes,4,rep,name=machines,proto3" json:"machines,omitempty"`
 	// The running machines in the pool the caller may not read, summed;
 	// unset when there are none.
@@ -283,6 +284,10 @@ type MemoryPoolMachine struct {
 	// its balloon holds, as its node last read it. Unset when its node
 	// could not tell.
 	CurrentBytes *int64 `protobuf:"varint,7,opt,name=current_bytes,json=currentBytes,proto3,oneof" json:"current_bytes,omitempty"`
+	// What its guest uses of what it has, in bytes: its total less its
+	// available memory, as the guest last reported it to its node. Unset
+	// when the guest reports nothing, or not lately.
+	InUseBytes *int64 `protobuf:"varint,10,opt,name=in_use_bytes,json=inUseBytes,proto3,oneof" json:"in_use_bytes,omitempty"`
 	// When the host last killed its VM whole for its pool's memory; unset
 	// when it never did.
 	LastOomKillTime *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=last_oom_kill_time,json=lastOomKillTime,proto3" json:"last_oom_kill_time,omitempty"`
@@ -372,6 +377,13 @@ func (x *MemoryPoolMachine) GetCurrentBytes() int64 {
 	return 0
 }
 
+func (x *MemoryPoolMachine) GetInUseBytes() int64 {
+	if x != nil && x.InUseBytes != nil {
+		return *x.InUseBytes
+	}
+	return 0
+}
+
 func (x *MemoryPoolMachine) GetLastOomKillTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.LastOomKillTime
@@ -393,7 +405,10 @@ type MemoryPoolTotal struct {
 	ReservedBytes int64                  `protobuf:"varint,2,opt,name=reserved_bytes,json=reservedBytes,proto3" json:"reserved_bytes,omitempty"`
 	// What their guests have now; a machine whose node could not tell
 	// counts at its reservation.
-	CurrentBytes  int64 `protobuf:"varint,3,opt,name=current_bytes,json=currentBytes,proto3" json:"current_bytes,omitempty"`
+	CurrentBytes int64 `protobuf:"varint,3,opt,name=current_bytes,json=currentBytes,proto3" json:"current_bytes,omitempty"`
+	// What their guests use; a machine whose guest does not say counts at
+	// what it has, or at its reservation when that is unknown too.
+	InUseBytes    int64 `protobuf:"varint,4,opt,name=in_use_bytes,json=inUseBytes,proto3" json:"in_use_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -449,6 +464,13 @@ func (x *MemoryPoolTotal) GetCurrentBytes() int64 {
 	return 0
 }
 
+func (x *MemoryPoolTotal) GetInUseBytes() int64 {
+	if x != nil {
+		return x.InUseBytes
+	}
+	return 0
+}
+
 var File_hangar_tenancy_v1alpha1_tenant_capability_proto protoreflect.FileDescriptor
 
 const file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDesc = "" +
@@ -473,7 +495,7 @@ const file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDesc = "" +
 	"\fnodes_unread\x18\x03 \x01(\x05R\vnodesUnread\x12F\n" +
 	"\bmachines\x18\x04 \x03(\v2*.hangar.tenancy.v1alpha1.MemoryPoolMachineR\bmachines\x12>\n" +
 	"\x05other\x18\x05 \x01(\v2(.hangar.tenancy.v1alpha1.MemoryPoolTotalR\x05otherB\r\n" +
-	"\v_size_bytes\"\xbb\x03\n" +
+	"\v_size_bytes\"\xf3\x03\n" +
 	"\x11MemoryPoolMachine\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
@@ -481,14 +503,20 @@ const file_hangar_tenancy_v1alpha1_tenant_capability_proto_rawDesc = "" +
 	"\x05phase\x18\x04 \x01(\x0e2%.hangar.compute.v1alpha1.MachinePhaseR\x05phase\x12!\n" +
 	"\fmemory_bytes\x18\x05 \x01(\x03R\vmemoryBytes\x12%\n" +
 	"\x0ereserved_bytes\x18\x06 \x01(\x03R\rreservedBytes\x12(\n" +
-	"\rcurrent_bytes\x18\a \x01(\x03H\x00R\fcurrentBytes\x88\x01\x01\x12G\n" +
+	"\rcurrent_bytes\x18\a \x01(\x03H\x00R\fcurrentBytes\x88\x01\x01\x12%\n" +
+	"\fin_use_bytes\x18\n" +
+	" \x01(\x03H\x01R\n" +
+	"inUseBytes\x88\x01\x01\x12G\n" +
 	"\x12last_oom_kill_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x0flastOomKillTime\x12X\n" +
 	"\x1aballoon_unresponsive_since\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x18balloonUnresponsiveSinceB\x10\n" +
-	"\x0e_current_bytes\"\x80\x01\n" +
+	"\x0e_current_bytesB\x0f\n" +
+	"\r_in_use_bytes\"\xa2\x01\n" +
 	"\x0fMemoryPoolTotal\x12!\n" +
 	"\fmemory_bytes\x18\x01 \x01(\x03R\vmemoryBytes\x12%\n" +
 	"\x0ereserved_bytes\x18\x02 \x01(\x03R\rreservedBytes\x12#\n" +
-	"\rcurrent_bytes\x18\x03 \x01(\x03R\fcurrentBytes2\xfc\x01\n" +
+	"\rcurrent_bytes\x18\x03 \x01(\x03R\fcurrentBytes\x12 \n" +
+	"\fin_use_bytes\x18\x04 \x01(\x03R\n" +
+	"inUseBytes2\xfc\x01\n" +
 	"\x17TenantCapabilityService\x12k\n" +
 	"\fCPUPoolUsage\x12,.hangar.tenancy.v1alpha1.CPUPoolUsageRequest\x1a-.hangar.tenancy.v1alpha1.CPUPoolUsageResponse\x12t\n" +
 	"\x0fMemoryPoolUsage\x12/.hangar.tenancy.v1alpha1.MemoryPoolUsageRequest\x1a0.hangar.tenancy.v1alpha1.MemoryPoolUsageResponseB\x84\x02\n" +

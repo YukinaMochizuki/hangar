@@ -177,6 +177,10 @@ message MemoryPoolMember {
   // When the host's OOM killer last killed its VM whole; unset when it
   // never did.
   google.protobuf.Timestamp last_oom_kill_time = 4;
+  // What its guest uses of its memory, in bytes: its total less its
+  // available memory, from the balloon statistics the squeeze read. Unset
+  // when the guest reports none, or its last report is stale.
+  optional uint64 in_use_bytes = 5;
 }
 
 // UsagePoint is a machine's usage at a time, or over the minute from it.

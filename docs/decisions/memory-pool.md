@@ -105,21 +105,28 @@ GiB nobody measured.
   rather than its memory, so a pool of 200% does not double its tenant's
   share of the CPUs. A machine joins a pool's slice, or leaves it, as it
   starts; its reservation's effects follow while it runs.
-- **Who holds a pool now is read from its nodes, never stored.**
+- **Who uses a pool now is read from its nodes, never stored.**
   `TenantCapabilityService.MemoryPoolUsage` asks each connected node the
   tenant's running pooled machines are on what its squeeze last read
   (`node-agent.md`), as `CPUPoolUsage` does for a CPU pool, and answers the
   pool's size and each machine: its memory, its reservation, what its guest
   has now (its memory less its balloon, unset when its node cannot tell),
-  its last OOM kill and since when its balloon has not followed. It needs
-  the get of Containers or VirtualMachines in some project of the tenant,
-  not the Tenant's, which no project role grants: the project Overview
-  shows the pool to a member of that project alone. A machine whose object
-  the caller may not get is summed into one `other` total (memory,
-  reservation, now), with no name, kind or count. Such a caller learns the
-  pool's size, which is the plan's memory, and those totals of the rest of
-  the tenant; that was accepted for a project member, since the pool is
-  what its own machines share. `CPUPoolUsage` keeps the Tenant's get.
+  what its guest uses of that (its total less its available memory, from
+  its balloon statistics, unset when it reports none or not lately), its
+  last OOM kill and since when its balloon has not followed. What a guest
+  has is not what it needs: the squeeze hands the pool's spare room to its
+  Shared guests, up to their limits, so whenever their limits add up past
+  the pool what they have fills it. What they use says how much of the
+  pool is wanted, which is what the console draws (owner's decision,
+  2026-11-27). It needs the get of Containers or VirtualMachines in some
+  project of the tenant, not the Tenant's, which no project role grants:
+  the project Overview shows the pool to a member of that project alone. A
+  machine whose object the caller may not get is summed into one `other`
+  total (memory, reservation, now, in use), with no name, kind or count.
+  Such a caller learns the pool's size, which is the plan's memory, and
+  those totals of the rest of the tenant; that was accepted for a project
+  member, since the pool is what its own machines share. `CPUPoolUsage`
+  keeps the Tenant's get.
 
 ## Consequences
 

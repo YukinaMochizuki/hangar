@@ -105,6 +105,7 @@ func (h tenantCapabilities) MemoryPoolUsage(ctx context.Context, req *connect.Re
 			res.Other.MemoryBytes += pm.GetMemoryBytes()
 			res.Other.ReservedBytes += pm.GetReservedBytes()
 			res.Other.CurrentBytes += currentOr(pm)
+			res.Other.InUseBytes += inUseOr(pm)
 			continue
 		}
 		res.Machines = append(res.Machines, pm)
@@ -148,12 +149,15 @@ func (m poolMachine) usage(read *nodev1.MemoryPoolMember) *tenancyv1alpha1.Memor
 	if read != nil && read.SizeBytes != nil {
 		out.CurrentBytes = proto.Int64(int64(min(read.GetSizeBytes(), uint64(m.memory))))
 	}
+	if read != nil && read.InUseBytes != nil {
+		out.InUseBytes = proto.Int64(int64(min(read.GetInUseBytes(), uint64(m.memory))))
+	}
 	return out
 }
 
 // byPoolOrder orders a pool's machines as the console draws them:
-// Dedicated first, then by what they have now, largest first, one whose
-// node could not tell at its reservation, then by project and name.
+// Dedicated first, then by what they use, largest first (inUseOr), then
+// by project and name.
 func byPoolOrder(a, b *tenancyv1alpha1.MemoryPoolMachine) int {
 	dedicated := func(m *tenancyv1alpha1.MemoryPoolMachine) bool { return m.GetReservedBytes() >= m.GetMemoryBytes() }
 	if da, db := dedicated(a), dedicated(b); da != db {
@@ -162,7 +166,7 @@ func byPoolOrder(a, b *tenancyv1alpha1.MemoryPoolMachine) int {
 		}
 		return 1
 	}
-	return cmp.Or(cmp.Compare(currentOr(b), currentOr(a)), cmp.Compare(a.GetProject(), b.GetProject()), cmp.Compare(a.GetName(), b.GetName()))
+	return cmp.Or(cmp.Compare(inUseOr(b), inUseOr(a)), cmp.Compare(a.GetProject(), b.GetProject()), cmp.Compare(a.GetName(), b.GetName()))
 }
 
 // currentOr is what the machine's guest has now, its reservation when its
@@ -172,6 +176,15 @@ func currentOr(m *tenancyv1alpha1.MemoryPoolMachine) int64 {
 		return m.GetCurrentBytes()
 	}
 	return m.GetReservedBytes()
+}
+
+// inUseOr is what the machine's guest uses, what it has when the guest
+// does not say, and its reservation when its node cannot tell either.
+func inUseOr(m *tenancyv1alpha1.MemoryPoolMachine) int64 {
+	if m.InUseBytes != nil {
+		return m.GetInUseBytes()
+	}
+	return currentOr(m)
 }
 
 // memoryPoolMachines are the running machines in tenant's memory pool

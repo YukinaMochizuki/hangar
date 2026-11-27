@@ -22,12 +22,14 @@ const mib = 1 << 20
 
 // poolVM is a VM of poolHost: as it was launched, its balloon, what its
 // guest uses, whether its balloon takes what it is asked, or cannot be
-// read, and when it was last killed whole.
+// read, whether its guest's report is an hour old, and when it was last
+// killed whole.
 type poolVM struct {
 	launched           driver.PoolVM
 	inSlice            bool
 	balloonMiB, useMiB int64
 	stuck, unreadable  bool
+	staleStats         bool
 	lastOOMKill        time.Time
 }
 
@@ -75,9 +77,13 @@ func (h *poolHost) Balloon(_ context.Context, uid string) (driver.Balloon, error
 		return driver.Balloon{}, errors.New("no VM")
 	}
 	total := v.launched.MemoryMiB - v.balloonMiB
+	updated := h.clock.Now()
+	if v.staleStats {
+		updated = updated.Add(-time.Hour)
+	}
 	return driver.Balloon{
 		Actual: uint64(v.balloonMiB) * mib, Total: uint64(total) * mib, Available: uint64(max(total-v.useMiB, 0)) * mib,
-		Updated: h.clock.Now(),
+		Updated: updated,
 	}, nil
 }
 

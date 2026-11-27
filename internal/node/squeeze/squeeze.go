@@ -109,6 +109,10 @@ type Result struct {
 	// Unread are the members whose balloons could not be read: their
 	// Sizes are their whole memory, though their guests may have less.
 	Unread []string
+	// InUse is what each member's guest uses of its memory, as it last
+	// reported it (GuestInUse); a member whose guest reported nothing, or
+	// not lately, is not in it.
+	InUse map[string]int64
 	// Unresponsive are the members whose balloons stopped following what
 	// they are asked at this poll (Squeezer.Unresponsive).
 	Unresponsive []string
@@ -215,6 +219,12 @@ func (q *Squeezer) Poll(ctx context.Context, hv driver.Hypervisor, log *slog.Log
 	}
 	r := decide(sizeMiB, states, stepMiB)
 	r.Unresponsive, r.Unread = stuck, unread
+	r.InUse = map[string]int64{}
+	for _, m := range states {
+		if m.stats {
+			r.InUse[m.UID] = m.inUseMiB
+		}
+	}
 	for _, uid := range slices.Sorted(maps.Keys(r.Balloons)) {
 		if err := hv.SetBalloon(ctx, uid, uint64(r.Balloons[uid])<<20); err != nil {
 			log.Warn("setting a pool's machine's balloon", "machine_uid", uid, "error", err)

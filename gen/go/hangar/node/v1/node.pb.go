@@ -746,8 +746,12 @@ type MemoryPoolMember struct {
 	// When the host's OOM killer last killed its VM whole; unset when it
 	// never did.
 	LastOomKillTime *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=last_oom_kill_time,json=lastOomKillTime,proto3" json:"last_oom_kill_time,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// What its guest uses of its memory, in bytes: its total less its
+	// available memory, from the balloon statistics the squeeze read. Unset
+	// when the guest reports none, or its last report is stale.
+	InUseBytes    *uint64 `protobuf:"varint,5,opt,name=in_use_bytes,json=inUseBytes,proto3,oneof" json:"in_use_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MemoryPoolMember) Reset() {
@@ -806,6 +810,13 @@ func (x *MemoryPoolMember) GetLastOomKillTime() *timestamppb.Timestamp {
 		return x.LastOomKillTime
 	}
 	return nil
+}
+
+func (x *MemoryPoolMember) GetInUseBytes() uint64 {
+	if x != nil && x.InUseBytes != nil {
+		return *x.InUseBytes
+	}
+	return 0
 }
 
 // UsagePoint is a machine's usage at a time, or over the minute from it.
@@ -2616,15 +2627,18 @@ const file_hangar_node_v1_node_proto_rawDesc = "" +
 	"\x17MemoryPoolUsageResponse\x12;\n" +
 	"\vsample_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"sampleTime\x12:\n" +
-	"\amembers\x18\x02 \x03(\v2 .hangar.node.v1.MemoryPoolMemberR\amembers\"\x89\x02\n" +
+	"\amembers\x18\x02 \x03(\v2 .hangar.node.v1.MemoryPoolMemberR\amembers\"\xc1\x02\n" +
 	"\x10MemoryPoolMember\x12\x1f\n" +
 	"\vmachine_uid\x18\x01 \x01(\tR\n" +
 	"machineUid\x12\"\n" +
 	"\n" +
 	"size_bytes\x18\x02 \x01(\x04H\x00R\tsizeBytes\x88\x01\x01\x12X\n" +
 	"\x1aballoon_unresponsive_since\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x18balloonUnresponsiveSince\x12G\n" +
-	"\x12last_oom_kill_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0flastOomKillTimeB\r\n" +
-	"\v_size_bytes\"\x87\x01\n" +
+	"\x12last_oom_kill_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0flastOomKillTime\x12%\n" +
+	"\fin_use_bytes\x18\x05 \x01(\x04H\x01R\n" +
+	"inUseBytes\x88\x01\x01B\r\n" +
+	"\v_size_bytesB\x0f\n" +
+	"\r_in_use_bytes\"\x87\x01\n" +
 	"\n" +
 	"UsagePoint\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x10\n" +

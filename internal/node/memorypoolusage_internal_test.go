@@ -30,8 +30,9 @@ func membersByUID(res *nodev1.MemoryPoolUsageResponse) map[string]*nodev1.Memory
 
 // TestMemoryPoolUsageAnswersTheLastSqueeze: a pool not squeezed yet
 // answers nothing; once squeezed, each member as that poll read it, its
-// memory less its balloon, with no size when its balloon could not be
-// read, and when its VM was last killed whole. A pool the node no longer
+// memory less its balloon and what its guest uses of it, with neither when
+// its balloon could not be read and no use when its guest's report is
+// stale, and when its VM was last killed whole. A pool the node no longer
 // runs is forgotten.
 func TestMemoryPoolUsageAnswersTheLastSqueeze(t *testing.T) {
 	t.Parallel()
@@ -57,11 +58,23 @@ func TestMemoryPoolUsageAnswersTheLastSqueeze(t *testing.T) {
 		t.Errorf("sampled at %v, want %v", res.GetSampleTime().AsTime(), a.cfg.Clock.Now())
 	}
 	m := membersByUID(res)
-	if len(m) != 2 || m["a"].SizeBytes != nil || m["a"].GetLastOomKillTime() != nil {
-		t.Errorf("a, its balloon unread: %v, want no size and no kill", m["a"])
+	if len(m) != 2 || m["a"].SizeBytes != nil || m["a"].InUseBytes != nil || m["a"].GetLastOomKillTime() != nil {
+		t.Errorf("a, its balloon unread: %v, want no size, no use and no kill", m["a"])
 	}
-	if m["s"].GetSizeBytes() != 2048*mib || !m["s"].GetLastOomKillTime().AsTime().Equal(killed) || m["s"].GetBalloonUnresponsiveSince() != nil {
-		t.Errorf("s: %v, want 2048 MiB, killed at %v, its balloon following", m["s"], killed)
+	if m["s"].GetSizeBytes() != 2048*mib || m["s"].InUseBytes == nil || m["s"].GetInUseBytes() != 100*mib || !m["s"].GetLastOomKillTime().AsTime().Equal(killed) || m["s"].GetBalloonUnresponsiveSince() != nil {
+		t.Errorf("s: %v, want 2048 MiB using 100, killed at %v, its balloon following", m["s"], killed)
+	}
+
+	// A guest whose last report is older than the squeeze reads says
+	// nothing of its use, though its size is known.
+	h.vms["s"].staleStats = true
+	a.squeeze(t.Context(), false)
+	res, err = memoryPoolUsage(t, a, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := membersByUID(res)["s"]; s.SizeBytes == nil || s.InUseBytes != nil {
+		t.Errorf("s, its report stale: %v, want a size and no use", s)
 	}
 	if other, err := memoryPoolUsage(t, a, "other"); err != nil || other.GetSampleTime() != nil || len(other.GetMembers()) != 0 {
 		t.Errorf("a pool not on the node: %v, %v; want nothing", other, err)
