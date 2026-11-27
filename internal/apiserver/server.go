@@ -239,6 +239,7 @@ type Server struct {
 	// times, through bootWatch, for the crash-loop gauge. bootWatch writes
 	// nothing, so it runs even when the config disables the controllers.
 	rpc       *rpcMetrics
+	access    *accessLog
 	boots     *bootTracker
 	bootWatch *controller.Controller
 	// prometheus and alertmanager are what MonitoringService asks.
@@ -294,6 +295,7 @@ func New(cfg Config) *Server {
 		rpc:        newRPCMetrics(),
 		boots:      newBootTracker(cfg.Clock),
 	}
+	s.access = &accessLog{s: s}
 	s.bootWatch = &controller.Controller{
 		Name: "machineboots", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 		Reconciler: controller.ReconcilerFunc(s.reconcileBoots),
@@ -363,11 +365,12 @@ func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 	return mux
 }
 
-// interceptors count the Connect calls a listener takes, authenticate them
-// with chain, and recheck its streams on the server's clock. Counting comes
-// first, so calls refused for their credentials are counted too.
+// interceptors count and log the Connect calls a listener takes,
+// authenticate them with chain, and recheck its streams on the server's
+// clock. Counting and logging come first, so calls refused for their
+// credentials are counted and logged too.
 func (s *Server) interceptors(chain auth.Chain) connect.HandlerOption {
-	return connect.WithInterceptors(s.rpc, chain.InterceptorOn(s.clock, s.log))
+	return connect.WithInterceptors(s.rpc, s.access, chain.InterceptorOn(s.clock, s.log), s.access.principal())
 }
 
 // openTunnel takes a node agent's tunnel (internal/tunnel). The tunnel is

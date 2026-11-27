@@ -70,6 +70,19 @@ groups:
           summary: "hangar/images is {{ $value | humanizePercentage }} of its quota"
           description: "Image pulls fail once it is full; docs/runbook/host-bootstrap.md, Quotas."
 
+      # Loki keeps by age alone: past its quota it takes no more lines while
+      # its unit stays active.
+      - alert: LokiQuotaAlmostFull
+        expr: |
+          1 - node_filesystem_avail_bytes{mountpoint="/var/lib/hangar/loki"}
+            / node_filesystem_size_bytes{mountpoint="/var/lib/hangar/loki"} > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "hangar/loki is {{ $value | humanizePercentage }} of its quota"
+          description: "Loki stops taking the platform's logs once it is full; docs/runbook/host-bootstrap.md, The platform's logs."
+
   - name: hangar-disks
     rules:
       - alert: MdArrayDegraded

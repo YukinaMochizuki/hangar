@@ -128,6 +128,31 @@ tests:
       - eval_time: 26m
         alertname: FilesystemAlmostFull
         exp_alerts: []
+      - eval_time: 26m
+        alertname: LokiQuotaAlmostFull
+        exp_alerts: []
+
+  - name: hangar/loki past 90% of its quota is a warning
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_size_bytes{job="node",instance="h",mountpoint="/var/lib/hangar/loki",fstype="zfs",device="hangar/loki"}'
+        values: '100x30'
+      - series: 'node_filesystem_avail_bytes{job="node",instance="h",mountpoint="/var/lib/hangar/loki",fstype="zfs",device="hangar/loki"}'
+        values: '50x10 5x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: LokiQuotaAlmostFull
+        exp_alerts: []
+      - eval_time: 26m
+        alertname: LokiQuotaAlmostFull
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: h, mountpoint: /var/lib/hangar/loki, fstype: zfs, device: hangar/loki}
+            exp_annotations:
+              summary: "hangar/loki is 95% of its quota"
+              description: "Loki stops taking the platform's logs once it is full; docs/runbook/host-bootstrap.md, The platform's logs."
+      - eval_time: 26m
+        alertname: ImagesQuotaAlmostFull
+        exp_alerts: []
 
   - name: a filesystem past 80% is a warning, past 90% critical
     interval: 1m

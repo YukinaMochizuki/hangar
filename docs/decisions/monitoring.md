@@ -1,6 +1,7 @@
 # Monitoring: Prometheus on the host, alerts to Telegram, no tenant in a label
 
-Status: accepted, 2026-10.
+Status: accepted, 2026-10; the platform's logs (Loki, Alloy, Grafana) added
+2026-11.
 
 ## Context
 
@@ -40,12 +41,30 @@ restart count.
   quarter, as it waits seconds at every boot. A tenant's `Exited`,
   `BootFailed` or crash loop is recorded and shown to the operator but
   alerts no one.
-- **Prometheus and Alertmanager on the host, no Grafana.** Collected by
+- **Prometheus and Alertmanager on the host.** Collected by
   `node_exporter` (zfs, mdadm, systemd, hwmon collectors), `smartctl_exporter`
   and the services' own `/metrics`. Prometheus keeps 30 days. Every one of
   them listens on loopback only, so the host firewall stays at 22, 80 and 443
-  (`front-door.md`). Ad hoc queries use Prometheus's own UI through an ssh
-  tunnel; the operator's view is the console (below).
+  (`front-door.md`). Ad hoc queries use Prometheus's own UI or Grafana
+  (below) through an ssh tunnel; the fixed view for whoever runs the
+  platform is the console (below).
+- **The platform's logs in Loki, shown by Grafana, for the operator.** The
+  apiserver writes one access line per Connect call as it ends: the
+  procedure, its code and duration, the principal, the project and its
+  tenant (a project's or tenant's own calls name it), and the client's
+  address. Sign-in's calls and those refused for their credentials have
+  no principal. Alloy ships the journal of
+  `hangar-apiserver`, `hangar-node` and `hangar-edge` (never a VM's unit) to
+  Loki, which keeps 90 days on a dataset of its own; Grafana shows Loki and
+  Prometheus. All three are on loopback, installed and checked like the
+  rest (`deploy/host/steps/92-logs.sh`). This is the operator's ad hoc view
+  of who uses the platform and how, live and over the last months: queries
+  that change with the question, which the console's fixed queries would
+  make a proto change each. Only the control plane is logged: what reaches
+  a tenant's public endpoint through the edge (its visitors' addresses, its
+  paths) is not, so the host keeps nothing of third parties. Grafana has no
+  anonymous access; its admin password is a file on the host. A view for
+  tenants of their own use is not this path (Consequences).
 - **Installed like the rest of the host.** Each binary is pinned by version
   and sha256 in `deploy/host/versions.env`, as Cloud Hypervisor is, and
   installed by a step of `deploy/host` that `verify.sh` checks: never from
@@ -76,8 +95,8 @@ restart count.
   `/metrics` there, with `prometheus/client_golang`: never on the API's mux,
   so no route change can carry it through the front door. A Prometheus
   cannot scrape a unix socket, hence loopback TCP.
-- **No tenant in a label.** A metric's labels hold only values the platform
-  defines and bounds: a procedure, a code, a phase, a reason, a service, the
+- **No tenant in a label, in Prometheus or in Loki.** A metric's labels,
+  and a Loki stream's, hold only values the platform defines and bounds: a procedure, a code, a phase, a reason, a service, the
   control plane or the endpoints, a node's name, a certificate's name in the
   edge's configuration. Never a tenant, project, machine or
   endpoint name, a uid, a hostname, an address, or an email. Metrics then
@@ -87,7 +106,13 @@ restart count.
   nothing of a tenant's and grows only with the hosts; each Node's `Ready`
   needs it. A test holds every registered metric to this. An alert that counts
   machines says how to list them (`sudo hangar --context local get …` on the
-  admin socket) instead of naming them.
+  admin socket) instead of naming them. A log line may name a tenant, a
+  project or a person in its text, as the access lines do; Loki's streams
+  are labelled with the unit and the node, and with the `job` and
+  `service_name` Alloy and Loki add of their own, never with what a line
+  says, and a query takes the rest
+  from the line (`| logfmt`). `tools/check-logs.sh` holds Alloy's
+  configuration to this.
 - **The console shows the operator a fixed view, through the API.** A
   platform-level `MonitoringService` in the apiserver answers with typed,
   fixed queries: an overview (each layer's state now), named series over a
@@ -120,7 +145,12 @@ restart count.
 - An outage of the whole host is noticed by its users first, until a dead
   man's switch is added.
 - Telling which machines an alert counts takes the admin socket.
-- A new graph in the console is a change to the proto and the apiserver.
+- A new graph in the console is a change to the proto and the apiserver;
+  a new view in Grafana is a query, or a dashboard in
+  `deploy/host/monitoring/grafana/`.
+- The host keeps 90 days of who called the API, on what and from where.
+  It is the operator's to read, by ssh alone; telling users so is the
+  operator's too.
 - **Usage graphs for tenants are not on this path.** A tenant's machine
   numbers cannot go into Prometheus (no tenant in a label) nor into its
   status (`machine-placement.md`). They are a pipeline of their own: the
